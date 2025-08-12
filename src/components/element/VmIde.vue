@@ -240,6 +240,11 @@ export default {
   created() {
   },
   mounted() {
+    // Load saved console height from localStorage
+    const savedHeight = localStorage.getItem('ide-console-height');
+    if (savedHeight) {
+      this.consoleHeight = Math.max(this.minConsoleHeight, Math.min(this.maxConsoleHeight, parseInt(savedHeight)));
+    }
     if (!this.wsInfo.rws) {
       this.$store.dispatch('websocket/init', {});
     }
@@ -263,6 +268,9 @@ export default {
       }
     }, 1000);
     window.addEventListener('resize', this.resize);
+    
+    // Update max console height based on window size
+    this.updateMaxConsoleHeight();
   },
   computed: {
     wsInfo() {
@@ -947,6 +955,10 @@ export default {
         this.$store.commit('ide/setConsoleSelected', {});
       }
       this.resize();
+    },
+    getCurrentConsoleHeight() {
+      // Method that the splitter can call to get current height
+      return this.consoleHeight;
     },
     resize() {
       // No longer needed - editors now use flexbox and fill available space automatically

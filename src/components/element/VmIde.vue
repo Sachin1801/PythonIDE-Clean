@@ -10,6 +10,7 @@
       @stop-item="stop"
       @theme-changed="handleThemeChange"
       @open-upload-dialog="showUploadDialog = true"
+      @download-file="downloadFile"
     ></TopMenu>
     <div id="total-frame" class="total-frame">
       <ProjTree id="left-frame" class="left-frame float-left"
@@ -158,6 +159,48 @@ export default {
     handleThemeChange(theme) {
       // Theme change event handler - can be used for additional logic if needed
       console.log('Theme changed to:', theme);
+    },
+    downloadFile(fileInfo) {
+      const self = this;
+      
+      // Check if it's a binary file
+      const binaryExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.pdf', '.zip', '.tar', '.gz'];
+      const isBinary = binaryExtensions.some(ext => fileInfo.fileName.toLowerCase().endsWith(ext));
+      
+      this.$store.dispatch(`ide/${types.IDE_GET_FILE}`, {
+        projectName: fileInfo.projectName,
+        filePath: fileInfo.filePath,
+        binary: isBinary,
+        callback: (dict) => {
+          if (dict.code == 0) {
+            // Create download link
+            const blob = isBinary 
+              ? new Blob([Uint8Array.from(atob(dict.data), c => c.charCodeAt(0))], { type: 'application/octet-stream' })
+              : new Blob([dict.data], { type: 'text/plain' });
+            
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = fileInfo.fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+            
+            ElMessage({
+              type: 'success',
+              message: `Downloaded ${fileInfo.fileName}`,
+              duration: 2000
+            });
+          } else {
+            ElMessage({
+              type: 'error',
+              message: `Failed to download ${fileInfo.fileName}`,
+              duration: 3000
+            });
+          }
+        }
+      });
     },
     refreshProjectTree() {
       // Refresh the project tree by re-fetching the project data
@@ -965,7 +1008,7 @@ body {
   /* position: relative; */
   width: 100%;
   height: calc(100% - 26px); /* Subtract the tab height */
-  overflow: hidden;
+  overflow: auto; /* Changed from hidden to auto to allow scrolling */
 }
 .console-tab {
   /* position: fixed; */

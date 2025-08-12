@@ -35,6 +35,13 @@
     <div class="icon-btn float-left" @click="openUploadDialog()" title="Import File">
       <Upload :size="20" />
     </div>
+    <!-- Download Button -->
+    <div v-if="ideInfo && ideInfo.nodeSelected !== null && ideInfo.nodeSelected.type === 'file'" class="icon-btn float-left" @click="downloadFile()" title="Download File">
+      <Download :size="20" />
+    </div>
+    <div v-else class="icon-btn float-left disable-icon" title="Select a file to download">
+      <Download :size="20" />
+    </div>
     <!-- Run Button -->
     <div class="icon-btn float-left" v-if="isPythonFile && !consoleLimit" @click="$emit('run-item')" title="Run current selected script">
       <Play :size="20" />
@@ -55,7 +62,7 @@
 </template>
 
 <script>
-import { ArrowLeft, Moon, Sun, FilePlus, FolderPlus, Edit2, Trash2, Square, Play, Upload } from 'lucide-vue-next';
+import { ArrowLeft, Moon, Sun, FilePlus, FolderPlus, Edit2, Trash2, Square, Play, Upload, Download } from 'lucide-vue-next';
 // import * as types from '../../../../store/mutation-types';
 const path = require('path');
 
@@ -93,6 +100,7 @@ export default {
     Square,
     Play,
     Upload,
+    Download,
   },
   mounted() {
     // Initialize theme on mount
@@ -275,6 +283,20 @@ export default {
     },
     openUploadDialog() {
       this.$emit('open-upload-dialog');
+    },
+    downloadFile() {
+      if (!this.ideInfo || !this.ideInfo.nodeSelected || this.ideInfo.nodeSelected.type !== 'file') return;
+      
+      const fileName = path.basename(this.ideInfo.nodeSelected.path);
+      const filePath = this.ideInfo.nodeSelected.path;
+      const projectName = this.ideInfo.nodeSelected.projectName || this.ideInfo.currProj?.data?.name;
+      
+      // Emit event to parent to handle download
+      this.$emit('download-file', {
+        fileName,
+        filePath,
+        projectName
+      });
     }
   }
 }

@@ -195,16 +195,16 @@ export default {
       // Echo user input
       addOutput(input, 'user-input')
       
-      // Send to backend
+      // Clear local state immediately for responsive UI
+      userInput.value = ''
+      waitingForInput.value = false
+      currentPrompt.value = ''
+      
+      // Send to backend (parent will handle store state update)
       emit('send-input', {
         programId: props.item.id,
         input: input
       })
-      
-      // Clear and hide input
-      userInput.value = ''
-      waitingForInput.value = false
-      currentPrompt.value = ''
     }
     
     const cancelInput = () => {

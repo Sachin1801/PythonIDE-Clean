@@ -1,4 +1,4 @@
-name = input()
+name = input();
 
 print(name)
 

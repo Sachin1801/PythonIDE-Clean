@@ -47,6 +47,11 @@ const mutations = {
         if (prompt !== undefined) {
           state.ideInfo.consoleItems[i].inputPrompt = prompt;
         }
+        // Clear prompt when not waiting
+        if (!waiting) {
+          state.ideInfo.consoleItems[i].inputPrompt = '';
+        }
+        console.log(`[STORE] Console ${id} waiting state set to:`, waiting);
         break;
       }
     }
@@ -344,6 +349,19 @@ const mutations = {
         console.log('[FRONTEND-INPUT-DEBUG] Console item updated with waitingForInput=true');
         console.log('[FRONTEND-INPUT-DEBUG] Console item state:', state.ideInfo.consoleItems[i]);
         
+        break;
+      }
+    }
+    else if (dict.code === 2001) {
+      // Input processed confirmation from backend
+      console.log('[FRONTEND-INPUT-DEBUG] Input processed confirmation received');
+      for (let i = 0; i < state.ideInfo.consoleItems.length; i++) {
+        if (state.ideInfo.consoleItems[i].id !== dict.id) continue;
+        
+        // Ensure the waiting state is cleared
+        state.ideInfo.consoleItems[i].waitingForInput = false;
+        state.ideInfo.consoleItems[i].inputPrompt = '';
+        console.log('[FRONTEND-INPUT-DEBUG] Console waiting state cleared after input processed');
         break;
       }
     }

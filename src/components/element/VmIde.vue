@@ -240,11 +240,6 @@ export default {
   created() {
   },
   mounted() {
-    // Load saved console height from localStorage
-    const savedHeight = localStorage.getItem('ide-console-height');
-    if (savedHeight) {
-      this.consoleHeight = Math.max(this.minConsoleHeight, Math.min(this.maxConsoleHeight, parseInt(savedHeight)));
-    }
     if (!this.wsInfo.rws) {
       this.$store.dispatch('websocket/init', {});
     }
@@ -268,9 +263,6 @@ export default {
       }
     }, 1000);
     window.addEventListener('resize', this.resize);
-    
-    // Update max console height based on window size
-    this.updateMaxConsoleHeight();
   },
   computed: {
     wsInfo() {
@@ -958,7 +950,8 @@ export default {
     },
     getCurrentConsoleHeight() {
       // Method that the splitter can call to get current height
-      return this.consoleHeight;
+      // Return a default value since consoleHeight is no longer used
+      return 400;
     },
     resize() {
       // No longer needed - editors now use flexbox and fill available space automatically
@@ -1144,6 +1137,14 @@ export default {
     
     // Handle input from UnifiedConsole for running programs
     handleProgramInput(data) {
+      // First, clear the waiting state immediately to provide user feedback
+      this.$store.commit('ide/setConsoleWaiting', {
+        id: data.programId,
+        waiting: false,
+        prompt: ''
+      });
+      
+      // Then send the input to the backend
       this.$store.dispatch(`ide/${types.IDE_SEND_PROGRAM_INPUT}`, {
         program_id: data.programId,
         input: data.input,
@@ -1152,13 +1153,15 @@ export default {
           callback: (dict) => {
             // Handle response if needed
             console.log('Input sent:', dict);
+            
+            // Double-check state is cleared in case of any timing issues
+            this.$store.commit('ide/setConsoleWaiting', {
+              id: data.programId,
+              waiting: false
+            });
           }
         }
       });
-      this.$store.commit('ide/setConsoleWaiting', {
-        id: data.programId,
-        waiting: false
-      }); 
     },
     
     // Console tab methods

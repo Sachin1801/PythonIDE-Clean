@@ -14,6 +14,9 @@ from .resource import *
 from .response import response
 from .error_handler import EducationalErrorHandler
 from .interactive_thread import InteractiveSubProgramThread
+from .simple_interactive_thread import SimpleInteractiveThread
+from .pty_interactive_thread import PTYInteractiveThread
+from .working_simple_thread import WorkingSimpleThread
 from .working_input_thread import WorkingInputThread
 from .bug_report_handler import handle_bug_report
 from common.config import Config
@@ -350,10 +353,10 @@ print("="*50)
         # print(file_path)
         if os.path.exists(file_path) and os.path.isfile(file_path) and file_path.endswith('.py'):
             cmd = [Config.PYTHON, '-u', file_path]
-            # Use the interactive handler with debug logging for input support
-            print(f"[BACKEND-DEBUG] Using InteractiveSubProgramThread for Python execution")
-            thread = InteractiveSubProgramThread(cmd, cmd_id, client, asyncio.get_event_loop())
-            print(f"[BACKEND-DEBUG] Thread created for cmd_id: {cmd_id}")
+            # Use the working implementation with byte-by-byte reading
+            print(f"[BACKEND-DEBUG] Using WorkingSimpleThread for Python execution")
+            thread = WorkingSimpleThread(cmd, cmd_id, client, asyncio.get_event_loop())
+            print(f"[BACKEND-DEBUG] Thread created for cmd_id: {cmd_id} with working I/O")
             client.handler_info.set_subprogram(cmd_id, thread)
             await response(client, cmd_id, 0, None)
             client.handler_info.start_subprogram(cmd_id)

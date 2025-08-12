@@ -17,12 +17,13 @@ from command.response import response
 class InteractiveSubProgramThread(threading.Thread):
     """Thread for running Python programs with interactive I/O support using streaming output"""
     
-    def __init__(self, cmd, cmd_id, client, event_loop):
+    def __init__(self, client, cmd_id, cmd, event_loop, parent_handler):
         super().__init__()
-        self.cmd = cmd
-        self.cmd_id = cmd_id
         self.client = client
+        self.cmd_id = cmd_id
+        self.cmd = cmd
         self.event_loop = event_loop
+        self.parent_handler = parent_handler
         self.alive = True
         self.p = None
         self.error_buffer = []
@@ -78,7 +79,7 @@ class InteractiveSubProgramThread(threading.Thread):
     
     def create_wrapper_script(self, script_path):
         """Create a wrapper script that overrides input() for interactive capability"""
-        wrapper_code = f'''import sys
+        wrapper_code = '''import sys
 import builtins
 import base64
 import io
@@ -92,7 +93,7 @@ _original_input = builtins.input
 def _custom_input(prompt=""):
     """Custom input function that signals when input is needed"""
     # Send marker for input request with the prompt
-    sys.stdout.write(f"__INPUT_REQUEST_START__{{prompt}}__INPUT_REQUEST_END__")
+    sys.stdout.write(f"__INPUT_REQUEST_START__{prompt}__INPUT_REQUEST_END__")
     sys.stdout.flush()
     
     # Call original input to get user input
@@ -150,7 +151,7 @@ with open(__user_script_path__, 'r') as f:
     __user_code__ = f.read()
 
 exec(compile(__user_code__, __user_script_path__, 'exec'))
-'''
+'''.format(script_path=script_path)
         
         # Create temporary file for wrapper script
         fd, wrapper_path = tempfile.mkstemp(suffix='.py', prefix='ide_wrapper_')
@@ -254,8 +255,6 @@ exec(compile(__user_code__, __user_script_path__, 'exec'))
                     # Read available data
                     try:
                         chunk = self.p.stdout.read(256)  # Read smaller chunks for more responsive output
-                        if chunk is None:  # Non-blocking read can return None
-                            continue
                     except (IOError, OSError) as e:
                         if e.errno == 11:  # EAGAIN
                             continue

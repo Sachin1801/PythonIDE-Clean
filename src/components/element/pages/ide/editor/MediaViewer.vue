@@ -1,6 +1,22 @@
 <template>
   <div class="media-viewer">
-    <div v-if="isImage" class="image-container">
+    <!-- Loading State -->
+    <div v-if="loading" class="loading-container">
+      <el-icon size="32" class="loading-icon"><refresh /></el-icon>
+      <p>Loading media file...</p>
+    </div>
+    
+    <!-- Error State -->
+    <div v-else-if="error" class="error-container">
+      <el-icon size="64" class="error-icon"><document /></el-icon>
+      <p>Failed to load media file</p>
+      <el-button @click="loadFile" type="primary">
+        <el-icon><refresh /></el-icon> Retry
+      </el-button>
+    </div>
+    
+    <!-- Image Display -->
+    <div v-else-if="isImage" class="image-container">
       <div class="toolbar">
         <el-button-group>
           <el-button @click="zoomIn" size="small">
@@ -84,6 +100,7 @@ export default {
       zoomLevel: 1,
       fileUrl: '',
       error: false,
+      loading: false,
     };
   },
   computed: {
@@ -91,8 +108,10 @@ export default {
       return this.codeItem?.name || '';
     },
     fileExtension() {
-      const parts = this.fileName.split('.');
-      return parts[parts.length - 1]?.toLowerCase() || '';
+      // Handle files with multiple dots (e.g., "my.file.name.png")
+      const lastDotIndex = this.fileName.lastIndexOf('.');
+      if (lastDotIndex === -1) return '';
+      return this.fileName.substring(lastDotIndex + 1).toLowerCase();
     },
     isImage() {
       return ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp'].includes(this.fileExtension);
@@ -121,11 +140,28 @@ export default {
   },
   methods: {
     async loadFile() {
+      // Reset state
+      this.error = false;
+      this.loading = true;
+      this.fileUrl = '';
+      
       // Get file content from backend
       const projectName = this.ideInfo.currProj?.data?.name;
       const filePath = this.codeItem?.path;
       
-      if (!projectName || !filePath) return;
+      if (!projectName || !filePath) {
+        this.loading = false;
+        this.error = true;
+        return;
+      }
+      
+      console.log('Loading media file:', { 
+        projectName, 
+        filePath, 
+        binary: true,
+        codeItem: this.codeItem,
+        ideInfo: this.ideInfo
+      });
       
       // Request file content as base64
       this.$store.dispatch(`ide/${types.IDE_GET_FILE}`, {
@@ -133,13 +169,27 @@ export default {
         filePath: filePath,
         binary: true,
         callback: (response) => {
+          this.loading = false;
+          console.log('Media file response:', {
+            code: response.code,
+            hasData: !!response.data,
+            dataKeys: response.data ? Object.keys(response.data) : [],
+            contentLength: response.data?.content ? response.data.content.length : 0,
+            fullResponse: response
+          });
+          
           if (response.code === 0 && response.data) {
             // Handle binary data
             if (response.data.content) {
               const mimeType = this.getMimeType();
               this.fileUrl = `data:${mimeType};base64,${response.data.content}`;
+              console.log('File loaded successfully:', { mimeType, fileUrl: this.fileUrl.substring(0, 50) + '...' });
+            } else {
+              console.error('No content in response data');
+              this.handleError();
             }
           } else {
+            console.error('Failed to load file:', response);
             this.handleError();
           }
         }
@@ -185,7 +235,9 @@ export default {
     },
     handleError() {
       this.error = true;
-      ElMessage.error('Failed to load file');
+      this.loading = false;
+      console.error('MediaViewer error:', { fileName: this.fileName, filePath: this.codeItem?.path });
+      ElMessage.error(`Failed to load file: ${this.fileName}`);
     }
   }
 };
@@ -200,6 +252,38 @@ export default {
   background: var(--editor-bg, #1e1e1e);
   color: var(--editor-text, #d4d4d4);
   overflow: hidden;
+}
+
+/* Loading and Error States */
+.loading-container,
+.error-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+}
+
+.loading-container p,
+.error-container p {
+  margin: 16px 0;
+  font-size: 16px;
+  color: var(--text-secondary, #969696);
+}
+
+.loading-icon {
+  animation: spin 1s linear infinite;
+  color: var(--accent-color, #007acc);
+}
+
+.error-icon {
+  color: var(--error-color, #ff6b68);
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .toolbar {

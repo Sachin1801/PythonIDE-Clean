@@ -24,23 +24,14 @@ import 'codemirror/theme/darcula.css';
 import 'codemirror/theme/monokai.css';
 import 'codemirror/theme/idea.css';
 import 'codemirror/theme/eclipse.css';
-// language
+// language - Python focused
 import 'codemirror/mode/python/python';  // .py
-import 'codemirror/mode/javascript/javascript';  // .js
-import 'codemirror/mode/htmlmixed/htmlmixed';  // .html
-import 'codemirror/mode/css/css';
-import 'codemirror/mode/go/go';
-import 'codemirror/mode/clike/clike';
-import 'codemirror/mode/swift/swift';
-import 'codemirror/mode/rust/rust';  // .rs
-import 'codemirror/mode/ruby/ruby';  // .rb
-import 'codemirror/mode/lua/lua';  // .rb
-import 'codemirror/mode/sass/sass';
+import 'codemirror/mode/htmlmixed/htmlmixed';  // .html (for notebooks)
+import 'codemirror/mode/css/css';  // .css (for notebooks)
 import 'codemirror/mode/shell/shell'; // .sh
-import 'codemirror/mode/sql/sql';
-import 'codemirror/mode/vue/vue';
-import 'codemirror/mode/xml/xml';
-import 'codemirror/mode/yaml/yaml';
+import 'codemirror/mode/sql/sql';  // .sql (for data science)
+import 'codemirror/mode/xml/xml';  // .xml
+import 'codemirror/mode/yaml/yaml';  // .yaml config files
 // active-line
 import 'codemirror/addon/selection/active-line';
 // comment
@@ -59,11 +50,7 @@ import 'codemirror/addon/fold/foldgutter.css';
 // hint
 import 'codemirror/addon/hint/show-hint';
 import 'codemirror/addon/hint/show-hint.css';
-import 'codemirror/addon/hint/javascript-hint';
-import 'codemirror/addon/hint/css-hint';
-import 'codemirror/addon/hint/xml-hint';
-import 'codemirror/addon/hint/html-hint';
-import 'codemirror/addon/hint/sql-hint';
+import 'codemirror/addon/hint/sql-hint';  // Keep SQL hint for data science
 // keymap
 import 'codemirror/keymap/sublime';
 // import PythonHint from '@/assets/lib/python-hint';
@@ -78,6 +65,7 @@ export default {
   },
   data () {
     return {
+      writeTimeout: null,
       codeOtherOptions: {
         py: {
           tabSize: 4,
@@ -97,38 +85,11 @@ export default {
             singleLineStringErrors: false,
           }
         },
-        js: {
-          mode: 'text/javascript'
-        },
         html: {
           mode: 'text/html'
         },
         css: {
           mode: 'text/css'
-        },
-        less: {
-          mode: 'text/x-less'
-        },
-        scss: {
-          mode: 'text/x-scss'
-        },
-        sass: {
-          mode: 'text/x-sass'
-        },
-        go: {
-          mode: 'text/x-go'
-        },
-        swift: {
-          mode: 'text/x-swift'
-        },
-        rs: {
-          mode: 'text/x-rustsrc'
-        },
-        rb: {
-          mode: 'text/x-ruby'
-        },
-        lua: {
-          mode: 'text/x-lua'
         },
         sh: {
           mode: 'text/x-sh'
@@ -136,41 +97,26 @@ export default {
         sql: {
           mode: 'text/x-sql'
         },
-        vue: {
-          mode: 'text/x-vue'
-        },
         xml: {
           mode: 'application/xml'
         },
         yaml: {
           mode: 'text/x-yaml'
         },
-        h: {
-          mode: 'text/x-csrc'
+        yml: {
+          mode: 'text/x-yaml'
         },
-        hpp: {
-          mode: 'text/x-c++src'
+        json: {
+          mode: 'application/json'
         },
-        c: {
-          mode: 'text/x-csrc'
+        md: {
+          mode: 'text/x-markdown'
         },
-        cc: {
-          mode: 'text/x-c++src'
+        csv: {
+          mode: 'text/plain'
         },
-        cpp: {
-          mode: 'text/x-c++src'
-        },
-        m: {
-          mode: 'text/x-objectivec'
-        },
-        mm: {
-          mode: 'text/x-objectivec'
-        },
-        cs: {
-          mode: 'text/x-csharp'
-        },
-        java: {
-          mode: 'text/x-java'
+        txt: {
+          mode: 'text/plain'
         }
       },
       codeBaseOptions: {
@@ -260,6 +206,12 @@ export default {
       attributeFilter: ['data-theme']
     });
   },
+  beforeUnmount() {
+    // Clean up the timeout when component is destroyed
+    if (this.writeTimeout) {
+      clearTimeout(this.writeTimeout);
+    }
+  },
   computed: {
     currentTheme() {
       const theme = document.documentElement.getAttribute('data-theme');
@@ -310,19 +262,28 @@ export default {
     // complete
     codeChanged(value, cm) {
       cm.closeHint();
+      
+      // Update content in store immediately for UI responsiveness
       this.$store.commit('ide/setCodeItemContent', {index: this.codeItemIndex, content: value});
       
-      // Write file without autocomplete
-      this.$store.dispatch(`ide/${types.IDE_WRITE_FILE}`, {
-        filePath: this.codeItem.path,
-        fileData: value,
-        complete: false, // Autocomplete disabled
-        line: 0,
-        column: 0,
-        callback: (dict) => {
-          // No autocomplete callback needed
-        }
-      });
+      // Debounce file writing to avoid cursor issues
+      if (this.writeTimeout) {
+        clearTimeout(this.writeTimeout);
+      }
+      
+      this.writeTimeout = setTimeout(() => {
+        // Write file without autocomplete
+        this.$store.dispatch(`ide/${types.IDE_WRITE_FILE}`, {
+          filePath: this.codeItem.path,
+          fileData: value,
+          complete: false, // Autocomplete disabled
+          line: 0,
+          column: 0,
+          callback: (dict) => {
+            // No autocomplete callback needed
+          }
+        });
+      }, 500); // Debounce for 500ms
     },
     anywordHint(editor, options) {
       var WORD = /[\w$]+/, RANGE = 500;

@@ -52,6 +52,23 @@ def read(path, is_json=False):
         return PATH_IS_DIR, None
 
 
+def read_binary(path):
+    """Read binary files and return base64 encoded content"""
+    import base64
+    if os.path.exists(path) and os.path.isfile(path):
+        try:
+            with open(path, 'rb') as f:
+                binary_data = f.read()
+                encoded_data = base64.b64encode(binary_data).decode('utf-8')
+            return 0, encoded_data
+        except Exception as e:
+            return READ_ERROR, str(e)
+    elif not os.path.exists(path):
+        return PATH_IS_NOT_EXIST, None
+    else:
+        return PATH_IS_DIR, None
+
+
 def write(path, data, is_json=False):
     try:
         with open(path, 'w', encoding='utf-8') as f:
@@ -248,6 +265,19 @@ def save_project(project_path, data):
 
 def get_project_file(project_path, file_path):
     code, data = read(file_path)
+    if code == 0:
+        _config_path = os.path.join(project_path, '.config')
+        _code, config_data = read(_config_path, is_json=True)
+        if _code != 0:
+            config_data = {}
+        config_data['lastAccessTime'] = time.time()
+        write(_config_path, config_data, is_json=True)
+    return code, data
+
+
+def get_project_file_binary(project_path, file_path):
+    """Get binary file content as base64 encoded string"""
+    code, data = read_binary(file_path)
     if code == 0:
         _config_path = os.path.join(project_path, '.config')
         _code, config_data = read(_config_path, is_json=True)

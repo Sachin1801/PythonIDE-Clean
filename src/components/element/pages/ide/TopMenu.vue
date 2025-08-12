@@ -1,38 +1,39 @@
 <template>
-  <div>
+  <div class="top-menu-container">
     <div class="icon-btn float-left" @click="backHome" title="Back">
       <ArrowLeft :size="24" />
     </div>
-    <div class="icon-btn float-left" @click="listProjects()" title="Project List">
+    <!-- Project List button hidden - all projects shown by default -->
+    <!-- <div class="icon-btn float-left" @click="listProjects()" title="Project List">
       <FolderOpen :size="20" />
-    </div>
-    <div v-if="ideInfo.nodeSelected !== null && ideInfo.nodeSelected.type === 'dir'" class="icon-btn float-left" @click="newFile()" title="New File">
+    </div> -->
+    <div v-if="ideInfo && ideInfo.nodeSelected !== null && (ideInfo.nodeSelected.type === 'dir' || ideInfo.nodeSelected.type === 'folder')" class="icon-btn float-left" @click="newFile()" title="New File">
       <FilePlus :size="20" />
     </div>
     <div v-else class="icon-btn float-left disable-icon" title="New File">
       <FilePlus :size="20" />
     </div>
-    <div v-if="ideInfo.nodeSelected !== null && ideInfo.nodeSelected.type === 'dir'" class="icon-btn float-left" @click="newFolder()" title="New Folder">
+    <div v-if="ideInfo && ideInfo.nodeSelected !== null && (ideInfo.nodeSelected.type === 'dir' || ideInfo.nodeSelected.type === 'folder')" class="icon-btn float-left" @click="newFolder()" title="New Folder">
       <FolderPlus :size="20" />
     </div>
     <div v-else class="icon-btn float-left disable-icon" title="New Folder">
       <FolderPlus :size="20" />
     </div>
-    <div v-if="ideInfo.nodeSelected !== null" class="icon-btn float-left" @click="rename()" title="Rename">
+    <div v-if="ideInfo && ideInfo.nodeSelected !== null" class="icon-btn float-left" @click="rename()" title="Rename">
       <Edit2 :size="20" />
     </div>
     <div v-else class="icon-btn float-left disable-icon" title="Rename">
       <Edit2 :size="20" />
     </div>
-    <div v-if="ideInfo.nodeSelected !== null && ideInfo.nodeSelected.path !== '/'" class="icon-btn float-left" @click="delFile()" title="Delete">
+    <div v-if="ideInfo && ideInfo.nodeSelected !== null && ideInfo.nodeSelected.path !== '/'" class="icon-btn float-left" @click="delFile()" title="Delete">
       <Trash2 :size="20" />
     </div>
     <div v-else class="icon-btn float-left disable-icon" title="Delete">
       <Trash2 :size="20" />
     </div>
-    <div class="icon-btn float-left" title="Status">
-      <CheckCircle2 v-if="wsInfo.connected" :size="20" :style="{color: '#52bf53'}" />
-      <XCircle v-else :size="20" :style="{color: '#e15960'}" />
+    <!-- Upload/Import Button -->
+    <div class="icon-btn float-left" @click="openUploadDialog()" title="Import File">
+      <Upload :size="20" />
     </div>
     <!-- Run Button -->
     <div class="icon-btn float-left" v-if="isPythonFile && !consoleLimit" @click="$emit('run-item')" title="Run current selected script">
@@ -50,18 +51,11 @@
       <Moon v-if="isDarkMode" :size="20" />
       <Sun v-else :size="20" />
     </div>
-    <!-- Bug Report Button - Far Right -->
-    <div class="icon-btn bug-report-btn" @click="showBugReport = true" title="Report a Bug">
-      <Bug :size="20" />
-    </div>
-    <!-- Bug Report Modal -->
-    <BugReportModal v-model="showBugReport" />
   </div>
 </template>
 
 <script>
-import { ArrowLeft, Moon, Sun, FolderOpen, FilePlus, FolderPlus, Edit2, Trash2, CheckCircle2, XCircle, Bug, Square, Play } from 'lucide-vue-next';
-import BugReportModal from './BugReportModal.vue';
+import { ArrowLeft, Moon, Sun, FilePlus, FolderPlus, Edit2, Trash2, Square, Play, Upload } from 'lucide-vue-next';
 // import * as types from '../../../../store/mutation-types';
 const path = require('path');
 
@@ -74,36 +68,31 @@ export default {
     return {
       isRun: true,
       isDarkMode: localStorage.getItem('theme') === 'dark' || true, // Default to dark mode
-      showBugReport: false,
     }
   },
   computed: {
-    wsInfo() {
-      return this.$store.getters['websocket/wsInfo']();
-    },
     ideInfo() {
-      return this.$store.state.ide.ideInfo;
+      return this.$store?.state?.ide?.ideInfo || {};
     },
     isPythonFile() {
-      return this.ideInfo.currProj.pathSelected !== null && this.ideInfo.codeItems.length > 0 && this.ideInfo.currProj.pathSelected.endsWith('.py');
-      // return this.ideInfo.currProj.pathSelected !== null && this.ideInfo.codeItems.length > 0 && this.ideInfo.currProj.pathSelected.lastIndexOf('.py') === this.ideInfo.currProj.pathSelected.length - 3;
+      return this.ideInfo.currProj && 
+             this.ideInfo.currProj.pathSelected !== null && 
+             this.ideInfo.codeItems && 
+             this.ideInfo.codeItems.length > 0 && 
+             this.ideInfo.currProj.pathSelected.endsWith('.py');
     },
   },
   components: {
     ArrowLeft,
     Moon,
     Sun,
-    FolderOpen,
     FilePlus,
     FolderPlus,
     Edit2,
     Trash2,
-    CheckCircle2,
-    XCircle,
-    Bug,
     Square,
     Play,
-    BugReportModal,
+    Upload,
   },
   mounted() {
     // Initialize theme on mount
@@ -135,24 +124,26 @@ export default {
       });
     },
     rename() {
+      if (!this.ideInfo || !this.ideInfo.nodeSelected) return;
+      
       let dialogType = '';
       let dialogTitle = ''; 
       let dialogInputText = '';
       if (this.ideInfo.nodeSelected.path === '/') {
         dialogType = 'rename-project';
-        dialogTitle = `Rename Project (${this.ideInfo.currProj.data.name})`
-        dialogInputText = `${this.ideInfo.currProj.data.name}`;
+        dialogTitle = `Rename Project (${this.ideInfo.currProj?.data?.name || 'Unknown'})`
+        dialogInputText = `${this.ideInfo.currProj?.data?.name || ''}`;
       }
-      else if (this.ideInfo.nodeSelected.type === 'dir') {
+      else if (this.ideInfo.nodeSelected.type === 'dir' || this.ideInfo.nodeSelected.type === 'folder') {
         const name = path.basename(this.ideInfo.nodeSelected.path);
         dialogType = 'rename-folder';
         dialogTitle = `Rename Folder (${this.ideInfo.nodeSelected.path})`
         dialogInputText = `${name}`;
       }
       else {
-        const name = path.basename(this.ideInfo.currProj.pathSelected);
+        const name = path.basename(this.ideInfo.currProj?.pathSelected || this.ideInfo.nodeSelected.path);
         dialogType = 'rename-file';
-        dialogTitle = `Rename File (${this.ideInfo.currProj.pathSelected})`
+        dialogTitle = `Rename File (${this.ideInfo.currProj?.pathSelected || this.ideInfo.nodeSelected.path})`
         dialogInputText = `${name}`;
       }
       this.$emit('setTextDialog', {
@@ -163,6 +154,8 @@ export default {
       });
     },
     delFile() {
+      if (!this.ideInfo || !this.ideInfo.nodeSelected) return;
+      
       this.$emit('setDelDialog', {
         type: '',
         title: `Delete ${path.basename(this.ideInfo.nodeSelected.path)}?`,
@@ -262,6 +255,8 @@ export default {
     //   });
     // },
     stopAll() {
+      if (!this.ideInfo || !this.ideInfo.consoleItems) return;
+      
       for (let i = 0; i < this.ideInfo.consoleItems.length; i++) {
         if (this.ideInfo.consoleItems[i].run === true) {
           this.$emit('stop-item', this.ideInfo.consoleItems[i].id);
@@ -277,6 +272,9 @@ export default {
       localStorage.setItem('theme', theme);
       document.documentElement.setAttribute('data-theme', theme);
       this.$emit('theme-changed', theme);
+    },
+    openUploadDialog() {
+      this.$emit('open-upload-dialog');
     }
   }
 }
@@ -325,15 +323,11 @@ export default {
   color: rgba(255, 255, 255, 0.4);
   background: none;
 }
-.bug-report-btn {
-  position: absolute;
-  right: 20px;
-  top: 13px;
-  margin: 0;
-}
-.bug-report-btn:hover {
-  transform: none;
-  color: #409eff;
-  background: rgba(64, 158, 255, 0.2);
+.top-menu-container {
+  width: 100%;
+  height: 50px;
+  background: #313131;
+  display: flex;
+  align-items: center;
 }
 </style>

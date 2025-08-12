@@ -7,6 +7,7 @@
 # Author: Vinman <vinman.cub@gmail.com>
 
 import os
+import json
 import jedi
 import time
 import asyncio
@@ -37,6 +38,24 @@ jedi_is_gt_17 = Version(jedi_version) >= Version('0.17.0')
 
 if not os.path.exists(os.path.join(Config.PROJECTS, 'ide')):
     os.makedirs(os.path.join(Config.PROJECTS, 'ide'))
+
+# Ensure default folders exist
+default_folders = ['Local', 'Lecture Notes']
+for folder_name in default_folders:
+    folder_path = os.path.join(Config.PROJECTS, 'ide', folder_name)
+    if not os.path.exists(folder_path):
+        os.makedirs(folder_path)
+        # Create .config file for the folder
+        config_path = os.path.join(folder_path, '.config')
+        config_data = {
+            'type': 'python',
+            'expendKeys': [],
+            'openList': [],
+            'selectFilePath': '',
+            'lastAccessTime': time.time()
+        }
+        with open(config_path, 'w') as f:
+            json.dump(config_data, f, indent=4)
 
 
 class IdeCmd(object):
@@ -228,8 +247,19 @@ print("="*50)
         prj_name = data.get('projectName')
         prj_path = os.path.join(Config.PROJECTS, 'ide', prj_name)
         file_path = os.path.join(prj_path, convert_path(data.get('filePath')))
-        code, file_data = get_project_file(prj_path, file_path)
-        await response(client, cmd_id, code, file_data)
+        
+        # Check if binary file requested
+        is_binary = data.get('binary', False)
+        if is_binary:
+            from .resource import get_project_file_binary
+            code, file_data = get_project_file_binary(prj_path, file_path)
+            if code == 0:
+                await response(client, cmd_id, code, {'content': file_data, 'binary': True})
+            else:
+                await response(client, cmd_id, code, file_data)
+        else:
+            code, file_data = get_project_file(prj_path, file_path)
+            await response(client, cmd_id, code, file_data)
 
     async def ide_delete_file(self, client, cmd_id, data):
         prj_name = data.get('projectName')
@@ -327,13 +357,10 @@ print("="*50)
         # print(file_path)
         if os.path.exists(file_path) and os.path.isfile(file_path) and file_path.endswith('.py'):
             cmd = [Config.PYTHON, '-u', file_path]
-            # Use the working input handler
-            try:
-                thread = WorkingInputThread(cmd, cmd_id, client, asyncio.get_event_loop())
-                # Using working input handler for interactive I/O
-            except Exception as e:
-                print(f"Working handler failed ({e}), using fallback")
-                thread = InteractiveSubProgramThread(cmd, cmd_id, client, asyncio.get_event_loop())
+            # Use the interactive handler with debug logging for input support
+            print(f"[BACKEND-DEBUG] Using InteractiveSubProgramThread for Python execution")
+            thread = InteractiveSubProgramThread(cmd, cmd_id, client, asyncio.get_event_loop())
+            print(f"[BACKEND-DEBUG] Thread created for cmd_id: {cmd_id}")
             client.handler_info.set_subprogram(cmd_id, thread)
             await response(client, cmd_id, 0, None)
             client.handler_info.start_subprogram(cmd_id)

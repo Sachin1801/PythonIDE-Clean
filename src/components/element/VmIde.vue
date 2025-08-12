@@ -336,6 +336,7 @@ export default {
       } else {
         // For regular files, fetch content as before
         this.$store.dispatch(`ide/${types.IDE_GET_FILE}`, {
+          projectName: this.ideInfo.currProj?.data?.name, // Ensure project name is passed
           filePath: path,
           callback: (dict) => {
             if (dict.code == 0) {
@@ -347,6 +348,8 @@ export default {
               });
               if (save !== false)
                 self.$store.dispatch(`ide/${types.IDE_SAVE_PROJECT}`, {});
+            } else {
+              console.error('Failed to get file:', path, dict);
             }
           }
         });

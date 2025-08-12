@@ -21,7 +21,7 @@ fig.suptitle('Matplotlib Test Plot', fontsize=16)
 # Plot 1: Sine wave
 axes[0, 0].plot(x, y1, 'b-', linewidth=2)
 axes[0, 0].set_title('Sine Wave')
-axes[0, 0].set_xlabel('x')fffffffffffffffffffffffffffff
+axes[0, 0].set_xlabel('x')
 axes[0, 0].set_ylabel('sin(x)')
 axes[0, 0].grid(True, alpha=0.3)
 

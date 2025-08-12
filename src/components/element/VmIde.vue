@@ -9,6 +9,8 @@
       v-on:run-item="runPathSelected"
       @stop-item="stop"
       @theme-changed="handleThemeChange"
+      @open-upload-dialog="showUploadDialog = true"
+      @download-file="downloadFile"
     ></TopMenu>
     <div id="total-frame" class="total-frame">
       <ProjTree id="left-frame" class="left-frame float-left"
@@ -163,6 +165,7 @@
         @on-cancel="onCloseTextDialog" @on-create="onCreate"></DialogText>
       <DialogDelete v-if="showDeleteDialog" :title="dialogTitle"
         @on-cancel="onCancelDelete" @on-delete="onDelete"></DialogDelete>
+      <DialogUpload v-if="showUploadDialog" v-model="showUploadDialog" @refresh-tree="refreshProjectTree" @close="showUploadDialog = false"></DialogUpload>
     </div>
   </div>
 </template>
@@ -179,6 +182,7 @@ import IdeEditor from './pages/ide/IdeEditor';
 import DialogProjs from './pages/ide/dialog/DialogProjs';
 import DialogText from './pages/ide/dialog/DialogText';
 import DialogDelete from './pages/ide/dialog/DialogDelete';
+import DialogUpload from './pages/ide/dialog/DialogUpload';
 const path = require('path');
 
 export default {
@@ -187,6 +191,7 @@ export default {
       showDeleteDialog: false,
       showFileDialog: false,
       showProjsDialog: false,
+      showUploadDialog: false,
       showCover: true,
       
       dialogType: '',
@@ -230,6 +235,7 @@ export default {
     DialogProjs,
     DialogText,
     DialogDelete,
+    DialogUpload,
   },
   created() {
   },
@@ -249,7 +255,8 @@ export default {
             clearInterval(t);
             if (dict.code == 0) {
               this.$store.commit('ide/handleProjects', dict.data);
-              self.getProject();
+              // Load all default projects instead of just one
+              self.loadAllDefaultProjects();
             }
           }
         })
@@ -271,6 +278,14 @@ export default {
       else
         return false;
     },
+    isMediaFile() {
+      if (this.ideInfo.codeSelected.path) {
+        const mediaExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.webp', '.pdf'];
+        const path = this.ideInfo.codeSelected.path.toLowerCase();
+        return mediaExtensions.some(ext => path.endsWith(ext));
+      }
+      return false;
+    },
     consoleLimit() {
       let count = 0;
       for (let i = 0; i < this.ideInfo.consoleItems.length; i++) {
@@ -286,7 +301,7 @@ export default {
     showConsole() {
       const show = this.ideInfo.consoleItems.length !== 0;
       return show;
-    },
+    }
   },
   methods: {
     toggleConsole() {
@@ -295,6 +310,65 @@ export default {
     handleThemeChange(theme) {
       // Theme change event handler - can be used for additional logic if needed
       console.log('Theme changed to:', theme);
+    },
+    downloadFile(fileInfo) {
+      // Check if it's a binary file
+      const binaryExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.pdf', '.zip', '.tar', '.gz'];
+      const isBinary = binaryExtensions.some(ext => fileInfo.fileName.toLowerCase().endsWith(ext));
+      
+      this.$store.dispatch(`ide/${types.IDE_GET_FILE}`, {
+        projectName: fileInfo.projectName,
+        filePath: fileInfo.filePath,
+        binary: isBinary,
+        callback: (dict) => {
+          if (dict.code == 0) {
+            // Create download link
+            const blob = isBinary 
+              ? new Blob([Uint8Array.from(atob(dict.data), c => c.charCodeAt(0))], { type: 'application/octet-stream' })
+              : new Blob([dict.data], { type: 'text/plain' });
+            
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = fileInfo.fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+            
+            ElMessage({
+              type: 'success',
+              message: `Downloaded ${fileInfo.fileName}`,
+              duration: 2000
+            });
+          } else {
+            ElMessage({
+              type: 'error',
+              message: `Failed to download ${fileInfo.fileName}`,
+              duration: 3000
+            });
+          }
+        }
+      });
+    },
+    refreshProjectTree() {
+      // Refresh the project tree by re-fetching the project data
+      const self = this;
+      if (this.ideInfo.currProj && this.ideInfo.currProj.data) {
+        this.$store.dispatch(`ide/${types.IDE_GET_PROJECT}`, {
+          projectName: this.ideInfo.currProj.data.name,
+          callback: (dict) => {
+            if (dict.code == 0) {
+              self.$store.commit('ide/handleProject', dict.data);
+              ElMessage({
+                type: 'success',
+                message: 'Project tree refreshed successfully',
+                duration: 2000
+              });
+            }
+          }
+        });
+      }
     },
     inputIsLegal(text, callback) {
       this.dialogText = text;
@@ -388,6 +462,39 @@ export default {
         }
       });
     },
+    loadAllDefaultProjects() {
+      const self = this;
+      const defaultProjects = ['Local', 'Lecture Notes', 'Python'];
+      const loadedProjects = [];
+      let loadCount = 0;
+      
+      defaultProjects.forEach(projectName => {
+        // Check if project exists in the list
+        const projectExists = this.ideInfo.projList.some(p => p.name === projectName);
+        if (projectExists) {
+          this.$store.dispatch(`ide/${types.IDE_GET_PROJECT}`, {
+            projectName: projectName,
+            callback: (dict) => {
+              if (dict.code == 0) {
+                loadedProjects.push(dict.data);
+                loadCount++;
+                
+                // When all projects are loaded, combine them
+                if (loadCount === defaultProjects.filter(p => 
+                  self.ideInfo.projList.some(proj => proj.name === p)
+                ).length) {
+                  self.$store.commit('ide/handleMultipleProjects', loadedProjects);
+                  // Also set the first project as current for compatibility
+                  if (loadedProjects.length > 0) {
+                    self.$store.commit('ide/handleProject', loadedProjects[0]);
+                  }
+                }
+              }
+            }
+          });
+        }
+      });
+    },
     getProject(name) {
       const self = this;
       this.$store.dispatch(`ide/${types.IDE_GET_PROJECT}`, {
@@ -404,20 +511,41 @@ export default {
     },
     getFile(path, save) {
       const self = this;
-      this.$store.dispatch(`ide/${types.IDE_GET_FILE}`, {
-        filePath: path,
-        callback: (dict) => {
-          if (dict.code == 0) {
-            self.$store.commit('ide/handleGetFile', {
-              filePath: path,
-              data: dict.data,
-              save: save
-            });
-            if (save !== false)
-              self.$store.dispatch(`ide/${types.IDE_SAVE_PROJECT}`, {});
+      // Check if it's a media file
+      const mediaExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.webp', '.pdf'];
+      const isMediaFile = mediaExtensions.some(ext => path.toLowerCase().endsWith(ext));
+      
+      if (isMediaFile) {
+        // For media files, don't fetch content, just add to tabs
+        self.$store.commit('ide/handleGetFile', {
+          filePath: path,
+          data: '', // Empty content for media files
+          save: save,
+          isMedia: true
+        });
+        if (save !== false)
+          self.$store.dispatch(`ide/${types.IDE_SAVE_PROJECT}`, {});
+      } else {
+        // For regular files, fetch content as before
+        this.$store.dispatch(`ide/${types.IDE_GET_FILE}`, {
+          projectName: this.ideInfo.currProj?.data?.name, // Ensure project name is passed
+          filePath: path,
+          callback: (dict) => {
+            if (dict.code == 0) {
+              self.$store.commit('ide/handleGetFile', {
+                filePath: path,
+                data: dict.data,
+                save: save,
+                isMedia: false
+              });
+              if (save !== false)
+                self.$store.dispatch(`ide/${types.IDE_SAVE_PROJECT}`, {});
+            } else {
+              console.error('Failed to get file:', path, dict);
+            }
           }
-        }
-      });
+        });
+      }
     },
     setTextDialog(data) {
       this.dialogType = data.type;
@@ -599,7 +727,8 @@ export default {
         this.deleteFile(this.ideInfo.nodeSelected.path);
       }
       else {
-        if (this.ideInfo.nodeSelected.type === 'dir') {
+        // Check for both 'dir' and 'folder' types
+        if (this.ideInfo.nodeSelected.type === 'dir' || this.ideInfo.nodeSelected.type === 'folder') {
           // delete folder
           this.deleteFolder(this.ideInfo.nodeSelected.path);
         }
@@ -862,6 +991,8 @@ export default {
           run: false,
           stop: false,
           id: this.ideInfo.consoleId,
+          waitingForInput: false,
+          inputPrompt: ''
         }
         this.$store.commit('ide/addConsoleItem', item);
         this.$store.commit('ide/setConsoleSelected', item);
@@ -1501,6 +1632,10 @@ Advanced packages (install with micropip):
   background-color: var(--bg-primary, #1E1E1E);
   color: var(--text-primary, #CCCCCC);
   transition: background-color 0.3s ease, color 0.3s ease;
+  width: 100%;
+  height: 100vh;
+  position: relative;
+  overflow: hidden;
 }
 a {
   color: white;
@@ -1509,10 +1644,11 @@ a {
   /*background-color:gray;*/
   position: fixed;
   width: 100%;
-  height: 100%;
+  height: calc(100% - 50px); /* Subtract header height */
   top: 50px;
   /* top: 76px; */
   left: 0;
+  z-index: 1; /* Below header */
   /* display: inline-flex; */
   /* left: 10px; */
   /* border:1px solid #96c2f1; */
@@ -1534,6 +1670,7 @@ body {
   /* background: #252526; */
   display: flex;
   align-items: center;
+  z-index: 9999; /* Ensure header stays on top of everything */
 }
 .top-tab {
   width: 100%;

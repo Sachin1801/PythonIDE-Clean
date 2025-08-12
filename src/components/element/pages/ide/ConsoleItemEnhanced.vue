@@ -43,6 +43,10 @@ export default {
     }
   },
   mounted() {
+    console.log('[FRONTEND-CONSOLE-DEBUG] ConsoleItemEnhanced mounted');
+    console.log('[FRONTEND-CONSOLE-DEBUG] Item:', this.item);
+    console.log('[FRONTEND-CONSOLE-DEBUG] waitingForInput:', this.item.waitingForInput);
+    console.log('[FRONTEND-CONSOLE-DEBUG] inputPrompt:', this.item.inputPrompt);
     this.focusInput();
   },
   computed: {
@@ -63,9 +67,13 @@ export default {
     },
     'item.waitingForInput'(newVal) {
       // Input state changed
+      console.log('[FRONTEND-CONSOLE-DEBUG] waitingForInput changed to:', newVal);
+      console.log('[FRONTEND-CONSOLE-DEBUG] Input prompt:', this.item.inputPrompt);
       if (newVal) {
+        console.log('[FRONTEND-CONSOLE-DEBUG] Showing input field...');
         // Show input field
         this.$nextTick(() => {
+          console.log('[FRONTEND-CONSOLE-DEBUG] Focusing input field...');
           this.focusInput();
         });
       }
@@ -73,9 +81,17 @@ export default {
   },
   methods: {
     sendInput() {
+      console.log('[FRONTEND-CONSOLE-DEBUG] sendInput called with:', this.userInput);
       if (this.userInput.trim() || this.userInput === '') {
         // Send input to backend
         if (window.GlobalStore) {
+          console.log('[FRONTEND-CONSOLE-DEBUG] Sending input to backend:', {
+            cmd: 'send_program_input',
+            data: {
+              program_id: this.item.id,
+              input: this.userInput
+            }
+          });
           window.GlobalStore.commit('websocket/sendCmd', {
             cmd: 'send_program_input',
             data: {
@@ -87,6 +103,7 @@ export default {
           // Don't add user input to console output - backend will echo it
           
           // Clear waiting state
+          console.log('[FRONTEND-CONSOLE-DEBUG] Clearing waiting state');
           window.GlobalStore.commit('ide/setConsoleWaiting', {
             id: this.item.id,
             waiting: false
@@ -95,6 +112,7 @@ export default {
         
         // Clear input
         this.userInput = '';
+        console.log('[FRONTEND-CONSOLE-DEBUG] Input cleared');
       }
     },
     cancelInput() {

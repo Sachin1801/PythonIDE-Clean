@@ -8,26 +8,30 @@
         </div>
       </div>
       <table>
-        <tr>
-          <th class="dialog-table-head">Project Name</th>
-          <th class="dialog-table-head">Time</th>
-          <th class="dialog-table-head">Options</th>
-        </tr>
+        <thead>
+          <tr>
+            <th class="dialog-table-head">Project Name</th>
+            <th class="dialog-table-head">Time</th>
+            <th class="dialog-table-head">Options</th>
+          </tr>
+        </thead>
       </table>
       <div class="dialog-table">
         <table>
-          <template v-for="data in ideInfo.projList" :key="data.name">
-            <tr @dblclick="$emit('onSelect', data.name)">
-              <td>{{ data.name }}</td>
-              <td>{{ data.ctime }}</td>
-              <td>
-                <div class="float-left proj-selected" v-if="ideInfo.currProj.data.name === data.name"></div>
-                <div class="float-left proj-open" v-if="ideInfo.currProj.data.name !== data.name" @click="$emit('onSelect', data.name)">Open</div>
-                <!-- btn_trash.svg -->
-                <div class="proj-icon-trash float-left" v-if="ideInfo.currProj.data.name !== data.name" @click="$emit('onDelete', data.name)"></div>
-              </td>
-            </tr>
-          </template>
+          <tbody>
+            <template v-for="data in ideInfo.projList" :key="data.name">
+              <tr @dblclick="$emit('onSelect', data.name)">
+                <td>{{ data.name }}</td>
+                <td>{{ data.ctime }}</td>
+                <td>
+                  <div class="float-left proj-selected" v-if="ideInfo.currProj.data.name === data.name"></div>
+                  <div class="float-left proj-open" v-if="ideInfo.currProj.data.name !== data.name" @click="$emit('onSelect', data.name)">Open</div>
+                  <!-- btn_trash.svg -->
+                  <div class="proj-icon-trash float-left" v-if="ideInfo.currProj.data.name !== data.name" @click="$emit('onDelete', data.name)"></div>
+                </td>
+              </tr>
+            </template>
+          </tbody>
         </table>
       </div>
       <div class="dialog-add">

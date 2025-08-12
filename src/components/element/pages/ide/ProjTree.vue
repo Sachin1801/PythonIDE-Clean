@@ -1,10 +1,16 @@
 <template>
-  <div>
+  <div class="proj-tree-container">
+    <div class="tree-header">
+      <span class="tree-title">Project Files</span>
+      <div class="refresh-btn" @click="refreshTree" title="Refresh">
+        <RefreshCw :size="16" />
+      </div>
+    </div>
     <el-tree
       id="tree-root"
       class="ide-project-list noselected"
       :props="treeProps"
-      :data="[ideInfo.currProj.data]"
+      :data="treeData"
       node-key="uuid"
       ref="tree"
       highlight-current
@@ -28,8 +34,13 @@
 <script>
 import * as types from '../../../../store/mutation-types';
 import { getIconForFile, getIconForFolder, getIconForOpenFolder } from 'vscode-icons-js';
+import { RefreshCw } from 'lucide-vue-next';
+import { ElMessage } from 'element-plus';
 
 export default {
+  components: {
+    RefreshCw,
+  },
   data() {
     return {
       getFile: true,
@@ -41,6 +52,59 @@ export default {
     }
   },
   methods: {
+    refreshTree() {
+      // Refresh all projects if in multi-root mode
+      const self = this;
+      
+      if (this.ideInfo.allProjects && this.ideInfo.allProjects.length > 0) {
+        // Multi-root mode - refresh all projects
+        const projectsToRefresh = this.ideInfo.allProjects.map(p => p.name);
+        const refreshedProjects = [];
+        let refreshCount = 0;
+        
+        projectsToRefresh.forEach(projectName => {
+          this.$store.dispatch(`ide/${types.IDE_GET_PROJECT}`, {
+            projectName: projectName,
+            callback: (dict) => {
+              if (dict.code == 0) {
+                refreshedProjects.push(dict.data);
+                refreshCount++;
+                
+                // When all projects are refreshed, update the multi-root view
+                if (refreshCount === projectsToRefresh.length) {
+                  self.$store.commit('ide/handleMultipleProjects', refreshedProjects);
+                  // Update current project if it was refreshed
+                  const currentProjData = refreshedProjects.find(p => p.name === self.ideInfo.currProj.data.name);
+                  if (currentProjData) {
+                    self.$store.commit('ide/handleProject', currentProjData);
+                  }
+                  ElMessage({
+                    type: 'success',
+                    message: 'All project trees refreshed',
+                    duration: 2000
+                  });
+                }
+              }
+            }
+          });
+        });
+      } else if (this.ideInfo.currProj && this.ideInfo.currProj.data) {
+        // Single project mode - refresh current project
+        this.$store.dispatch(`ide/${types.IDE_GET_PROJECT}`, {
+          projectName: this.ideInfo.currProj.data.name,
+          callback: (dict) => {
+            if (dict.code == 0) {
+              self.$store.commit('ide/handleProject', dict.data);
+              ElMessage({
+                type: 'success',
+                message: 'Project tree refreshed',
+                duration: 2000
+              });
+            }
+          }
+        });
+      }
+    },
     getIconUrl(data) {
       if (data.type === 'file') {
         return require(`@/assets/vscode-icons/${getIconForFile(data.path.substring(data.path.lastIndexOf('.') + 1))}`);
@@ -66,6 +130,16 @@ export default {
     },
     handleNodeClick(data) {
       this.$store.commit('ide/setNodeSelected', data);
+      
+      // In multi-root mode, we need to set the correct project as current
+      if (this.ideInfo.multiRootData && data.projectName) {
+        // Find and set the project that contains this file
+        const project = this.ideInfo.allProjects.find(p => p.name === data.projectName);
+        if (project) {
+          this.$store.commit('ide/handleProject', project);
+        }
+      }
+      
       if (data.type === 'file')
         this.$emit('get-item', data.path);
       // if (this.getFile === true && data.type === 'file') {
@@ -110,12 +184,30 @@ export default {
     ideInfo() {
       return this.$store.state.ide.ideInfo;
     },
+    treeData() {
+      // Use multi-root data if available, otherwise fall back to single project
+      if (this.ideInfo.multiRootData && this.ideInfo.multiRootData.children.length > 0) {
+        return this.ideInfo.multiRootData.children;
+      }
+      return this.ideInfo.currProj.data ? [this.ideInfo.currProj.data] : [];
+    },
     expandedKeys() {
       return this.ideInfo ? this.ideInfo.currProj.expandedKeys : [];
     },
     defaultExpandedKeys() {
+      const expandedKeys = [];
+      
+      // Always expand root folders in multi-root mode
+      if (this.ideInfo.multiRootData && this.ideInfo.multiRootData.children.length > 0) {
+        this.ideInfo.multiRootData.children.forEach(project => {
+          if (project.uuid) {
+            expandedKeys.push(project.uuid);
+          }
+        });
+      }
+      
+      // Also process existing expanded keys
       if (this.expandedKeys !== undefined) {
-        const expandedKeys = []
         for (let i = 0; i < this.expandedKeys.length; i++) {
           let prefix = '';
           const tmp = this.expandedKeys[i].split('/');
@@ -141,11 +233,9 @@ export default {
             }
           }
         }
-        return expandedKeys;
       }
-      else {
-        return [];
-      }
+      
+      return [...new Set(expandedKeys)]; // Remove duplicates
     }
   }
 }
@@ -199,9 +289,61 @@ export default {
 </style>
 
 <style scoped>
+.proj-tree-container {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.tree-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.tree-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #CCCCCC;
+}
+
+.refresh-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s;
+  color: #CCCCCC;
+}
+
+.refresh-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #409eff;
+}
+
+.refresh-btn:hover svg {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .ide-project-list {
   background: #282828;
   color: #CCCCCC;
+  flex: 1;
+  overflow-y: auto;
   /* padding-left: 10px; */
   /* padding-right: 10px; */
 }

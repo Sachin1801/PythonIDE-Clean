@@ -84,11 +84,7 @@ export default {
             }
           });
           
-          // Add user input to console output
-          window.GlobalStore.commit('ide/addConsoleOutput', {
-            id: this.item.id,
-            output: `${this.item.inputPrompt}${this.userInput}`
-          });
+          // Don't add user input to console output - backend will echo it
           
           // Clear waiting state
           window.GlobalStore.commit('ide/setConsoleWaiting', {
@@ -163,6 +159,8 @@ export default {
   flex-direction: column;
   background: #232323;
   overflow: hidden;
+  height: 100%;
+  max-height: 100%;
 }
 
 .console-output {
@@ -188,6 +186,9 @@ export default {
   padding: 8px;
   background: #1e1e1e;
   border-top: 1px solid #3A3D41;
+  flex-shrink: 0;
+  min-height: 40px;
+  max-height: 40px;
 }
 
 .input-prompt {

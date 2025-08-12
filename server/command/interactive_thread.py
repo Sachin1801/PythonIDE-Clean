@@ -266,7 +266,7 @@ exec(compile(__user_code__, __user_script_path__, 'exec'))
                                     waiting_for_input = False
                                     input_received = True
                                     
-                                    # Echo the input to console (don't echo prompt again, just the input)
+                                    # Echo the input to simulate terminal behavior
                                     self.response_to_client(0, {'stdout': user_input})
                                     break
                                 except Empty:

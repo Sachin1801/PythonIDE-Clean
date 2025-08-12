@@ -1,38 +1,66 @@
 <template>
   <div>
-    <div class="back-icon float-left" @click="backHome"><el-icon><back /></el-icon></div>
-    <div class="project-icon float-left" @click="listProjects()" title="Project List"></div>
-    <div v-if="ideInfo.nodeSelected !== null && ideInfo.nodeSelected.type === 'dir'" class="file-icon float-left" @click="newFile()" title="New File"></div>
-    <div v-else class="file-icon float-left disable-icon" title="New File"></div>
-    <div v-if="ideInfo.nodeSelected !== null && ideInfo.nodeSelected.type === 'dir'" class="folder-icon float-left" @click="newFolder()" title="New Folder"></div>
-    <div v-else class="folder-icon float-left disable-icon" title="New Folder"></div>
-    <div v-if="ideInfo.nodeSelected !== null" class="rename-icon float-left" @click="rename()" title="Rename"></div>
-    <div v-else class="rename-icon float-left disable-icon" title="Rename"></div>
-    <div v-if="ideInfo.nodeSelected !== null && ideInfo.nodeSelected.path !== '/'" class="del-icon float-left" @click="delFile()" title="Delete"></div>
-    <div v-else class="del-icon float-left disable-icon" title="Delete"></div>
-    <div class="status-icon float-left" title="Status" :class="{'el-icon-circle-check': wsInfo.connected, 'el-icon-circle-close': !wsInfo.connected}" :style="{color: wsInfo.connected ? '#52bf53' : '#e15960'}"></div>
-    <!-- Bug Report Button -->
-    <div class="bug-report-icon float-right" @click="showBugReport = true" title="Report a Bug"></div>
-    <!-- Theme Toggle Button -->
-    <div class="theme-toggle float-right " @click="toggleTheme" :title="isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'">
-      <el-icon v-if="isDarkMode"><moon /></el-icon>
-      <el-icon v-else><sunny /></el-icon>
+    <div class="icon-btn float-left" @click="backHome" title="Back">
+      <ArrowLeft :size="24" />
     </div>
-    <span>
-      <div class="float-right stop-icon" @click="stopAll()" v-if="hasRunProgram" title="Stop all running scripts"></div>
-      <!-- <div class="float-right stop-icon-disabled" v-if="!hasRunProgram" title="Stop all running scripts"></div> -->
-    </span>
-    <span>
-      <div class="run-icon float-right" v-if="isPythonFile && !consoleLimit" @click="$emit('run-item')" title="Run current selected script"></div>
-      <div class="run-icon-disabled float-right" v-if="!isPythonFile && !consoleLimit" title="Cannot run, current selected file is not a Python file"></div>
-    </span>
+    <div class="icon-btn float-left" @click="listProjects()" title="Project List">
+      <FolderOpen :size="20" />
+    </div>
+    <div v-if="ideInfo.nodeSelected !== null && ideInfo.nodeSelected.type === 'dir'" class="icon-btn float-left" @click="newFile()" title="New File">
+      <FilePlus :size="20" />
+    </div>
+    <div v-else class="icon-btn float-left disable-icon" title="New File">
+      <FilePlus :size="20" />
+    </div>
+    <div v-if="ideInfo.nodeSelected !== null && ideInfo.nodeSelected.type === 'dir'" class="icon-btn float-left" @click="newFolder()" title="New Folder">
+      <FolderPlus :size="20" />
+    </div>
+    <div v-else class="icon-btn float-left disable-icon" title="New Folder">
+      <FolderPlus :size="20" />
+    </div>
+    <div v-if="ideInfo.nodeSelected !== null" class="icon-btn float-left" @click="rename()" title="Rename">
+      <Edit2 :size="20" />
+    </div>
+    <div v-else class="icon-btn float-left disable-icon" title="Rename">
+      <Edit2 :size="20" />
+    </div>
+    <div v-if="ideInfo.nodeSelected !== null && ideInfo.nodeSelected.path !== '/'" class="icon-btn float-left" @click="delFile()" title="Delete">
+      <Trash2 :size="20" />
+    </div>
+    <div v-else class="icon-btn float-left disable-icon" title="Delete">
+      <Trash2 :size="20" />
+    </div>
+    <div class="icon-btn float-left" title="Status">
+      <CheckCircle2 v-if="wsInfo.connected" :size="20" :style="{color: '#52bf53'}" />
+      <XCircle v-else :size="20" :style="{color: '#e15960'}" />
+    </div>
+    <!-- Run Button -->
+    <div class="icon-btn float-left" v-if="isPythonFile && !consoleLimit" @click="$emit('run-item')" title="Run current selected script">
+      <Play :size="20" />
+    </div>
+    <div class="icon-btn float-left disable-icon" v-if="!isPythonFile && !consoleLimit" title="Cannot run, current selected file is not a Python file">
+      <Play :size="20" />
+    </div>
+    <!-- Stop Button -->
+    <div class="icon-btn float-left" @click="stopAll()" v-if="hasRunProgram" title="Stop all running scripts">
+      <Square :size="20" />
+    </div>
+    <!-- Theme Toggle Button -->
+    <div class="icon-btn float-left" @click="toggleTheme" :title="isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'">
+      <Moon v-if="isDarkMode" :size="20" />
+      <Sun v-else :size="20" />
+    </div>
+    <!-- Bug Report Button - Far Right -->
+    <div class="icon-btn bug-report-btn" @click="showBugReport = true" title="Report a Bug">
+      <Bug :size="20" />
+    </div>
     <!-- Bug Report Modal -->
     <BugReportModal v-model="showBugReport" />
   </div>
 </template>
 
 <script>
-import { Back, Moon, Sunny } from '@element-plus/icons';
+import { ArrowLeft, Moon, Sun, FolderOpen, FilePlus, FolderPlus, Edit2, Trash2, CheckCircle2, XCircle, Bug, Square, Play } from 'lucide-vue-next';
 import BugReportModal from './BugReportModal.vue';
 // import * as types from '../../../../store/mutation-types';
 const path = require('path');
@@ -62,9 +90,19 @@ export default {
     },
   },
   components: {
-    Back,
+    ArrowLeft,
     Moon,
-    Sunny,
+    Sun,
+    FolderOpen,
+    FilePlus,
+    FolderPlus,
+    Edit2,
+    Trash2,
+    CheckCircle2,
+    XCircle,
+    Bug,
+    Square,
+    Play,
     BugReportModal,
   },
   mounted() {
@@ -245,163 +283,57 @@ export default {
 </script>
 
 <style scoped>
-.back-icon {
-  margin-top: 12px;
-  margin-right: 10px;
-  margin-left: 10px;
-  font-size: 24px;
-}
-.project-icon {
-  margin-left: 17px;
-  margin-top: 17px;
+.icon-btn {
+  margin: 13px 8px;
+  padding: 6px;
   width: 32px;
   height: 32px;
-  background-image: url('~@/assets/img/ide/btn_addproject.svg');
-  background-size: 18px 16px;
-  background-repeat: no-repeat;
-  background-position: center;
-  cursor: pointer;
-}
-.folder-icon {
-  margin-left: 20px;
-  margin-top: 9px;
-  width: 32px;
-  height: 32px;
-  background-image: url('~@/assets/img/ide/btn_addfolder.svg');
-  background-size: 24px 24px;
-  background-repeat: no-repeat;
-  background-position: center;
-  cursor: pointer;
-}
-.file-icon {
-  margin-left: 10px;
-  margin-top: 9px;
-  width: 32px;
-  height: 32px;
-  background-image: url('~@/assets/img/ide/icon_addfile.svg');
-  background-size: 24px 24px;
-  background-repeat: no-repeat;
-  background-position: center;
-  cursor: pointer;
-}
-.rename-icon {
-  margin-left: 20px;
-  margin-top: 9px;
-  width: 32px;
-  height: 32px;
-  background-image: url('~@/assets/img/ide/btn_rename.svg');
-  background-size: 24px 24px;
-  background-repeat: no-repeat;
-  background-position: center;
-  cursor: pointer;
-}
-.del-icon {
-  margin-left: 20px;
-  margin-top: 9px;
-  width: 32px;
-  height: 32px;
-  background-image: url('~@/assets/img/ide/btn_trash.svg');
-  background-size: 24px 24px;
-  background-repeat: no-repeat;
-  background-position: center;
-  cursor: pointer;
-}
-.status-icon {
-  margin-left: 20px;
-  margin-top: 15px;
-  width: 32px;
-  height: 32px;
-  color: '#52bf53';
-  font-size: 24px;
-}
-.disable-icon {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-.stop-icon {
-  margin-right: 20px;
-  margin-top: 13px;
-  width: 24px;
-  height: 24px;
-  color: #656666;
-  background-image: url('~@/assets/img/ide/icon_stop.svg');
-  background-size: 20px 20px;
-  background-repeat: no-repeat;
-  background-position: center;
-  cursor: pointer;
-}
-.stop-icon-disabled {
-  margin-right: 20px;
-  margin-top: 13px;
-  width: 24px;
-  height: 24px;
-  background-image: url('~@/assets/img/ide/icon_stop_gray.svg');
-  background-size: 20px 20px;
-  background-repeat: no-repeat;
-  background-position: center;
-  cursor: pointer;
-}
-.run-icon {
-  margin-right: 30px;
-  margin-top: 13px;
-  width: 24px;
-  height: 24px;
-  background-image: url('~@/assets/img/ide/icon_running.svg');
-  background-size: 20px 20px;
-  background-repeat: no-repeat;
-  background-position: center;
-  cursor: pointer;
-}
-.run-icon-disabled {
-  margin-right: 30px;
-  margin-top: 13px;
-  width: 24px;
-  height: 24px;
-  background-image: url('~@/assets/img/ide/icon_running_gray.svg');
-  background-size: 20px 20px;
-  background-repeat: no-repeat;
-  background-position: center;
-  cursor: pointer;
-}
-.theme-toggle {
-  margin-right: 15px;
-  margin-top: 13px;
-  padding: 8px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  color: #fff;
-  font-size: 24px;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
-}
-.theme-toggle:hover {
-  transform: scale(1.1);
-  color: #409eff;
-}
-.bug-report-icon {
-  margin-right: 15px;
-  margin-top: 13px;
-  width: 32px;
-  height: 32px;
   cursor: pointer;
   transition: all 0.3s ease;
-  position: relative;
+  color: #ffffff;
   border-radius: 4px;
 }
-.bug-report-icon::before {
-  content: '🐛';
-  font-size: 24px;
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-}
-.bug-report-icon:hover {
+.icon-btn:hover {
   transform: scale(1.1);
+  color: #409eff;
+  background: rgba(64, 158, 255, 0.2);
 }
-.bug-report-icon:hover::before {
-  content: '🔴';
+.icon-btn.float-left {
+  margin-left: 12px;
+  margin-right: 12px;
+}
+.icon-btn.float-left:first-child {
+  margin-left: 16px;
+}
+.icon-btn.float-right {
+  margin-left: 12px;
+  margin-right: 12px;
+}
+.icon-btn.float-right:last-of-type {
+  margin-right: 20px;
+}
+.disable-icon {
+  opacity: 0.4;
+  cursor: not-allowed;
+  color: rgba(255, 255, 255, 0.4);
+}
+.disable-icon:hover {
+  transform: none;
+  color: rgba(255, 255, 255, 0.4);
+  background: none;
+}
+.bug-report-btn {
+  position: absolute;
+  right: 20px;
+  top: 13px;
+  margin: 0;
+}
+.bug-report-btn:hover {
+  transform: none;
+  color: #409eff;
+  background: rgba(64, 158, 255, 0.2);
 }
 </style>

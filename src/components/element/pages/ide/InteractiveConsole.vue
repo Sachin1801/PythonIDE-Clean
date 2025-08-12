@@ -116,7 +116,7 @@
 </template>
 
 <script>
-import { ref, reactive, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { 
   VideoPlay, 
@@ -209,7 +209,7 @@ export default {
       
       const input = userInput.value
       
-      // Add user input to output
+      // Echo user input to simulate terminal behavior
       addOutput(input, 'user-input')
       
       // Send to backend

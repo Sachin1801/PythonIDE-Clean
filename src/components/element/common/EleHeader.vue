@@ -3,15 +3,15 @@
     <!-- <div class="v-collapse-btn" @click="$emit('update:collapse', !collapse)"> -->
     <!-- <div class="v-collapse-btn" @click="$emit('reverseCollapse')"> -->
     <div class="v-collapse-btn" @click="$emit('reverseCollapse', !collapse)">
-      <el-icon v-if="collapse"><fold /></el-icon>
-      <el-icon v-else><expand /></el-icon>
+      <ChevronRight v-if="collapse" :size="24" style="color: #fff;" />
+      <ChevronLeft v-else :size="24" style="color: #fff;" />
     </div>
     <div class="v-title">Element Component Display</div>
   </div>
 </template>
 
 <script>
-import {Fold, Expand} from '@element-plus/icons';
+import { ChevronRight, ChevronLeft } from 'lucide-vue-next';
 
 export default {
   props: {
@@ -22,8 +22,8 @@ export default {
     }
   },
   components: {
-    Fold,
-    Expand
+    ChevronRight,
+    ChevronLeft
   }
 }
 </script>

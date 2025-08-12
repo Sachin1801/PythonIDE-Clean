@@ -53,7 +53,6 @@
             </ConsoleItemEnhanced>
           </template>
         </div>
-        <CmdRun class="float-left result-frame" v-show="!isMarkdown" @height-changed="onCmdHeightChanged"></CmdRun>
       </div>
       <DialogProjs v-if="showProjsDialog"
         @on-cancel="onCloseProjsDialog" @on-select="onSelectProj" @on-delete="onDeleteProj" 
@@ -73,7 +72,6 @@ import TopMenu from './pages/ide/TopMenu';
 import CodeTabs from './pages/ide/CodeTabs';
 import ConsoleItemEnhanced from './pages/ide/ConsoleItemEnhanced';
 import ConsoleTabs from './pages/ide/ConsoleTabs';
-import CmdRun from './pages/ide/CmdRun';
 import ProjTree from './pages/ide/ProjTree';
 import IdeEditor from './pages/ide/IdeEditor';
 import DialogProjs from './pages/ide/dialog/DialogProjs';
@@ -93,7 +91,6 @@ export default {
       dialogTitle: '',
       dialogTips: '',
       dialogText: '',
-      cmdInputHeight: 30,
     }
   },
   components: {
@@ -101,7 +98,6 @@ export default {
     CodeTabs,
     ConsoleItemEnhanced,
     ConsoleTabs,
-    CmdRun,
     ProjTree,
     IdeEditor,
     DialogProjs,
@@ -166,19 +162,6 @@ export default {
     handleThemeChange(theme) {
       // Theme change event handler - can be used for additional logic if needed
       console.log('Theme changed to:', theme);
-    },
-    onCmdHeightChanged(height) {
-      this.cmdInputHeight = height;
-      // Update console frame position
-      const consoleFrame = document.querySelector('.console-frame');
-      const consoleDiv = document.querySelector('.console-div');
-      if (consoleFrame) {
-        consoleFrame.style.bottom = height + 'px';
-        consoleFrame.style.height = `calc(200px - ${height}px)`;
-      }
-      if (consoleDiv) {
-        consoleDiv.style.height = `calc(200px - ${height}px)`;
-      }
     },
     inputIsLegal(text, callback) {
       this.dialogText = text;
@@ -708,7 +691,9 @@ export default {
       // if (ele !== undefined && ele !== null) {
       //   ele.style.height = `${window.innerHeight - 30}px`;
       // }
-      this.$store.commit('ide/setCodeHeight', this.ideInfo.consoleItems.length === 0 ? window.innerHeight - 102 : window.innerHeight - 326); // 338
+      // Account for 1.25x scaling
+      const scaledHeight = window.innerHeight / 1.25;
+      this.$store.commit('ide/setCodeHeight', this.ideInfo.consoleItems.length === 0 ? scaledHeight - 102 : scaledHeight - 326); // 338
 
       // for (let i = 0; i < this.ideInfo.codeItems.length; i++) {
       //   if (this.ideInfo.codeItems[i].codemirror !== null) {
@@ -935,19 +920,12 @@ body {
   background-color:#e9e6d3;
   width: 100%;
   left: 0px;
-  bottom: 30px;
+  bottom: 0px;
   padding: 0px;
   margin: 0px;
   margin-top: 26px;
-  height: calc(200px - 60px); /* Adjusted to account for CmdRun height */
-  /* overflow-y: scroll;
-  overflow-x: scroll; */
-}
-.result-frame {
-  /* left: 200px;
-  bottom: 0px;
-  padding: 0px;
-  margin: 0px; */
-  width: calc(100% - 200px);
+  height: 200px;
+  max-height: 200px;
+  overflow: hidden;
 }
 </style>

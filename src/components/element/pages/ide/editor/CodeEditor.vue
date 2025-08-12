@@ -200,7 +200,7 @@ export default {
           //   Codemirror.registerHelper('hintWords', 'python', PythonHint);
           //   cm.showHint({ hint: CodeMirror.hint.anyword })
           // },
-          Ctrl: 'autocomplete',
+          // Ctrl: 'autocomplete', // Autocomplete disabled
 
           // Ctrl+/: Comment with Line Comment
           'Ctrl-/': 'toggleComment',
@@ -311,72 +311,16 @@ export default {
     codeChanged(value, cm) {
       cm.closeHint();
       this.$store.commit('ide/setCodeItemContent', {index: this.codeItemIndex, content: value});
-      const self = this;
-      const cursor = cm.getCursor();
-      let line = cm.getLine(cursor.line);
       
-      line = line.substring(0, cursor.ch);
-      const prefix = this.getPrefix(line);
-      // const complete = prefix || line.endsWith('@') || line.endsWith('.') || line.endsWith('*') || line.endsWith('?') || line.endsWith('+');
-      const complete = (prefix || line.endsWith('.')) && this.getFirstNonBlankChar(line) != '#';
-      // console.log('complete: ', complete, ', prefix=', prefix);
-
-      // if (!complete) return;
-      // const cursor2 = cm.getCursor();
-      // if (cursor2.line != cursor.line || cursor2.ch != cursor.ch) return;
-
-      // let completions = [].concat(PythonHint);
-      // if (prefix) {
-      //   completions = completions.concat([prefix]);
-      // }
-      // CodeMirror.registerHelper('hintWords', 'python', completions);
-      // cm.showHint({ hint: CodeMirror.hint.anyword })
-
+      // Write file without autocomplete
       this.$store.dispatch(`ide/${types.IDE_WRITE_FILE}`, {
         filePath: this.codeItem.path,
         fileData: value,
-        complete: this.isPython && complete,
-        line: cursor.line,
-        column: cursor.ch,
+        complete: false, // Autocomplete disabled
+        line: 0,
+        column: 0,
         callback: (dict) => {
-          if (!self.isPython) {
-            const cursor2 = cm.getCursor();
-            if (!complete || cursor2.line != cursor.line || cursor2.ch != cursor.ch) return;
-
-            let completions = [];
-            let helper = cm.getHelper(cursor, 'hint');
-            if (helper) {
-              helper = helper(cm);
-            }
-            if (helper) {
-              completions = helper.list;
-            }
-            else {
-              helper = cm.getHelper(cursor, 'hintWords');
-              if (helper)
-                completions = helper;
-            }
-            if (prefix) {
-              completions = completions.filter(item => item.startsWith(prefix)).concat([prefix]);
-            }
-            cm.showHint({ hint: self.anywordHint, list: completions });
-            // cm.showHint();
-            // CodeMirror.commands.autocomplete(cm);
-            // CodeMirror.showHint(cm);
-            return;
-          }
-          const completeDatas = dict.data;
-          if (!dict.data || completeDatas.length == 0) return;
-          const cursor2 = cm.getCursor();
-          if (cursor2.line != cursor.line || cursor2.ch != cursor.ch) return;
-
-          let completions = [].concat(completeDatas);
-          if (prefix) completions = completions.concat([prefix]);
-          // completions = self.model.ideModel.uniqueArr(completions);
-          cm.showHint({ hint: self.anywordHint, list: completions });
-          // CodeMirror.registerHelper('hintWords', 'python', completions);
-          // cm.showHint();
-          // // cm.showHint({ hint: CodeMirror.hint.anyword })
+          // No autocomplete callback needed
         }
       });
     },

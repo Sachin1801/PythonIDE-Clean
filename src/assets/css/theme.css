@@ -249,6 +249,10 @@ body {
   color: #858585 !important;
 }
 
+[data-theme="dark"] .CodeMirror-cursor {
+  border-left: 1px solid #d4d4d4 !important;
+}
+
 [data-theme="dark"] .cm-comment {
   color: #6a9955 !important;
 }
@@ -336,4 +340,20 @@ body {
   background-color: var(--bg-secondary) !important;
   border-top: 1px solid var(--border-primary) !important;
   color: var(--text-secondary) !important;
+}
+
+/* Fix CodeMirror coordinate system issues */
+.CodeMirror {
+  line-height: 1.4 !important;
+  font-size: 14px !important;
+}
+
+.CodeMirror-lines {
+  line-height: 1.4 !important;
+}
+
+.CodeMirror pre.CodeMirror-line,
+.CodeMirror pre.CodeMirror-line-like {
+  line-height: 1.4 !important;
+  padding: 0 4px !important;
 }

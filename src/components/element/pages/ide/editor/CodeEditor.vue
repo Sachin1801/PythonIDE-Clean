@@ -1,15 +1,14 @@
 <template>
-  <div>
+  <div class="code-editor-container">
     <!-- <div class="file-path">/{{ ideInfo.currProj.data.name + codeItem.path }}</div> -->
     <Codemirror
       :value="codeItemContent"
       @change="codeChanged"
-      style="width:100%;"
+      class="code-editor-flex"
       id="codemirror-id"
       :options="cmOptions"
-      :height="height"
       ref="codeEditor" />
-    <div class="float-clear"></div>
+    <!-- <div class="float-clear"></div> -->
   </div>
 </template>
 
@@ -24,23 +23,14 @@ import 'codemirror/theme/darcula.css';
 import 'codemirror/theme/monokai.css';
 import 'codemirror/theme/idea.css';
 import 'codemirror/theme/eclipse.css';
-// language
+// language - Python focused
 import 'codemirror/mode/python/python';  // .py
-import 'codemirror/mode/javascript/javascript';  // .js
-import 'codemirror/mode/htmlmixed/htmlmixed';  // .html
-import 'codemirror/mode/css/css';
-import 'codemirror/mode/go/go';
-import 'codemirror/mode/clike/clike';
-import 'codemirror/mode/swift/swift';
-import 'codemirror/mode/rust/rust';  // .rs
-import 'codemirror/mode/ruby/ruby';  // .rb
-import 'codemirror/mode/lua/lua';  // .rb
-import 'codemirror/mode/sass/sass';
+import 'codemirror/mode/htmlmixed/htmlmixed';  // .html (for notebooks)
+import 'codemirror/mode/css/css';  // .css (for notebooks)
 import 'codemirror/mode/shell/shell'; // .sh
-import 'codemirror/mode/sql/sql';
-import 'codemirror/mode/vue/vue';
-import 'codemirror/mode/xml/xml';
-import 'codemirror/mode/yaml/yaml';
+import 'codemirror/mode/sql/sql';  // .sql (for data science)
+import 'codemirror/mode/xml/xml';  // .xml
+import 'codemirror/mode/yaml/yaml';  // .yaml config files
 // active-line
 import 'codemirror/addon/selection/active-line';
 // comment
@@ -59,11 +49,7 @@ import 'codemirror/addon/fold/foldgutter.css';
 // hint
 import 'codemirror/addon/hint/show-hint';
 import 'codemirror/addon/hint/show-hint.css';
-import 'codemirror/addon/hint/javascript-hint';
-import 'codemirror/addon/hint/css-hint';
-import 'codemirror/addon/hint/xml-hint';
-import 'codemirror/addon/hint/html-hint';
-import 'codemirror/addon/hint/sql-hint';
+import 'codemirror/addon/hint/sql-hint';  // Keep SQL hint for data science
 // keymap
 import 'codemirror/keymap/sublime';
 // import PythonHint from '@/assets/lib/python-hint';
@@ -78,6 +64,7 @@ export default {
   },
   data () {
     return {
+      writeTimeout: null,
       codeOtherOptions: {
         py: {
           tabSize: 4,
@@ -97,38 +84,11 @@ export default {
             singleLineStringErrors: false,
           }
         },
-        js: {
-          mode: 'text/javascript'
-        },
         html: {
           mode: 'text/html'
         },
         css: {
           mode: 'text/css'
-        },
-        less: {
-          mode: 'text/x-less'
-        },
-        scss: {
-          mode: 'text/x-scss'
-        },
-        sass: {
-          mode: 'text/x-sass'
-        },
-        go: {
-          mode: 'text/x-go'
-        },
-        swift: {
-          mode: 'text/x-swift'
-        },
-        rs: {
-          mode: 'text/x-rustsrc'
-        },
-        rb: {
-          mode: 'text/x-ruby'
-        },
-        lua: {
-          mode: 'text/x-lua'
         },
         sh: {
           mode: 'text/x-sh'
@@ -136,41 +96,26 @@ export default {
         sql: {
           mode: 'text/x-sql'
         },
-        vue: {
-          mode: 'text/x-vue'
-        },
         xml: {
           mode: 'application/xml'
         },
         yaml: {
           mode: 'text/x-yaml'
         },
-        h: {
-          mode: 'text/x-csrc'
+        yml: {
+          mode: 'text/x-yaml'
         },
-        hpp: {
-          mode: 'text/x-c++src'
+        json: {
+          mode: 'application/json'
         },
-        c: {
-          mode: 'text/x-csrc'
+        md: {
+          mode: 'text/x-markdown'
         },
-        cc: {
-          mode: 'text/x-c++src'
+        csv: {
+          mode: 'text/plain'
         },
-        cpp: {
-          mode: 'text/x-c++src'
-        },
-        m: {
-          mode: 'text/x-objectivec'
-        },
-        mm: {
-          mode: 'text/x-objectivec'
-        },
-        cs: {
-          mode: 'text/x-csharp'
-        },
-        java: {
-          mode: 'text/x-java'
+        txt: {
+          mode: 'text/plain'
         }
       },
       codeBaseOptions: {
@@ -200,7 +145,7 @@ export default {
           //   Codemirror.registerHelper('hintWords', 'python', PythonHint);
           //   cm.showHint({ hint: CodeMirror.hint.anyword })
           // },
-          Ctrl: 'autocomplete',
+          // Ctrl: 'autocomplete', // Autocomplete disabled
 
           // Ctrl+/: Comment with Line Comment
           'Ctrl-/': 'toggleComment',
@@ -245,6 +190,17 @@ export default {
     // this.$emit('update-item', this.codeItem.path, this.codemirror);
     this.updateEditorTheme();
     
+    // Force CodeMirror to refresh after mounting to fix coordinate system
+    this.$nextTick(() => {
+      if (this.$refs.codeEditor && this.$refs.codeEditor.cminstance) {
+        this.$refs.codeEditor.cminstance.refresh();
+        // Force a coordinate system recalculation
+        setTimeout(() => {
+          this.$refs.codeEditor.cminstance.refresh();
+        }, 100);
+      }
+    });
+    
     // Listen for theme changes
     const observer = new MutationObserver(() => {
       this.updateEditorTheme();
@@ -260,6 +216,23 @@ export default {
       attributeFilter: ['data-theme']
     });
   },
+  watch: {
+    // Watch for content changes and fix coordinate system
+    'codeItem.content': {
+      handler() {
+        this.$nextTick(() => {
+          this.fixCoordinateSystem();
+        });
+      },
+      deep: true
+    }
+  },
+  beforeUnmount() {
+    // Clean up the timeout when component is destroyed
+    if (this.writeTimeout) {
+      clearTimeout(this.writeTimeout);
+    }
+  },
   computed: {
     currentTheme() {
       const theme = document.documentElement.getAttribute('data-theme');
@@ -272,9 +245,6 @@ export default {
     },
     ideInfo() {
       return this.$store.state.ide.ideInfo;
-    },
-    height() {
-      return this.ideInfo.codeHeight;
     },
     codeItemContent: {
       get() {
@@ -307,78 +277,47 @@ export default {
         this.$refs.codeEditor.cminstance.refresh();
       }
     },
+    
+    // Fix coordinate system issues
+    fixCoordinateSystem() {
+      if (this.$refs.codeEditor && this.$refs.codeEditor.cminstance) {
+        const cm = this.$refs.codeEditor.cminstance;
+        // Force CodeMirror to recalculate its coordinate system
+        cm.refresh();
+        // Force a repaint
+        cm.getWrapperElement().style.display = 'none';
+        cm.getWrapperElement().offsetHeight; // Force reflow
+        cm.getWrapperElement().style.display = '';
+        cm.refresh();
+      }
+    },
+    
+
     // complete
     codeChanged(value, cm) {
       cm.closeHint();
-      this.$store.commit('ide/setCodeItemContent', {index: this.codeItemIndex, content: value});
-      const self = this;
-      const cursor = cm.getCursor();
-      let line = cm.getLine(cursor.line);
       
-      line = line.substring(0, cursor.ch);
-      const prefix = this.getPrefix(line);
-      // const complete = prefix || line.endsWith('@') || line.endsWith('.') || line.endsWith('*') || line.endsWith('?') || line.endsWith('+');
-      const complete = (prefix || line.endsWith('.')) && this.getFirstNonBlankChar(line) != '#';
-      // console.log('complete: ', complete, ', prefix=', prefix);
-
-      // if (!complete) return;
-      // const cursor2 = cm.getCursor();
-      // if (cursor2.line != cursor.line || cursor2.ch != cursor.ch) return;
-
-      // let completions = [].concat(PythonHint);
-      // if (prefix) {
-      //   completions = completions.concat([prefix]);
-      // }
-      // CodeMirror.registerHelper('hintWords', 'python', completions);
-      // cm.showHint({ hint: CodeMirror.hint.anyword })
-
-      this.$store.dispatch(`ide/${types.IDE_WRITE_FILE}`, {
-        filePath: this.codeItem.path,
-        fileData: value,
-        complete: this.isPython && complete,
-        line: cursor.line,
-        column: cursor.ch,
-        callback: (dict) => {
-          if (!self.isPython) {
-            const cursor2 = cm.getCursor();
-            if (!complete || cursor2.line != cursor.line || cursor2.ch != cursor.ch) return;
-
-            let completions = [];
-            let helper = cm.getHelper(cursor, 'hint');
-            if (helper) {
-              helper = helper(cm);
-            }
-            if (helper) {
-              completions = helper.list;
-            }
-            else {
-              helper = cm.getHelper(cursor, 'hintWords');
-              if (helper)
-                completions = helper;
-            }
-            if (prefix) {
-              completions = completions.filter(item => item.startsWith(prefix)).concat([prefix]);
-            }
-            cm.showHint({ hint: self.anywordHint, list: completions });
-            // cm.showHint();
-            // CodeMirror.commands.autocomplete(cm);
-            // CodeMirror.showHint(cm);
-            return;
+      // Update content in store immediately for UI responsiveness
+      this.$store.commit('ide/setCodeItemContent', {index: this.codeItemIndex, content: value});
+      
+      // Debounce file writing to avoid cursor issues
+      if (this.writeTimeout) {
+        clearTimeout(this.writeTimeout);
+      }
+      
+      this.writeTimeout = setTimeout(() => {
+        // Write file without autocomplete
+        this.$store.dispatch(`ide/${types.IDE_WRITE_FILE}`, {
+          filePath: this.codeItem.path,
+          fileData: value,
+          complete: false, // Autocomplete disabled
+          line: 0,
+          column: 0,
+          callback: (dict) => {
+            // No autocomplete callback needed
           }
-          const completeDatas = dict.data;
-          if (!dict.data || completeDatas.length == 0) return;
-          const cursor2 = cm.getCursor();
-          if (cursor2.line != cursor.line || cursor2.ch != cursor.ch) return;
-
-          let completions = [].concat(completeDatas);
-          if (prefix) completions = completions.concat([prefix]);
-          // completions = self.model.ideModel.uniqueArr(completions);
-          cm.showHint({ hint: self.anywordHint, list: completions });
-          // CodeMirror.registerHelper('hintWords', 'python', completions);
-          // cm.showHint();
-          // // cm.showHint({ hint: CodeMirror.hint.anyword })
-        }
-      });
+        });
+      }, 500); // Debounce for 500ms
     },
     anywordHint(editor, options) {
       var WORD = /[\w$]+/, RANGE = 500;
@@ -456,6 +395,28 @@ export default {
 </style>
 
 <style scoped>
+.code-editor-container {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.code-editor-flex {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+}
+
+/* Ensure CodeMirror fills the container */
+.code-editor-flex >>> .CodeMirror {
+  height: 100% !important;
+}
+
+.code-editor-flex >>> .codemirror-container {
+  height: 100%;
+}
+
 .file-path {
   color: lightblue;
   font-size: 12px;

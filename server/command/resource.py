@@ -1,11 +1,4 @@
 #!/usr/bin/env python3
-# Software License Agreement (BSD License)
-#
-# Copyright (c) 2022, Vinman, Inc.
-# All rights reserved.
-#
-# Author: Vinman <vinman.cub@gmail.com>
-
 import os
 import time
 import uuid
@@ -44,8 +37,27 @@ def read(path, is_json=False):
                 else:
                     data = f.read()
             return 0, data
+        except UnicodeDecodeError as e:
+            return READ_ERROR, f"Unicode decode error: {str(e)}"
         except Exception as e:
-            return READ_ERROR, e
+            return READ_ERROR, str(e)
+    elif not os.path.exists(path):
+        return PATH_IS_NOT_EXIST, None
+    else:
+        return PATH_IS_DIR, None
+
+
+def read_binary(path):
+    """Read binary files and return base64 encoded content"""
+    import base64
+    if os.path.exists(path) and os.path.isfile(path):
+        try:
+            with open(path, 'rb') as f:
+                binary_data = f.read()
+                encoded_data = base64.b64encode(binary_data).decode('utf-8')
+            return 0, encoded_data
+        except Exception as e:
+            return READ_ERROR, str(e)
     elif not os.path.exists(path):
         return PATH_IS_NOT_EXIST, None
     else:
@@ -61,7 +73,7 @@ def write(path, data, is_json=False):
                 f.write(data)
         return 0, None
     except Exception as e:
-        return WRITE_ERROR, e
+        return WRITE_ERROR, str(e)
 
 
 def create(path, data=None):
@@ -71,7 +83,7 @@ def create(path, data=None):
                 os.makedirs(path)
                 return 0, None
             except Exception as e:
-                return CREATE_ERROR, e
+                return CREATE_ERROR, str(e)
         else:
             return PATH_IS_EXIST, None
     else:
@@ -85,13 +97,13 @@ def delete(path):
                 shutil.rmtree(path)
                 return 0, None
             except Exception as e:
-                return DELETE_ERROR, e
+                return DELETE_ERROR, str(e)
         else:
             try:
                 os.remove(path)
                 return 0, None
             except Exception as e:
-                return DELETE_ERROR, e
+                return DELETE_ERROR, str(e)
     else:
         return PATH_IS_NOT_EXIST, None
 
@@ -103,7 +115,7 @@ def rename(old_path, new_path):
                 os.rename(old_path, new_path)
                 return 0, None
             except Exception as e:
-                return RENAME_ERROR, e
+                return RENAME_ERROR, str(e)
         else:
             return PATH_IS_EXIST, None
     else:
@@ -248,6 +260,19 @@ def save_project(project_path, data):
 
 def get_project_file(project_path, file_path):
     code, data = read(file_path)
+    if code == 0:
+        _config_path = os.path.join(project_path, '.config')
+        _code, config_data = read(_config_path, is_json=True)
+        if _code != 0:
+            config_data = {}
+        config_data['lastAccessTime'] = time.time()
+        write(_config_path, config_data, is_json=True)
+    return code, data
+
+
+def get_project_file_binary(project_path, file_path):
+    """Get binary file content as base64 encoded string"""
+    code, data = read_binary(file_path)
     if code == 0:
         _config_path = os.path.join(project_path, '.config')
         _code, config_data = read(_config_path, is_json=True)

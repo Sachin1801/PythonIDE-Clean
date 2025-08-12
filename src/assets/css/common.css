@@ -1,3 +1,28 @@
+/* Global font family */
+* {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif !important;
+  font-optical-sizing: auto;
+}
+
+body, html {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif !important;
+}
+
+/* Preserve monospace font for code editor and console */
+.CodeMirror, 
+.CodeMirror *, 
+.cm-editor, 
+.cm-editor *, 
+pre, 
+code, 
+.console-output, 
+.console-input,
+.editor-content,
+.vue-codemirror,
+.codemirror-container * {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace !important;
+}
+
 .noselected {
   -moz-user-select: none;
   -webkit-user-select: none;

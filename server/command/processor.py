@@ -1,11 +1,4 @@
 #!/usr/bin/env python3
-# Software License Agreement (BSD License)
-#
-# Copyright (c) 2022, Vinman, Inc.
-# All rights reserved.
-#
-# Author: Vinman <vinman.cub@gmail.com>
-
 from common.msg import req_get, res_get, res_put, REQ_QUE, RES_QUE
 from .command import Command
 from utils.log import logger

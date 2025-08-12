@@ -70,6 +70,8 @@ class WorkingInputThread(threading.Thread):
             
             buffer = ""
             last_char_time = time.time()
+            last_input_check = time.time()
+            waiting_for_input = False
             
             while self.alive and self.process.poll() is None:
                 # Use select to check if data is available
@@ -82,6 +84,7 @@ class WorkingInputThread(threading.Thread):
                         if chunk:
                             buffer += chunk
                             last_char_time = time.time()
+                            waiting_for_input = False  # Reset input flag when we get output
                             # Successfully read chunk
                             
                             # Process complete lines
@@ -92,61 +95,75 @@ class WorkingInputThread(threading.Thread):
                     except:
                         pass
                 
-                # Check if we're waiting for input (buffer has content and no new data for a bit)
-                if buffer and (time.time() - last_char_time) > 0.1:
+                # Enhanced input detection logic
+                current_time = time.time()
+                
+                # Pattern-based input detection (existing logic)
+                if buffer and (current_time - last_char_time) > 0.1:
                     # Check if it looks like an input prompt
                     if (buffer.endswith(': ') or buffer.endswith('? ') or 
                         buffer.endswith('> ') or buffer.endswith('>>> ') or
                         ': ' in buffer[-30:]):  # Check last 30 chars for prompt pattern
                         
-                        # Detected input prompt
-                        
-                        # Send prompt to client
+                        # Detected input prompt with pattern
                         self.send_to_client(0, {'stdout': buffer})
-                        
-                        # Request input from user
                         self.send_to_client(2000, {
                             'type': 'input_request',
                             'prompt': buffer
                         })
-                        
                         buffer = ""
+                        waiting_for_input = True
+                        last_input_check = current_time
                         
-                        # Wait for user input
-                        # Wait for user input
-                        try:
-                            user_input = self.input_queue.get(timeout=60)
-                            # Got user input
-                            
-                            # Send to process
-                            if not user_input.endswith('\n'):
-                                user_input += '\n'
-                            self.process.stdin.write(user_input)
-                            self.process.stdin.flush()
-                            
-                            # Echo to console
-                            self.send_to_client(0, {'stdout': user_input.strip()})
-                            
-                        except Empty:
-                            # Input timeout
-                            self.send_to_client(0, {'stdout': '[Input timeout]'})
-                            self.process.stdin.write('\n')
-                            self.process.stdin.flush()
-                    
                     elif len(buffer) > 200:  # Flush large buffers
                         self.send_to_client(0, {'stdout': buffer})
                         buffer = ""
                 
-                # Check for queued input (for programs that read without prompting)
-                try:
-                    user_input = self.input_queue.get_nowait()
-                    if not user_input.endswith('\n'):
-                        user_input += '\n'
-                    self.process.stdin.write(user_input)
-                    self.process.stdin.flush()
-                    # Sent queued input
-                except Empty:
-                    pass
+                # Silent input detection (NEW LOGIC)
+                elif not waiting_for_input and (current_time - last_input_check) > 0.5:
+                    # Check if process is potentially waiting for input
+                    # Conditions: no recent output, buffer is empty/small, process still running
+                    if len(buffer) == 0 and (current_time - last_char_time) > 0.5:
+                        # Check if stdin is ready for writing (process is waiting)
+                        try:
+                            _, writable, _ = select.select([], [self.process.stdin], [], 0)
+                            if writable:
+                                # Process is likely waiting for input silently
+                                self.send_to_client(2000, {
+                                    'type': 'input_request',
+                                    'prompt': ''  # Empty prompt for silent input
+                                })
+                                waiting_for_input = True
+                                last_input_check = current_time
+                        except Exception as e:
+                            pass
+                
+                # Handle input when we're waiting for it
+                if waiting_for_input:
+                    try:
+                        user_input = self.input_queue.get(timeout=0.1)
+                        # Got user input
+                        
+                        # Send to process
+                        if not user_input.endswith('\n'):
+                            user_input += '\n'
+                        self.process.stdin.write(user_input)
+                        self.process.stdin.flush()
+                        
+                        # Echo to console
+                        self.send_to_client(0, {'stdout': user_input.strip()})
+                        
+                        waiting_for_input = False
+                        last_input_check = current_time
+                        
+                    except Empty:
+                        # Check for input timeout (60 seconds)
+                        if (current_time - last_input_check) > 60:
+                            self.send_to_client(0, {'stdout': '[Input timeout]'})
+                            self.process.stdin.write('\n')
+                            self.process.stdin.flush()
+                            waiting_for_input = False
+
             
             # Send any remaining output
             if buffer:

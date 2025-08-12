@@ -14,6 +14,8 @@ const ideInfo = {
     expandedKeys: [],
     pathSelected: null,
   },
+  allProjects: [], // Store all loaded projects
+  multiRootData: null, // Combined tree data for multiple projects
   treeRef: null,
   nodeSelected: null,
   projList: [],
@@ -73,6 +75,44 @@ const mutations = {
       state.ideInfo.nodeSelected = state.ideInfo.treeRef.getCurrentNode();
     }
   },
+  handleMultipleProjects(state, projects) {
+    // Store all projects
+    state.ideInfo.allProjects = projects;
+    
+    // Create a virtual root with all projects as children
+    const multiRoot = {
+      label: 'Projects',
+      path: '/',
+      type: 'root',
+      uuid: 'root',
+      children: []
+    };
+    
+    // Function to add projectName and fix UUIDs in a tree
+    const addProjectNameAndFixUuid = (node, projectName) => {
+      node.projectName = projectName;
+      // Fix root project UUID to be unique per project
+      if (node.path === '/') {
+        node.uuid = `${projectName}_root`;
+      }
+      if (node.children) {
+        node.children.forEach(child => addProjectNameAndFixUuid(child, projectName));
+      }
+    };
+    
+    // Add each project as a root folder
+    projects.forEach(project => {
+      if (project) {
+        // Clone the project and add projectName to all nodes
+        const projectCopy = JSON.parse(JSON.stringify(project));
+        addProjectNameAndFixUuid(projectCopy, project.name);
+        projectCopy.isProjectRoot = true;
+        multiRoot.children.push(projectCopy);
+      }
+    });
+    
+    state.ideInfo.multiRootData = multiRoot;
+  },
   handleDelProject(state, projectName) {
     for (var i = 0; i < state.ideInfo.projList.length; i++) {
       if (state.ideInfo.projList[i].name === projectName) {
@@ -106,7 +146,7 @@ const mutations = {
     }
     state.ideInfo.currProj.expandedKeys = expandedKeys;
   },
-  handleGetFile(state, {filePath, data, save}) {
+  handleGetFile(state, {filePath, data, save, isMedia}) {
     for (let i = 0; i < state.ideInfo.codeItems.length; i++) {
       if (state.ideInfo.codeItems[i].path === filePath) {
         state.ideInfo.currProj.pathSelected = filePath;
@@ -119,6 +159,7 @@ const mutations = {
       content: data,
       path: filePath,
       codemirror: null,
+      isMedia: isMedia || false,
     });    
     if (save !== false || state.ideInfo.currProj.pathSelected === filePath) {
       state.ideInfo.currProj.pathSelected = filePath;
@@ -280,18 +321,28 @@ const mutations = {
     }
     else if (dict.code === 2000) {
       // Input request from program
+      console.log('[FRONTEND-INPUT-DEBUG] *** RECEIVED INPUT REQUEST!', dict);
+      console.log('[FRONTEND-INPUT-DEBUG] Data:', dict.data);
+      console.log('[FRONTEND-INPUT-DEBUG] Prompt:', dict.data?.prompt);
+      
       // Input request received
       for (let i = 0; i < state.ideInfo.consoleItems.length; i++) {
         if (state.ideInfo.consoleItems[i].id !== dict.id) continue;
         
+        console.log('[FRONTEND-INPUT-DEBUG] Found matching console item at index:', i);
+        
         // Show input prompt in console
         const prompt = dict.data && dict.data.prompt ? dict.data.prompt : "";
+        console.log('[FRONTEND-INPUT-DEBUG] Setting prompt:', prompt);
         
         // Don't add prompt to resultList as it will be shown in the input area
         // Mark console as waiting for input
         // Set waiting for input
         state.ideInfo.consoleItems[i].waitingForInput = true;
         state.ideInfo.consoleItems[i].inputPrompt = prompt;
+        
+        console.log('[FRONTEND-INPUT-DEBUG] Console item updated with waitingForInput=true');
+        console.log('[FRONTEND-INPUT-DEBUG] Console item state:', state.ideInfo.consoleItems[i]);
         
         break;
       }
@@ -513,13 +564,14 @@ const actions = {
       callback: callback,
     }, { root: true });
   },
-  [types.IDE_GET_FILE](context, { wsKey, projectName, filePath, callback }) {
+  [types.IDE_GET_FILE](context, { wsKey, projectName, filePath, binary, callback }) {
     context.dispatch('websocket/sendCmd', {
       wsKey: wsKey,
       cmd: types.IDE_GET_FILE,
       data: {
         projectName: projectName || context.state.ideInfo.currProj.data.name,
-        filePath: filePath
+        filePath: filePath,
+        binary: binary || false
       }, 
       callback: callback,
     }, { root: true });
@@ -623,6 +675,17 @@ const actions = {
       cmd: types.IDE_STOP_PYTHON_PROGRAM,
       data: {
         program_id: consoleId,
+      }, 
+      callback: callback,
+    }, { root: true });
+  },
+  [types.IDE_SEND_PROGRAM_INPUT](context, { wsKey, program_id, input, callback }) {
+    context.dispatch('websocket/sendCmd', {
+      wsKey: wsKey,
+      cmd: types.IDE_SEND_PROGRAM_INPUT,
+      data: {
+        program_id: program_id,
+        input: input,
       }, 
       callback: callback,
     }, { root: true });

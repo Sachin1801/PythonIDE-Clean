@@ -113,19 +113,39 @@ except ImportError:
 
 # Override input to add markers
 import builtins
+import sys
 
 def _custom_input(prompt=""):
     """Custom input that adds markers for detection"""
-    import sys
+    # Always ensure we have a prompt, even if empty
+    prompt_str = str(prompt) if prompt else ""
     # Send the prompt with markers to stdout for detection
-    sys.stdout.write("__INPUT_REQUEST_START__" + str(prompt) + "__INPUT_REQUEST_END__")
+    sys.stdout.write("__INPUT_REQUEST_START__" + prompt_str + "__INPUT_REQUEST_END__")
     sys.stdout.flush()
     # Read input directly from stdin instead of calling original input
     # This works because stdin is properly piped from the subprocess
     result = sys.stdin.readline().rstrip('\\n')
+    # Echo the input back like a real terminal
+    if result:
+        sys.stdout.write(result + '\\n')
+        sys.stdout.flush()
     return result
 
+# Override the built-in input function
 builtins.input = _custom_input
+builtins.raw_input = _custom_input  # For Python 2 compatibility if needed
+
+# Create common input function aliases that users might define
+get_string_input = _custom_input
+get_input = _custom_input
+read_input = _custom_input
+user_input = _custom_input
+
+# Make these available globally
+builtins.get_string_input = _custom_input
+builtins.get_input = _custom_input
+builtins.read_input = _custom_input
+builtins.user_input = _custom_input
 
 # Now execute the user script
 __user_script_path__ = r"{script_path}"
@@ -148,16 +168,21 @@ exec(compile(__user_code__, __user_script_path__, 'exec'))
         asyncio.set_event_loop(self.event_loop)
         
         print(f'[{self.client.id}-Program {self.cmd_id} starting with interactive I/O]')
+        print(f'[BACKEND-INPUT-DEBUG] Starting Python program execution')
+        print(f'[BACKEND-INPUT-DEBUG] Command: {self.cmd}')
         
         wrapper_path = None
         try:
             # Get the script path
             script_path = self.cmd[-1]
+            print(f'[BACKEND-INPUT-DEBUG] Script path: {script_path}')
             
             # Create wrapper script
             wrapper_path = self.create_wrapper_script(script_path)
+            print(f'[BACKEND-INPUT-DEBUG] Wrapper script created at: {wrapper_path}')
             
             # Create process with pipes for interactive I/O
+            print(f'[BACKEND-INPUT-DEBUG] Creating subprocess with pipes...')
             self.p = subprocess.Popen(
                 [self.cmd[0], '-u', wrapper_path],
                 stdin=subprocess.PIPE,
@@ -168,10 +193,14 @@ exec(compile(__user_code__, __user_script_path__, 'exec'))
                 cwd=os.path.dirname(script_path) if script_path else None
             )
             
+            print(f'[BACKEND-INPUT-DEBUG] Subprocess started with PID: {self.p.pid}')
+            
             # Variables for handling output
             figure_buffer = []
             collecting_figure = False
             waiting_for_input = False
+            
+            print(f'[BACKEND-INPUT-DEBUG] Starting main output reading loop...')
             
             while self.alive and self.p.poll() is None:
                 # Check client connection
@@ -188,11 +217,13 @@ exec(compile(__user_code__, __user_script_path__, 'exec'))
                     line = self.p.stdout.readline()
                     
                     if line:
+                        print(f'[BACKEND-INPUT-DEBUG] Got raw line: {repr(line[:100])}...' if len(line) > 100 else f'[BACKEND-INPUT-DEBUG] Got raw line: {repr(line)}')
                         line = line.rstrip()
+                        print(f'[BACKEND-INPUT-DEBUG] After rstrip: {repr(line[:100])}...' if len(line) > 100 else f'[BACKEND-INPUT-DEBUG] After rstrip: {repr(line)}')
                         
                         # Debug log for input detection
                         if "__INPUT" in line:
-                            print(f"[DEBUG] Line with INPUT marker: {line}")
+                            print(f"[BACKEND-INPUT-DEBUG] *** FOUND INPUT MARKER IN LINE: {line}")
                         
                         # Check for matplotlib figure
                         if "__MATPLOTLIB_FIGURE_START__" in line:
@@ -217,29 +248,40 @@ exec(compile(__user_code__, __user_script_path__, 'exec'))
                         
                         # Check for input request
                         if "__INPUT_REQUEST_START__" in line:
+                            print(f"[BACKEND-INPUT-DEBUG] *** DETECTED INPUT REQUEST START MARKER!")
                             # Extract prompt - handle both cases where it's on same line or split
                             if "__INPUT_REQUEST_END__" in line:
+                                print(f"[BACKEND-INPUT-DEBUG] Both markers on same line")
                                 start = line.find("__INPUT_REQUEST_START__") + len("__INPUT_REQUEST_START__")
                                 end = line.find("__INPUT_REQUEST_END__")
                                 prompt = line[start:end]
+                                print(f"[BACKEND-INPUT-DEBUG] Extracted prompt: '{prompt}'")
                             else:
+                                print(f"[BACKEND-INPUT-DEBUG] Markers split across lines")
                                 # Marker split across lines, extract what we have
                                 start = line.find("__INPUT_REQUEST_START__") + len("__INPUT_REQUEST_START__")
                                 prompt = line[start:]
                                 # Read next part if needed
                                 next_line = self.p.stdout.readline()
+                                print(f"[BACKEND-INPUT-DEBUG] Next line: {repr(next_line)}")
                                 if next_line and "__INPUT_REQUEST_END__" in next_line:
                                     end = next_line.find("__INPUT_REQUEST_END__")
                                     prompt += next_line[:end]
+                                print(f"[BACKEND-INPUT-DEBUG] Final prompt after combining: '{prompt}'")
                             
                             # Ensure previous output has been sent
                             
-                            # Display the prompt in the console
+                            # Display the prompt in the console (even if empty)
                             if prompt:
+                                print(f"[BACKEND-INPUT-DEBUG] Sending prompt to client: '{prompt}'")
                                 self.response_to_client(0, {'stdout': prompt})
+                            elif prompt == "":
+                                print(f"[BACKEND-INPUT-DEBUG] Empty prompt detected")
+                                # For empty prompt, we might want to indicate input is needed
+                                pass  # Frontend will show input field without prompt
                             
                             # Send input request to client
-                            print(f"[DEBUG] Sending input request to client with prompt: '{prompt}'")
+                            print(f"[BACKEND-INPUT-DEBUG] *** SENDING INPUT REQUEST TO CLIENT with prompt: '{prompt}'")
                             self.response_to_client(2000, {
                                 'type': 'input_request',
                                 'prompt': prompt
@@ -253,6 +295,7 @@ exec(compile(__user_code__, __user_script_path__, 'exec'))
                             
                             # Wait for input from client
                             waiting_for_input = True
+                            print(f"[BACKEND-INPUT-DEBUG] *** WAITING FOR USER INPUT FROM CLIENT...")
                             
                             # Wait for input with timeout
                             input_received = False
@@ -260,17 +303,22 @@ exec(compile(__user_code__, __user_script_path__, 'exec'))
                             while waiting_for_input and self.alive and timeout_count < 600:  # 60 second timeout
                                 try:
                                     user_input = self.input_queue.get(timeout=0.1)
+                                    print(f"[BACKEND-INPUT-DEBUG] *** RECEIVED USER INPUT: '{user_input}'")
                                     # Send input to program
+                                    print(f"[BACKEND-INPUT-DEBUG] Writing to subprocess stdin: '{user_input}\\n'")
                                     self.p.stdin.write(user_input + '\n')
                                     self.p.stdin.flush()
+                                    print(f"[BACKEND-INPUT-DEBUG] Input flushed to subprocess")
                                     waiting_for_input = False
                                     input_received = True
                                     
-                                    # Echo the input to console (don't echo prompt again, just the input)
-                                    self.response_to_client(0, {'stdout': user_input})
+                                    # Don't echo here - the custom_input function will handle it
+                                    print(f"[BACKEND-INPUT-DEBUG] Input processing complete")
                                     break
                                 except Empty:
                                     timeout_count += 1
+                                    if timeout_count % 100 == 0:  # Log every 10 seconds
+                                        print(f"[BACKEND-INPUT-DEBUG] Still waiting for input... ({timeout_count/10} seconds)")
                                     continue
                             
                             if not input_received and waiting_for_input:

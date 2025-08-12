@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="ide-editor-container">
     <markdown-editor v-if="isMarkdown"
       :codeItem="codeItem"
       :codeItemIndex="codeItemIndex">
@@ -38,3 +38,13 @@ export default {
   }
 }
 </script>
+
+<style scoped>
+.ide-editor-container {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+</style>

@@ -143,7 +143,7 @@ export default {
   position: relative;
   width: 100%;
   height: calc(100% - 2px); /* Account for borders */
-  display: flex;
+  display: none; /* Hide the old enhanced console - using UnifiedConsole instead */
 }
 
 .console-sidebar {

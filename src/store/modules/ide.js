@@ -627,6 +627,17 @@ const actions = {
       callback: callback,
     }, { root: true });
   },
+  [types.IDE_SEND_PROGRAM_INPUT](context, { wsKey, program_id, input, callback }) {
+    context.dispatch('websocket/sendCmd', {
+      wsKey: wsKey,
+      cmd: types.IDE_SEND_PROGRAM_INPUT,
+      data: {
+        program_id: program_id,
+        input: input,
+      }, 
+      callback: callback,
+    }, { root: true });
+  },
   sendBugReport(context, reportData) {
     return new Promise((resolve, reject) => {
       context.dispatch('websocket/sendCmd', {

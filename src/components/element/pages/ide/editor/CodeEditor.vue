@@ -1,15 +1,14 @@
 <template>
-  <div>
+  <div class="code-editor-container">
     <!-- <div class="file-path">/{{ ideInfo.currProj.data.name + codeItem.path }}</div> -->
     <Codemirror
       :value="codeItemContent"
       @change="codeChanged"
-      style="width:100%;"
+      class="code-editor-flex"
       id="codemirror-id"
       :options="cmOptions"
-      :height="height"
       ref="codeEditor" />
-    <div class="float-clear"></div>
+    <!-- <div class="float-clear"></div> -->
   </div>
 </template>
 
@@ -245,6 +244,17 @@ export default {
     // this.$emit('update-item', this.codeItem.path, this.codemirror);
     this.updateEditorTheme();
     
+    // Force CodeMirror to refresh after mounting to fix coordinate system
+    this.$nextTick(() => {
+      if (this.$refs.codeEditor && this.$refs.codeEditor.cminstance) {
+        this.$refs.codeEditor.cminstance.refresh();
+        // Force a coordinate system recalculation
+        setTimeout(() => {
+          this.$refs.codeEditor.cminstance.refresh();
+        }, 100);
+      }
+    });
+    
     // Listen for theme changes
     const observer = new MutationObserver(() => {
       this.updateEditorTheme();
@@ -260,6 +270,17 @@ export default {
       attributeFilter: ['data-theme']
     });
   },
+  watch: {
+    // Watch for content changes and fix coordinate system
+    'codeItem.content': {
+      handler() {
+        this.$nextTick(() => {
+          this.fixCoordinateSystem();
+        });
+      },
+      deep: true
+    }
+  },
   computed: {
     currentTheme() {
       const theme = document.documentElement.getAttribute('data-theme');
@@ -272,9 +293,6 @@ export default {
     },
     ideInfo() {
       return this.$store.state.ide.ideInfo;
-    },
-    height() {
-      return this.ideInfo.codeHeight;
     },
     codeItemContent: {
       get() {
@@ -307,6 +325,22 @@ export default {
         this.$refs.codeEditor.cminstance.refresh();
       }
     },
+    
+    // Fix coordinate system issues
+    fixCoordinateSystem() {
+      if (this.$refs.codeEditor && this.$refs.codeEditor.cminstance) {
+        const cm = this.$refs.codeEditor.cminstance;
+        // Force CodeMirror to recalculate its coordinate system
+        cm.refresh();
+        // Force a repaint
+        cm.getWrapperElement().style.display = 'none';
+        cm.getWrapperElement().offsetHeight; // Force reflow
+        cm.getWrapperElement().style.display = '';
+        cm.refresh();
+      }
+    },
+    
+
     // complete
     codeChanged(value, cm) {
       cm.closeHint();
@@ -400,6 +434,28 @@ export default {
 </style>
 
 <style scoped>
+.code-editor-container {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.code-editor-flex {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+}
+
+/* Ensure CodeMirror fills the container */
+.code-editor-flex >>> .CodeMirror {
+  height: 100% !important;
+}
+
+.code-editor-flex >>> .codemirror-container {
+  height: 100%;
+}
+
 .file-path {
   color: lightblue;
   font-size: 12px;

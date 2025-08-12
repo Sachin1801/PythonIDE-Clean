@@ -1,5 +1,5 @@
 import sys;
 
-name = input("Enter your name: ");
+name = input();
 
 print(f"welcome {name} !");

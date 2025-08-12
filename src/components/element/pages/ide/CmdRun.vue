@@ -130,9 +130,7 @@ export default {
         });
       }
 
-      if (!this.ideInfo.consoleItems.includes(this.ideInfo.consoleSelected)) {
-        this.$store.commit('ide/addConsoleItem', this.ideInfo.consoleSelected);
-      }
+      // Remove duplicate console item creation - this was causing multiple input fields
       this.$store.dispatch(`ide/${types.IDE_RUN_PIP_COMMAND}`, {
         msgId: this.ideInfo.consoleId,
         command: this.inputText,

@@ -33,13 +33,8 @@ body, html {
   color: #2c3e50;
   margin: 0;
   padding: 0;
-  width: calc(100vw / 1.25);
-  height: calc(100vh / 1.25);
-  transform: scale(1.25);
-  transform-origin: top left;
-  position: absolute;
-  top: 0;
-  left: 0;
+  width: 100vw;
+  height: 100vh;
 }
 
 /* Apply Inter font globally but exclude code editor */

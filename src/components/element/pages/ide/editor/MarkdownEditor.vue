@@ -1,15 +1,14 @@
 <template>
-  <div>
+  <div class="markdown-editor-container">
     <!-- <div class="file-path">/{{ ideInfo.currProj.data.name + codeItem.path }}</div> -->
-    <mavon-editor :style="{height: height + 'px'}"
-      class="v-markdown-editor"
+    <mavon-editor class="v-markdown-editor-flex"
       :toolbarsBackground="'#2B2B2B'"
       :modelValue="codeItemContent"
       :externalLink="false"
       :toolbars="toolbars"
       @change="mdChanged"
     ></mavon-editor>
-    <div class="float-clear"></div>
+    <!-- <div class="float-clear"></div> -->
   </div>
 </template>
 
@@ -71,9 +70,6 @@ export default {
     ideInfo() {
       return this.$store.state.ide.ideInfo;
     },
-    height() {
-      return this.ideInfo.codeHeight + (this.ideInfo.consoleItems.length === 0 ? 30 : 250);
-    },
     codeItemContent: {
       get() {
         return this.codeItem.content;
@@ -117,6 +113,28 @@ export default {
 </style>
 
 <style scoped>
+.markdown-editor-container {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.v-markdown-editor-flex {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+}
+
+/* Ensure mavon-editor fills the container */
+.v-markdown-editor-flex >>> .v-note-wrapper {
+  height: 100% !important;
+}
+
+.v-markdown-editor-flex >>> .v-note-op {
+  height: 100%;
+}
+
 .file-path {
   color: lightblue;
   font-size: 12px;

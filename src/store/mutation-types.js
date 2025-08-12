@@ -17,3 +17,4 @@ export const IDE_AUTOCOMPLETE_PYTHON = 'autocomplete_python';
 export const IDE_RUN_PIP_COMMAND = 'run_pip_command';
 export const IDE_RUN_PYTHON_PROGRAM = 'run_python_program';
 export const IDE_STOP_PYTHON_PROGRAM = 'stop_python_program';
+export const IDE_SEND_PROGRAM_INPUT = 'send_program_input';

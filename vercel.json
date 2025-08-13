@@ -1,7 +1,7 @@
 {
-  "buildCommand": "npm run build",
+  "buildCommand": "npm run build && cp dist/templates/index.html dist/index.html",
   "outputDirectory": "dist",
-  "framework": "vue",
+  "framework": null,
   "rewrites": [
     {
       "source": "/(.*)",

@@ -3,10 +3,10 @@ import ReconnectingWebSocket from 'reconnecting-websocket';
 const wsInfoMap = {
   default: {
     location: {
-      protocol: 'ws:',
-      host: window.location.hostname,
-      port: '10086',
-      pathname: '/ws',
+      protocol: process.env.VUE_APP_WS_URL ? (process.env.VUE_APP_WS_URL.startsWith('wss') ? 'wss:' : 'ws:') : 'ws:',
+      host: process.env.VUE_APP_WS_URL ? process.env.VUE_APP_WS_URL.replace(/^wss?:\/\//, '') : window.location.hostname,
+      port: process.env.VUE_APP_WS_PORT || '10086',
+      pathname: process.env.VUE_APP_WS_PATH || '/ws',
       search: '?v=1', // Request parameters
     },
     protocols: [],

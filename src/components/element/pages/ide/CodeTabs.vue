@@ -1,25 +1,31 @@
 <template>
-  <div class="noselected code-tabs">
-    <el-tabs
-      v-model="pathSelected"
-      type="card"
-      closable
-      @tab-remove="removeTab"
-      @tab-click="selectTab"
-    >
-      <el-tab-pane
+  <div class="code-tabs-container">
+    <div class="code-tab-list">
+      <button
         v-for="item in codeItems"
         :key="item.path"
-        :label="item.name"
-        :name="item.path"
+        :class="['code-tab', { 'active': pathSelected === item.path }]"
+        @click="selectTab(item)"
       >
-        <template #label>
-          <img :src="getIconUrl(item.path)" alt="" class="node-icon" />
-          <span class="node-label">{{ item.name }}</span>
-        </template>
-        <span class="file-path">/{{ ideInfo.currProj.data.name + item.path }}</span>
-      </el-tab-pane>
-    </el-tabs>
+        <img :src="getIconUrl(item.path)" alt="" class="tab-file-icon" />
+        <span class="tab-file-name">
+          {{ getTabLabel(item) }}
+        </span>
+        <span 
+          class="tab-close-btn" 
+          @click.stop="removeTab(item)"
+          title="Close"
+        >
+          ×
+        </span>
+      </button>
+    </div>
+    <div class="tab-actions">
+      <!-- Tab count indicator -->
+      <span class="tab-count-indicator" v-if="codeItems.length > 0">
+        {{ codeItems.length }}/6
+      </span>
+    </div>
   </div>
 </template>
 
@@ -45,14 +51,21 @@ export default {
       }
       return '';
     },
-    selectTab(path) {
-      // const item = this.getItem(path);
-      // if (!item) return;
-      // this.$emit('select-item', item);
+    getTabLabel(item) {
+      // Check if there are files from different projects
+      const projectNames = new Set(this.codeItems.map(i => i.projectName).filter(p => p));
+      
+      // If files are from multiple projects, show project name in the label
+      if (projectNames.size > 1 && item.projectName) {
+        return `${item.name} [${item.projectName}]`;
+      }
+      
+      return item.name;
     },
-    removeTab(path) {
-      const item = this.getItem(path);
-      if (!item) return;
+    selectTab(item) {
+      this.$emit('select-item', item);
+    },
+    removeTab(item) {
       this.$emit('close-item', item);
     }
   },
@@ -81,92 +94,176 @@ export default {
 };
 </script>
 
-<style>
-.code-tabs .el-tabs {
-  --el-tabs-header-height: 25px;
+<style scoped>
+/* Container for the entire tab bar */
+.code-tabs-container {
+  height: 35px;
+  background: var(--bg-secondary, #2A2A2D);
+  border-bottom: 1px solid var(--border-primary, #3c3c3c);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 4px;
+  user-select: none;
 }
-.code-tabs .el-tabs--card>.el-tabs__header .el-tabs__nav {
-  border: none;
-  background: #404041;
-  border-radius: 0px;
+
+/* Tab list container */
+.code-tab-list {
+  display: flex;
+  flex: 1;
+  overflow-x: auto;
+  gap: 2px;
+  align-items: center;
+  height: 100%;
 }
-.code-tabs .el-tabs--card>.el-tabs__header {
-  border-color: #404041;
-  background: #404041;
+
+/* Hide scrollbar but keep functionality */
+.code-tab-list::-webkit-scrollbar {
+  height: 3px;
 }
-.code-tabs .el-tabs__content {
-  margin-top: -15px;
-}
-.code-tabs .el-tabs__item {
-  height: 26px;
-  padding-left: 10px;
-  padding-right: 3px;
-  line-height: 26px;
-  font-size: 13px;
-  font-weight: 500;
-  font-family: 'Gotham-Book';
-  color: #CCCCCC;
-  letter-spacing: -0.8px;
-  opacity: 0.6;
-}
-.code-tabs .el-tabs--card>.el-tabs__header .el-tabs__item {
-  border-left: none;
-  border-right: 1px solid;
-  border-bottom: none;
-  border-color: #232323;
-}
-.code-tabs .el-tabs__item.is-active {
-  color: white;
-  background-color: #232323;
-  opacity: 1.0;
-}
-.code-tabs .el-tabs--card>.el-tabs__header .el-tabs__item {
-  color: #CCCCCC;
-}
-.code-tabs .el-tabs--card>.el-tabs__header .el-tabs__item.is-active .is-icon-close {
-  background-color: transparent;
-}
-.code-tabs .el-tabs--card>.el-tabs__header .el-tabs__item .is-icon-close {
-  right: -10px;
+
+.code-tab-list::-webkit-scrollbar-track {
   background: transparent;
 }
-.code-tabs .el-tabs__nav-prev {
-  margin-top: -6px;
-  margin-left: 4px;
-}
-.code-tabs .el-tabs__nav-prev.is-disabled .el-icon {
-  color: #232323;
-}
-.code-tabs .el-tabs__nav-next {
-  margin-top: -6px;
-  margin-right: 8px;
-}
-.code-tabs .el-tabs__nav-next.is-disabled .el-icon {
-  color: #232323;
-}
-</style>
 
-<style scoped>
-.node-icon {
-  width: 12px;
-  height:12px;
+.code-tab-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
 }
-.node-label {
-  /* color:#A6A6A6; */
-  letter-spacing: -0.8px;
-  font-family: 'Gotham-Book';
-  padding-left: 2px;
-  color: white;
+
+.code-tab-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
-.file-path {
-  /* color: lightblue; */
-  font-size: 12px;
-  /* background-color: rgba(255, 250, 226, 1.0); */
-  width: 100%;
-  background: var(--bg-secondary, #2E3032);
+
+/* Individual tab styling */
+.code-tab {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary, #969696);
+  padding: 6px 8px;
+  padding-right: 28px; /* Space for close button */
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 4px;
+  position: relative;
+  min-width: 100px;
+  max-width: 200px;
+  transition: all 0.2s ease;
+  font-size: 13px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  white-space: nowrap;
+  height: 28px;
+  border-bottom: 2px solid transparent;
+}
+
+/* Tab hover state */
+.code-tab:hover {
+  background: var(--bg-hover, #2F2F31);
   color: var(--text-primary, #CCCCCC);
-  font-family: 'Gotham-Book';
-  /* margin-top: -5px; */
-  padding-top: 1px;
+}
+
+/* Active tab */
+.code-tab.active {
+  background: var(--bg-active, #1E1E1E);
+  color: var(--text-primary, #FFFFFF);
+  border-bottom-color: var(--accent-color, #007ACC);
+}
+
+/* File icon in tab */
+.tab-file-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+/* File name in tab */
+.tab-file-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+  font-weight: 400;
+  letter-spacing: 0.3px;
+}
+
+/* Close button */
+.tab-close-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--text-secondary, #969696);
+  opacity: 0;
+  transition: all 0.2s ease;
+}
+
+/* Show close button on tab hover */
+.code-tab:hover .tab-close-btn {
+  opacity: 1;
+}
+
+/* Close button hover */
+.tab-close-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary, #FFFFFF);
+}
+
+/* Tab count indicator */
+.tab-count-indicator {
+  font-size: 11px;
+  color: var(--text-secondary, #969696);
+  padding: 2px 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+  margin-right: 8px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* Tab actions area */
+.tab-actions {
+  display: flex;
+  gap: 4px;
+  padding: 0 4px;
+}
+
+/* Light theme support */
+[data-theme="light"] .code-tabs-container {
+  background: #f3f3f3;
+  border-bottom-color: #e0e0e0;
+}
+
+[data-theme="light"] .code-tab {
+  color: #616161;
+}
+
+[data-theme="light"] .code-tab:hover {
+  background: #e8e8e8;
+  color: #333333;
+}
+
+[data-theme="light"] .code-tab.active {
+  background: #ffffff;
+  color: #333333;
+  border-bottom-color: #007ACC;
+}
+
+[data-theme="light"] .tab-close-btn {
+  color: #616161;
+}
+
+[data-theme="light"] .tab-close-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: #333333;
 }
 </style>

@@ -245,6 +245,7 @@ export default {
   background: var(--bg-primary, #1e1e1e);
   color: var(--text-primary, #cccccc);
   position: relative;
+  overflow: hidden; /* Prevent container overflow */
 }
 
 .csv-controls {
@@ -282,6 +283,7 @@ export default {
   width: 100%;
   min-height: 0; /* Important for flexbox overflow */
   display: block;
+  margin-bottom: 10px; /* Add some space at bottom to ensure scrollbar is accessible */
 }
 
 /* Custom scrollbar styling for better visibility */

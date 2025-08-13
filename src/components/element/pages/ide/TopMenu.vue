@@ -281,6 +281,9 @@ export default {
       document.documentElement.setAttribute('data-theme', theme);
       this.$emit('theme-changed', theme);
     },
+    toggleWordWrap() {
+      this.$emit('toggle-word-wrap');
+    },
     openUploadDialog() {
       this.$emit('open-upload-dialog');
     },

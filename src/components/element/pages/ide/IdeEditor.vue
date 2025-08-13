@@ -14,6 +14,7 @@
     <code-editor v-else
       :codeItem="codeItem"
       :consoleLimit="consoleLimit"
+      :wordWrap="wordWrap"
       @run-item="$emit('run-item')"
       :codeItemIndex="codeItemIndex">
     </code-editor>
@@ -31,6 +32,10 @@ export default {
     codeItem: Object,
     codeItemIndex: Number,
     consoleLimit: Boolean,
+    wordWrap: {
+      type: Boolean,
+      default: true
+    }
   },
   data() {
     return {
@@ -67,13 +72,14 @@ export default {
 }
 
 .ide-editor-container.csv-container {
-  overflow: auto; /* Allow scrolling for CSV files */
+  overflow: hidden; /* Let CSV viewer handle its own scrolling */
   display: flex;
   flex-direction: column;
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  bottom: 0;
+  bottom: 40px; /* Leave space above console header to avoid overlap */
+  z-index: 10; /* Ensure CSV is above console but below modals */
 }
 </style>

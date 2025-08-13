@@ -20,26 +20,85 @@
       @node-expand="nodeExpand"
       @node-collapse="nodeCollapse"
       @node-click="handleNodeClick"
+      @node-contextmenu="handleContextMenu"
       >
       <template #default="{ node, data }">
-        <span>
+        <span class="node-wrapper" @dblclick.stop="handleDoubleClick(data)">
           <img :src="getIconUrl(data)" alt="" class="node-icon" />
           <span class="node-label">{{ node.label }}</span>
+          <span class="node-actions" v-if="data.type === 'file' || (data.type === 'dir' || data.type === 'folder')">
+            <button class="dropdown-btn" @click.stop="showDropdown($event, data)" title="Actions">
+              <MoreVertical :size="14" />
+            </button>
+          </span>
         </span>
       </template>
     </el-tree>
+    
+    <!-- Context Menu -->
+    <div v-if="contextMenu.visible" 
+         class="context-menu" 
+         :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }">
+      <div class="menu-item" @click="handleMenuAction('open', contextMenu.data)" v-if="contextMenu.data.type === 'file'">
+        <span>Open</span>
+      </div>
+      <div class="menu-item" @click="handleMenuAction('run', contextMenu.data)" v-if="contextMenu.data.type === 'file' && contextMenu.data.path.endsWith('.py')">
+        <span>Run</span>
+      </div>
+      <div class="menu-divider" v-if="contextMenu.data.type === 'file'"></div>
+      <div class="menu-item" @click="handleMenuAction('rename', contextMenu.data)">
+        <span>Rename</span>
+      </div>
+      <div class="menu-item" @click="handleMenuAction('move', contextMenu.data)">
+        <span>Move</span>
+      </div>
+      <div class="menu-divider"></div>
+      <div class="menu-item" @click="handleMenuAction('download', contextMenu.data)" v-if="contextMenu.data.type === 'file'">
+        <span>Download</span>
+      </div>
+      <div class="menu-item danger" @click="handleMenuAction('delete', contextMenu.data)">
+        <span>Delete</span>
+      </div>
+    </div>
+    
+    <!-- Dropdown Menu -->
+    <div v-if="dropdown.visible" 
+         class="dropdown-menu" 
+         :style="{ left: dropdown.x + 'px', top: dropdown.y + 'px' }">
+      <div class="menu-item" @click="handleMenuAction('open', dropdown.data)" v-if="dropdown.data.type === 'file'">
+        <span>Open</span>
+      </div>
+      <div class="menu-item" @click="handleMenuAction('run', dropdown.data)" v-if="dropdown.data.type === 'file' && dropdown.data.path.endsWith('.py')">
+        <span>Run</span>
+      </div>
+      <div class="menu-divider" v-if="dropdown.data.type === 'file'"></div>
+      <div class="menu-item" @click="handleMenuAction('rename', dropdown.data)">
+        <span>Rename</span>
+      </div>
+      <div class="menu-item" @click="handleMenuAction('move', dropdown.data)">
+        <span>Move</span>
+      </div>
+      <div class="menu-divider"></div>
+      <div class="menu-item" @click="handleMenuAction('download', dropdown.data)" v-if="dropdown.data.type === 'file'">
+        <span>Download</span>
+      </div>
+      <div class="menu-item danger" @click="handleMenuAction('delete', dropdown.data)">
+        <span>Delete</span>
+      </div>
+    </div>
   </div>
 </template>
 
 <script>
 import * as types from '../../../../store/mutation-types';
 import { getIconForFile, getIconForFolder, getIconForOpenFolder } from 'vscode-icons-js';
-import { RefreshCw } from 'lucide-vue-next';
-import { ElMessage } from 'element-plus';
+import { RefreshCw, MoreVertical } from 'lucide-vue-next';
+import { ElMessage, ElMessageBox } from 'element-plus';
 
 export default {
   components: {
     RefreshCw,
+    MoreVertical,
   },
   data() {
     return {
@@ -49,6 +108,20 @@ export default {
         label: 'label',
         children: 'children',
       },
+      contextMenu: {
+        visible: false,
+        x: 0,
+        y: 0,
+        data: null
+      },
+      dropdown: {
+        visible: false,
+        x: 0,
+        y: 0,
+        data: null
+      },
+      renameMode: false,
+      renameData: null
     }
   },
   methods: {
@@ -129,6 +202,9 @@ export default {
       this.$store.dispatch(`ide/${types.IDE_SAVE_PROJECT}`, {});
     },
     handleNodeClick(data) {
+      // Close any open menus
+      this.closeAllMenus();
+      
       this.$store.commit('ide/setNodeSelected', data);
       
       // In multi-root mode, we need to set the correct project as current
@@ -140,12 +216,129 @@ export default {
         }
       }
       
+      // Single click opens file
       if (data.type === 'file')
         this.$emit('get-item', data.path);
-      // if (this.getFile === true && data.type === 'file') {
-      //   this.$emit('get-item', data.path);
-      // }
-      // this.getFile = true;
+    },
+    
+    handleDoubleClick(data) {
+      // Double click to rename
+      if (data.type === 'file' || data.type === 'dir' || data.type === 'folder') {
+        this.startRename(data);
+      }
+    },
+    
+    handleContextMenu(event, data, node) {
+      event.preventDefault();
+      this.showContextMenu(event, data);
+    },
+    
+    showContextMenu(event, data) {
+      this.closeAllMenus();
+      this.contextMenu = {
+        visible: true,
+        x: event.clientX,
+        y: event.clientY,
+        data: data
+      };
+      
+      // Add event listener to close menu when clicking outside
+      document.addEventListener('click', this.closeAllMenus);
+    },
+    
+    showDropdown(event, data) {
+      event.preventDefault();
+      event.stopPropagation();
+      
+      this.closeAllMenus();
+      
+      const rect = event.target.getBoundingClientRect();
+      this.dropdown = {
+        visible: true,
+        x: rect.left,
+        y: rect.bottom,
+        data: data
+      };
+      
+      // Add event listener to close menu when clicking outside
+      document.addEventListener('click', this.closeAllMenus);
+    },
+    
+    closeAllMenus() {
+      this.contextMenu.visible = false;
+      this.dropdown.visible = false;
+      document.removeEventListener('click', this.closeAllMenus);
+    },
+    
+    startRename(data) {
+      const name = data.label || data.name;
+      ElMessageBox.prompt('Enter new name:', 'Rename', {
+        confirmButtonText: 'OK',
+        cancelButtonText: 'Cancel',
+        inputValue: name,
+        inputPattern: /^[a-zA-Z0-9_.-]+$/,
+        inputErrorMessage: 'Invalid name format'
+      }).then(({ value }) => {
+        this.doRename(data, value);
+      }).catch(() => {
+        // User cancelled
+      });
+    },
+    
+    doRename(data, newName) {
+      // Emit rename event to parent
+      this.$emit('rename-item', {
+        oldPath: data.path,
+        newName: newName,
+        type: data.type
+      });
+    },
+    
+    handleMenuAction(action, data) {
+      this.closeAllMenus();
+      
+      switch(action) {
+        case 'open':
+          if (data.type === 'file') {
+            this.$emit('get-item', data.path);
+          }
+          break;
+        case 'rename':
+          this.startRename(data);
+          break;
+        case 'delete':
+          ElMessageBox.confirm(
+            `Are you sure you want to delete "${data.label}"?`,
+            'Confirm Delete',
+            {
+              confirmButtonText: 'Delete',
+              cancelButtonText: 'Cancel',
+              type: 'warning',
+            }
+          ).then(() => {
+            this.$emit('delete-item', {
+              path: data.path,
+              type: data.type
+            });
+          }).catch(() => {
+            // User cancelled
+          });
+          break;
+        case 'run':
+          if (data.type === 'file' && data.path.endsWith('.py')) {
+            this.$emit('run-item', data.path);
+          }
+          break;
+        case 'download':
+          if (data.type === 'file') {
+            this.$emit('download-item', data);
+          }
+          break;
+        case 'move':
+          // TODO: Implement move functionality
+          ElMessage.info('Move functionality coming soon');
+          break;
+      }
     },
   },
   mounted() {
@@ -356,6 +549,84 @@ export default {
   letter-spacing: -0.8px;
   font-family: 'Gotham-Book';
   padding-left: 2px;
+  flex: 1;
+}
+
+.node-wrapper {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  position: relative;
+}
+
+.node-actions {
+  display: none;
+  margin-left: auto;
+  padding-right: 8px;
+}
+
+.el-tree-node__content:hover .node-actions {
+  display: flex;
+}
+
+.dropdown-btn {
+  background: transparent;
+  border: none;
+  color: #969696;
+  padding: 2px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  transition: all 0.2s;
+}
+
+.dropdown-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #CCCCCC;
+}
+
+/* Context Menu & Dropdown Menu Styles */
+.context-menu,
+.dropdown-menu {
+  position: fixed;
+  background: #252526;
+  border: 1px solid #464647;
+  border-radius: 4px;
+  padding: 4px 0;
+  min-width: 150px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 10000;
+}
+
+.menu-item {
+  padding: 8px 16px;
+  cursor: pointer;
+  color: #CCCCCC;
+  font-size: 13px;
+  transition: background-color 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.menu-item:hover {
+  background: #094771;
+}
+
+.menu-item.danger {
+  color: #F44747;
+}
+
+.menu-item.danger:hover {
+  background: rgba(244, 71, 71, 0.2);
+}
+
+.menu-divider {
+  height: 1px;
+  background: #464647;
+  margin: 4px 0;
 }
 </style>
 

@@ -139,7 +139,7 @@ export default {
     }
   },
   methods: {
-    async loadFile() {
+    async loadFile(retryCount = 0) {
       // Reset state
       this.error = false;
       this.loading = true;
@@ -159,36 +159,55 @@ export default {
         projectName, 
         filePath, 
         binary: true,
+        retryCount,
         codeItem: this.codeItem,
         ideInfo: this.ideInfo
       });
+      
+      // Add a small delay for the first attempt to allow file to be fully written
+      if (retryCount === 0 && this.isImage) {
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
       
       // Request file content as base64
       this.$store.dispatch(`ide/${types.IDE_GET_FILE}`, {
         projectName: projectName,
         filePath: filePath,
         binary: true,
-        callback: (response) => {
-          this.loading = false;
+        callback: async (response) => {
           console.log('Media file response:', {
             code: response.code,
             hasData: !!response.data,
             dataKeys: response.data ? Object.keys(response.data) : [],
             contentLength: response.data?.content ? response.data.content.length : 0,
+            retryCount,
             fullResponse: response
           });
           
           if (response.code === 0 && response.data) {
             // Handle binary data
-            if (response.data.content) {
+            if (response.data.content && response.data.content.length > 0) {
+              this.loading = false;
               const mimeType = this.getMimeType();
               this.fileUrl = `data:${mimeType};base64,${response.data.content}`;
               console.log('File loaded successfully:', { mimeType, fileUrl: this.fileUrl.substring(0, 50) + '...' });
+            } else if (retryCount < 3) {
+              // File might not be fully written yet, retry with delay
+              console.log(`No content or empty content, retrying... (attempt ${retryCount + 1})`);
+              await new Promise(resolve => setTimeout(resolve, 500));
+              this.loadFile(retryCount + 1);
             } else {
-              console.error('No content in response data');
+              this.loading = false;
+              console.error('No content in response data after retries');
               this.handleError();
             }
+          } else if (response.code === -22 && retryCount < 3) {
+            // File doesn't exist yet, retry with delay
+            console.log(`File not found, retrying... (attempt ${retryCount + 1})`);
+            await new Promise(resolve => setTimeout(resolve, 500));
+            this.loadFile(retryCount + 1);
           } else {
+            this.loading = false;
             console.error('Failed to load file:', response);
             this.handleError();
           }

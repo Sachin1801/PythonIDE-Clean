@@ -32,10 +32,18 @@ const getters = {
 };
 
 const mutations = {
-  addConsoleOutput(state, { id, output }) {
+  addConsoleOutput(state, { id, type, text }) {
     for (let i = 0; i < state.ideInfo.consoleItems.length; i++) {
       if (state.ideInfo.consoleItems[i].id === id) {
-        state.ideInfo.consoleItems[i].resultList.push(output);
+        state.ideInfo.consoleItems[i].resultList.push({ type, text });
+        break;
+      }
+    }
+  },
+  clearConsoleOutput(state, consoleId) {
+    for (let i = 0; i < state.ideInfo.consoleItems.length; i++) {
+      if (state.ideInfo.consoleItems[i].id === consoleId) {
+        state.ideInfo.consoleItems[i].resultList = [];
         break;
       }
     }
@@ -56,6 +64,19 @@ const mutations = {
       }
     }
   },
+  pushConsoleItem(state, consoleItem) {
+    // Check if item already exists
+    const exists = state.ideInfo.consoleItems.find(item => item.id === consoleItem.id);
+    if (!exists) {
+      state.ideInfo.consoleItems.push(consoleItem);
+    }
+  },
+  selectConsoleItem(state, consoleId) {
+    const consoleItem = state.ideInfo.consoleItems.find(item => item.id === consoleId);
+    if (consoleItem) {
+      state.ideInfo.consoleSelected = consoleItem;
+    }
+  },
   handleProjects(state, data) {
     state.ideInfo.projList = data;
     let lastAccessTime = 0;
@@ -67,7 +88,8 @@ const mutations = {
     }
   },
   handleProject(state, data) {
-    state.ideInfo.codeItems = [];
+    // Don't clear codeItems to preserve open tabs across project switches
+    // state.ideInfo.codeItems = [];
     state.ideInfo.currProj.expandedKeys = [];
     state.ideInfo.currProj.config = data.config || {};
     state.ideInfo.currProj.data = data;
@@ -151,27 +173,57 @@ const mutations = {
     }
     state.ideInfo.currProj.expandedKeys = expandedKeys;
   },
-  handleGetFile(state, {filePath, data, save, isMedia}) {
+  handleGetFile(state, {filePath, data, save, isMedia, projectName}) {
+    // Create unique identifier for cross-project files
+    const currentProjectName = projectName || state.ideInfo.currProj?.data?.name || 'default';
+    const uniquePath = `${currentProjectName}:${filePath}`;
+    
+    // Check if file is already open
     for (let i = 0; i < state.ideInfo.codeItems.length; i++) {
-      if (state.ideInfo.codeItems[i].path === filePath) {
+      if (state.ideInfo.codeItems[i].uniquePath === uniquePath || 
+          (state.ideInfo.codeItems[i].path === filePath && !state.ideInfo.codeItems[i].uniquePath)) {
         state.ideInfo.currProj.pathSelected = filePath;
         state.ideInfo.codeSelected = state.ideInfo.codeItems[i];
         return;
       }
     }
+    
+    // Check tab limit (max 6 tabs)
+    const MAX_TABS = 6;
+    if (state.ideInfo.codeItems.length >= MAX_TABS) {
+      // Remove the oldest tab (first item) to make room
+      const closedTab = state.ideInfo.codeItems.shift();
+      console.log(`Tab limit (${MAX_TABS}) reached. Closed "${closedTab.name}" to open new file.`);
+      
+      // Show notification (if ElMessage is available)
+      if (typeof window !== 'undefined' && window.ElMessage) {
+        window.ElMessage({
+          type: 'warning',
+          message: `Tab limit (${MAX_TABS}) reached. Closed "${closedTab.name}" to open new file.`,
+          duration: 3000
+        });
+      }
+    }
+    
+    // Add new file tab
     state.ideInfo.codeItems.push({
       name: path.basename(filePath),
       content: data,
       path: filePath,
+      uniquePath: uniquePath,
+      projectName: currentProjectName,
       codemirror: null,
       isMedia: isMedia || false,
-    });    
+    });
+    
     if (save !== false || state.ideInfo.currProj.pathSelected === filePath) {
       state.ideInfo.currProj.pathSelected = filePath;
       state.ideInfo.codeSelected = state.ideInfo.codeItems[state.ideInfo.codeItems.length - 1];
       // self.saveProject();
-      state.ideInfo.treeRef.setCurrentKey(state.ideInfo.currProj.pathSelected);
-      state.ideInfo.nodeSelected = state.ideInfo.treeRef.getCurrentNode();
+      if (state.ideInfo.treeRef) {
+        state.ideInfo.treeRef.setCurrentKey(state.ideInfo.currProj.pathSelected);
+        state.ideInfo.nodeSelected = state.ideInfo.treeRef.getCurrentNode();
+      }
     }
   },
   handleDelFile(state, {parentData, filePath}) {

@@ -3,22 +3,38 @@
     <TopMenu class="top-menu"
       :consoleLimit="consoleLimit"
       :hasRunProgram="hasRunProgram"
+      :wordWrap="wordWrap"
       @set-text-dialog="setTextDialog"
       @set-del-dialog="setDelDialog"
       @set-projs-dialog="setProjsDialog"
       v-on:run-item="runPathSelected"
       @stop-item="stop"
       @theme-changed="handleThemeChange"
+      @toggle-word-wrap="toggleWordWrap"
       @open-upload-dialog="showUploadDialog = true"
       @download-file="downloadFile"
     ></TopMenu>
     <div id="total-frame" class="total-frame">
-      <ProjTree id="left-frame" class="left-frame float-left"
-        v-on:get-item="getFile"
-      ></ProjTree>
-      <div id="right-frame" class="right-frame">
-        <!-- Editor Panel -->
-        <div class="editor-panel" :style="{ width: editorWidth }">
+      <!-- Left Sidebar with File Tree (Draggable) -->
+      <div id="left-sidebar" class="left-sidebar" :style="{ width: leftSidebarWidth + 'px' }">
+        <ProjTree 
+          v-on:get-item="getFile"
+          @context-menu="showContextMenu"
+        ></ProjTree>
+      </div>
+      
+      <!-- Left Sidebar Resizer -->
+      <div class="sidebar-resizer left" 
+           @mousedown="startResizeLeft" 
+           :class="{ 'resizing': isResizingLeft, 'at-limit': resizeWarning && isResizingLeft }"
+           :style="{ left: leftSidebarWidth + 'px' }">
+        <div class="resizer-handle"></div>
+      </div>
+      
+      <!-- Center Content Area -->
+      <div id="center-frame" class="center-frame" :style="{ left: leftSidebarWidth + 5 + 'px', right: (rightSidebarVisible && previewTabs.length > 0) ? rightSidebarWidth + 5 + 'px' : '0' }">
+        <!-- Editor Section -->
+        <div class="editor-section" :style="{ height: editorHeight }">
           <div class="editor-tab-bar">
             <CodeTabs
               v-if="ideInfo.codeItems.length > 0"
@@ -32,6 +48,7 @@
                 :codeItem="item"
                 :codeItemIndex="index"
                 :consoleLimit="consoleLimit"
+                :wordWrap="wordWrap"
                 @run-item="runPathSelected"
                 v-if="ideInfo.codeSelected.path === item.path" 
                 v-on:update-item="updateItem"></IdeEditor>
@@ -39,134 +56,180 @@
           </div>
         </div>
 
-        <!-- Resizable Splitter -->
-        <div class="panel-splitter" 
-             @mousedown="startResize" 
-             :class="{ 'resizing': isResizing }">
-          <div class="splitter-handle"></div>
-        </div>
-
-        <!-- Console Toggle Button -->
-        <div v-if="showConsole" class="console-toggle-btn" @click="toggleConsole" :title="consoleVisible ? 'Hide Console' : 'Show Console'">
-          {{ consoleVisible ? '◀' : '▶' }}
-        </div>
-        
-        <!-- Console Panel -->
-        <div class="console-panel" 
-             :style="{ width: consoleWidth }"
-             v-show="!isMarkdown && showConsole && consoleVisible">
+        <!-- Console Section Below Editor -->
+        <div class="console-section" :class="{ 'collapsed': !consoleExpanded }" :style="{ height: consoleExpanded ? consoleHeight + 'px' : '35px' }">
+          <!-- Console Resize Handle -->
+          <div class="console-resizer" 
+               @mousedown="startResizeConsole"
+               :class="{ 'resizing': isResizingConsole }">
+            <div class="resizer-handle horizontal"></div>
+          </div>
           
-          <!-- New Tab System -->
-          <div class="console-mode-tabs">
-            <button 
-              :class="['tab-button', { 'active': consoleModeTab === 'output' }]"
-              @click="consoleModeTab = 'output'">
-              📄 Output
-              <span v-if="outputBadgeCount > 0" class="tab-badge">{{ outputBadgeCount }}</span>
-            </button>
-            <button 
-              :class="['tab-button', { 'active': consoleModeTab === 'terminal' }]"
-              @click="switchToTerminalTab">
-              💻 Terminal
-              <span v-if="terminalBadgeCount > 0" class="tab-badge">{{ terminalBadgeCount }}</span>
-            </button>
-          </div>
-
-          <!-- Output Tab Content -->
-          <div v-show="consoleModeTab === 'output'" class="tab-content output-tab">
-            <div class="console-tab-bar" v-if="showConsole">
-              <ConsoleTabs
-                v-if="ideInfo.consoleItems.length > 0"
-                v-on:select-item="selectConsole"
-                v-on:close-item="closeConsoleSafe">
-              </ConsoleTabs>
+          <!-- Console Header with Collapse/Expand Button -->
+          <div class="console-header" @click="toggleConsoleExpand">
+            <div class="console-header-left">
+              <span class="collapse-icon" :class="{ 'collapsed': !consoleExpanded }">▼</span>
+              <span class="console-title">Console</span>
+              <span v-if="ideInfo.consoleItems.length > 0" class="console-count">({{ ideInfo.consoleItems.length }})</span>
             </div>
-            <div class="console-content">
-              <template v-for="(item, index) in ideInfo.consoleItems" :key="item.path + index">
-                <UnifiedConsole
-                  :item="item"
-                  :isRunning="item.run"
-                  @run-item="runConsoleSelected"
-                  @stop-item="stop"
-                  @send-input="handleProgramInput"
-                  v-if="ideInfo.consoleSelected.path === item.path && ideInfo.consoleSelected.id === item.id">
-                </UnifiedConsole>
+            <div class="console-header-right" v-if="consoleExpanded">
+              <button class="console-action-btn" @click.stop="clearConsole" title="Clear Console">
+                <span>Clear</span>
+              </button>
+            </div>
+          </div>
+          
+          <!-- Console Content (Only visible when expanded) -->
+          <div v-show="consoleExpanded" class="console-body">
+            <!-- Console Output Area -->
+            <div class="console-output-area" ref="consoleOutputArea">
+              <template v-if="ideInfo.consoleSelected && ideInfo.consoleSelected.resultList">
+                <div v-for="(result, index) in ideInfo.consoleSelected.resultList" :key="index" class="console-line">
+                  <!-- Regular output -->
+                  <pre v-if="result.type === 'output' || result.type === 'text'" class="console-text">{{ result.text || result.content || result }}</pre>
+                  
+                  <!-- Error output -->
+                  <pre v-else-if="result.type === 'error'" class="console-error">{{ result.text || result.content || result }}</pre>
+                  
+                  <!-- Input prompt -->
+                  <div v-else-if="result.type === 'input' || result.type === 'input-prompt'" class="console-input-prompt">
+                    <span class="prompt-arrow">▶</span>
+                    <span>{{ result.text || result.content || result }}</span>
+                  </div>
+                  
+                  <!-- System message -->
+                  <pre v-else-if="result.type === 'system'" class="console-system">{{ result.text || result.content || result }}</pre>
+                  
+                  <!-- Default fallback -->
+                  <pre v-else class="console-text">{{ typeof result === 'object' ? (result.text || result.content || JSON.stringify(result)) : result }}</pre>
+                </div>
               </template>
-            </div>
-          </div>
-
-          <!-- Terminal Tab Content -->
-          <div v-show="consoleModeTab === 'terminal'" class="tab-content terminal-tab">
-            <div class="terminal-header">
-              <span class="terminal-title">Python Interactive Terminal (REPL)</span>
-              <div class="terminal-actions">
-                <button @click="restartTerminal" class="terminal-btn">Restart</button>
-                <button @click="clearTerminal" class="terminal-btn">Clear</button>
-              </div>
-            </div>
-            <div class="terminal-content" ref="terminalContent">
-              <!-- Terminal Output -->
-              <div class="terminal-output">
-                <!-- Welcome message -->
-                <div v-if="terminalOutput.length === 0" class="terminal-welcome">
-                  <div v-if="pyodideLoading" class="pyodide-loading">
-                    <div>🐍 Loading Python environment...</div>
-                    <div>Please wait while Pyodide initializes (~10MB download)</div>
-                    <div class="loading-spinner">⏳</div>
-                  </div>
-                  <div v-else-if="pyodideReady" class="pyodide-ready">
-                    <div>🐍 Python 3.11 Interactive Shell (Powered by Pyodide)</div>
-                    <div>Type Python commands and press Enter to execute.</div>
-                    <div>Variables persist across commands - full Python environment!</div>
-                    <div class="python-features">Available: numpy, pandas, matplotlib, and more!</div>
-                  </div>
-                  <div v-else class="pyodide-not-loaded" @click="initializePyodide">
-                    <div>🐍 Python Interactive Terminal</div>
-                    <div>Click here or type a command to initialize Python environment.</div>
-                  </div>
-                </div>
-                
-                <!-- Terminal history -->
-                <div v-for="(item, index) in terminalOutput" :key="index" class="terminal-line">
-                  <div v-if="item.type === 'input'" class="terminal-input-line">
-                    <span class="prompt-symbol">>>> </span>
-                    <span class="input-text">{{ item.content }}</span>
-                  </div>
-                  <div v-else-if="item.type === 'output'" class="terminal-output-line">
-                    <pre>{{ item.content }}</pre>
-                  </div>
-                  <div v-else-if="item.type === 'error'" class="terminal-error-line">
-                    <pre>{{ item.content }}</pre>
-                  </div>
-                </div>
-              </div>
               
-              <!-- Current input prompt -->
-              <div class="terminal-current-prompt">
+              <!-- Input field when waiting for input -->
+              <div v-if="ideInfo.consoleSelected && ideInfo.consoleSelected.waitingForInput" class="console-input-area">
+                <div class="input-prompt">
+                  <span class="prompt-icon">💬</span>
+                  <span>{{ ideInfo.consoleSelected.inputPrompt || 'Enter input:' }}</span>
+                </div>
+                <div class="input-field-container">
+                  <input
+                    v-model="programInput"
+                    @keyup.enter="sendProgramInput"
+                    ref="programInputField"
+                    class="program-input-field"
+                    placeholder="Type your input and press Enter..."
+                    autofocus
+                  />
+                  <button @click="sendProgramInput" class="input-submit-btn">Send</button>
+                </div>
+              </div>
+            </div>
+            
+            <!-- REPL Input Area (like p5.js) -->
+            <div class="repl-section">
+              <div class="repl-prompt">
                 <span class="prompt-symbol">>>> </span>
                 <input 
                   type="text" 
-                  class="terminal-input"
-                  placeholder="Enter Python command..."
-                  v-model="terminalInput"
-                  @keyup.enter="executeTerminalCommand"
-                  @keyup.up="navigateHistory('up')"
-                  @keyup.down="navigateHistory('down')"
-                  ref="terminalInputField">
+                  class="repl-input"
+                  placeholder="Enter Python code..."
+                  v-model="replInput"
+                  @keyup.enter="executeReplCommand"
+                  @keyup.up="navigateReplHistory('up')"
+                  @keyup.down="navigateReplHistory('down')"
+                  ref="replInputField">
               </div>
             </div>
           </div>
         </div>
       </div>
-      <DialogProjs v-if="showProjsDialog"
-        @on-cancel="onCloseProjsDialog" @on-select="onSelectProj" @on-delete="onDeleteProj" 
-        @set-text-dialog="setTextDialog"></DialogProjs>
-      <DialogText v-if="showFileDialog" :title="dialogTitle" :text="dialogText" :tips="dialogTips" @check-input="inputIsLegal"
-        @on-cancel="onCloseTextDialog" @on-create="onCreate"></DialogText>
-      <DialogDelete v-if="showDeleteDialog" :title="dialogTitle"
-        @on-cancel="onCancelDelete" @on-delete="onDelete"></DialogDelete>
-      <DialogUpload v-if="showUploadDialog" v-model="showUploadDialog" @refresh-tree="refreshProjectTree" @close="showUploadDialog = false"></DialogUpload>
+
+      <!-- Show Preview Button (when hidden but has content) -->
+      <div v-if="!rightSidebarVisible && previewTabs.length > 0" 
+           class="show-preview-btn" 
+           @click="rightSidebarVisible = true"
+           title="Show Preview Panel">
+        <span class="tab-count">{{ previewTabs.length }}</span>
+        <span>◀</span>
+      </div>
+      
+      <!-- Right Sidebar Resizer -->
+      <div v-if="rightSidebarVisible && previewTabs.length > 0" 
+           class="sidebar-resizer right" 
+           @mousedown="startResizeRight" 
+           :class="{ 'resizing': isResizingRight, 'at-limit': resizeWarning && isResizingRight }"
+           :style="{ right: rightSidebarWidth + 'px' }">
+        <div class="resizer-handle"></div>
+      </div>
+      
+      <!-- Right Sidebar for Preview/Output (Draggable) -->
+      <div v-if="rightSidebarVisible && previewTabs.length > 0" 
+           id="right-sidebar" 
+           class="right-sidebar" 
+           :style="{ width: rightSidebarWidth + 'px' }">
+        
+        <!-- Preview/Output Tabs -->
+        <div class="preview-tabs">
+          <div class="preview-tab-list">
+            <button 
+              v-for="tab in previewTabs" 
+              :key="tab.id"
+              :class="['preview-tab', { 'active': selectedPreviewTab === tab.id }]"
+              @click="selectPreviewTab(tab.id)">
+              <span class="tab-icon">{{ getTabIcon(tab.type) }}</span>
+              <span class="tab-title">{{ tab.title }}</span>
+              <span class="tab-close" @click.stop="closePreviewTab(tab.id)">×</span>
+            </button>
+          </div>
+          <button class="preview-tab-add" @click="toggleRightSidebar" title="Hide Preview Panel">
+            ×
+          </button>
+        </div>
+        
+        <!-- Preview Content Area -->
+        <div class="preview-content">
+          <template v-for="tab in previewTabs" :key="tab.id">
+            <div v-show="selectedPreviewTab === tab.id" class="preview-panel">
+              <!-- Output Panel -->
+              <div v-if="tab.type === 'output'" class="output-panel">
+                <div class="output-content">
+                  <div v-for="(line, idx) in tab.content" :key="idx" 
+                       :class="['output-line', line.type]">
+                    <pre>{{ line.text }}</pre>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Image Preview Panel -->
+              <div v-else-if="tab.type === 'image'" class="image-preview-panel">
+                <img :src="tab.content" :alt="tab.title" />
+              </div>
+              
+              <!-- PDF Preview Panel -->
+              <div v-else-if="tab.type === 'pdf'" class="pdf-preview-panel">
+                <iframe :src="tab.content" frameborder="0"></iframe>
+              </div>
+              
+              <!-- CSV/Data Preview Panel -->
+              <div v-else-if="tab.type === 'data'" class="data-preview-panel">
+                <CsvViewer :content="tab.content" />
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+      
+      <!-- Dialogs moved outside of total-frame -->
     </div>
+    <!-- Dialogs -->
+    <DialogProjs v-if="showProjsDialog"
+      @on-cancel="onCloseProjsDialog" @on-select="onSelectProj" @on-delete="onDeleteProj" 
+      @set-text-dialog="setTextDialog"></DialogProjs>
+    <DialogText v-if="showFileDialog" :title="dialogTitle" :text="dialogText" :tips="dialogTips" @check-input="inputIsLegal"
+      @on-cancel="onCloseTextDialog" @on-create="onCreate"></DialogText>
+    <DialogDelete v-if="showDeleteDialog" :title="dialogTitle"
+      @on-cancel="onCancelDelete" @on-delete="onDelete"></DialogDelete>
+    <DialogUpload v-if="showUploadDialog" v-model="showUploadDialog" @refresh-tree="refreshProjectTree" @close="showUploadDialog = false"></DialogUpload>
   </div>
 </template>
 
@@ -183,6 +246,7 @@ import DialogProjs from './pages/ide/dialog/DialogProjs';
 import DialogText from './pages/ide/dialog/DialogText';
 import DialogDelete from './pages/ide/dialog/DialogDelete';
 import DialogUpload from './pages/ide/dialog/DialogUpload';
+import CsvViewer from './pages/ide/CsvViewer';
 const path = require('path');
 
 export default {
@@ -193,29 +257,51 @@ export default {
       showProjsDialog: false,
       showUploadDialog: false,
       showCover: true,
+      showContextMenu: false,
+      contextMenuPosition: { x: 0, y: 0 },
+      contextMenuTarget: null,
       
       dialogType: '',
       dialogTitle: '',
       dialogTips: '',
       dialogText: '',
       
-      // Split layout properties - keep editor at full size
-      consoleWidth: '0%',
-      editorWidth: '100%',
-      isResizing: false,
-      startX: 0,
-      startConsoleWidth: 0,
-      minConsoleWidth: 300,
-      maxConsoleWidth: 70, // percentage
-      consoleVisible: true, // Control console visibility
+      // Layout properties
+      leftSidebarWidth: 250,
+      rightSidebarWidth: 400,
+      rightSidebarVisible: false, // Hidden by default until needed
+      consoleHeight: 200,
+      consoleExpanded: true,
+      editorHeight: 'calc(100% - 235px)', // Adjust based on console height
+      minEditorWidth: 500, // Minimum width for the code editor area
       
-      // Console tab system
-      consoleModeTab: 'output', // 'output' | 'terminal'
-      outputBadgeCount: 0,
-      terminalBadgeCount: 0,
-      terminalInput: '',
-      terminalHistory: [],
-      terminalHistoryIndex: -1,
+      // Resize states
+      isResizingLeft: false,
+      isResizingRight: false,
+      isResizingConsole: false,
+      startX: 0,
+      startY: 0,
+      startWidth: 0,
+      startHeight: 0,
+      resizeWarning: false, // Show warning when approaching limits
+      
+      // Program input
+      programInput: '',
+      
+      // Word wrap
+      wordWrap: true, // Enabled by default
+      
+      // Console/REPL
+      replInput: '',
+      replHistory: [],
+      replHistoryIndex: -1,
+      
+      // Preview tabs
+      previewTabs: [], // Start with no tabs
+      selectedPreviewTab: null,
+      previewTabCounter: 0,
+      
+      // Terminal (moved to REPL)
       terminalOutput: [],
       terminalSessionActive: false,
       
@@ -236,6 +322,7 @@ export default {
     DialogText,
     DialogDelete,
     DialogUpload,
+    CsvViewer,
   },
   created() {
   },
@@ -246,6 +333,9 @@ export default {
     
     // Load user layout preferences
     this.loadLayoutPreferences();
+    
+    // Add window resize listener to validate layout
+    window.addEventListener('resize', this.validateLayout);
     
     const self = this;
     const t = setInterval(() => {
@@ -263,6 +353,18 @@ export default {
       }
     }, 1000);
     window.addEventListener('resize', this.resize);
+  },
+  
+  beforeUnmount() {
+    window.removeEventListener('resize', this.validateLayout);
+    window.removeEventListener('resize', this.resize);
+    
+    // Clean up blob URLs when component is destroyed
+    this.previewTabs.forEach(tab => {
+      if (tab.type === 'pdf' && tab.content && tab.content.startsWith('blob:')) {
+        URL.revokeObjectURL(tab.content);
+      }
+    });
   },
   computed: {
     wsInfo() {
@@ -303,9 +405,139 @@ export default {
       return show;
     }
   },
+  watch: {
+    'ideInfo.consoleSelected.waitingForInput': function(newVal) {
+      if (newVal) {
+        // Focus on input field when waiting for input
+        this.$nextTick(() => {
+          if (this.$refs.programInputField) {
+            this.$refs.programInputField.focus();
+          }
+        });
+      }
+    },
+    consoleExpanded(newVal) {
+      if (newVal) {
+        // Scroll to bottom when console is expanded
+        this.$nextTick(() => {
+          if (this.$refs.consoleOutputArea) {
+            this.$refs.consoleOutputArea.scrollTop = this.$refs.consoleOutputArea.scrollHeight;
+          }
+        });
+      }
+    }
+  },
   methods: {
-    toggleConsole() {
-      this.consoleVisible = !this.consoleVisible;
+    toggleConsoleExpand() {
+      this.consoleExpanded = !this.consoleExpanded;
+      // Update editor height when console is toggled
+      this.updateEditorHeight();
+      
+      // Save preference
+      localStorage.setItem('console-expanded', this.consoleExpanded);
+    },
+    
+    updateEditorHeight() {
+      if (this.consoleExpanded) {
+        // Ensure console doesn't take too much space
+        const maxConsoleHeight = window.innerHeight - 300; // Min editor height
+        const actualConsoleHeight = Math.min(this.consoleHeight, maxConsoleHeight);
+        this.editorHeight = `calc(100% - ${actualConsoleHeight + 35}px)`;
+      } else {
+        this.editorHeight = 'calc(100% - 35px)';
+      }
+    },
+    
+    clearConsole() {
+      // Clear current console output
+      const currentConsole = this.ideInfo.consoleSelected;
+      if (currentConsole && currentConsole.resultList) {
+        this.$store.commit('ide/clearConsoleOutput', currentConsole.id);
+      }
+      
+      // Also clear program input
+      this.programInput = '';
+    },
+    
+    toggleWordWrap() {
+      this.wordWrap = !this.wordWrap;
+      localStorage.setItem('word-wrap', this.wordWrap);
+      // The change will be picked up by the CodeEditor component
+    },
+    
+    toggleRightSidebar() {
+      // Only allow toggling if there are tabs to show
+      if (this.previewTabs.length > 0 || this.rightSidebarVisible) {
+        this.rightSidebarVisible = !this.rightSidebarVisible;
+        localStorage.setItem('right-sidebar-visible', this.rightSidebarVisible);
+      }
+    },
+    
+    selectPreviewTab(tabId) {
+      this.selectedPreviewTab = tabId;
+    },
+    
+    closePreviewTab(tabId) {
+      const index = this.previewTabs.findIndex(t => t.id === tabId);
+      if (index > -1) {
+        const tab = this.previewTabs[index];
+        
+        // Clean up blob URL if it's a PDF
+        if (tab.type === 'pdf' && tab.content && tab.content.startsWith('blob:')) {
+          URL.revokeObjectURL(tab.content);
+        }
+        
+        this.previewTabs.splice(index, 1);
+        
+        // If this was the selected tab, select another one or null
+        if (this.selectedPreviewTab === tabId) {
+          this.selectedPreviewTab = this.previewTabs.length > 0 ? this.previewTabs[0].id : null;
+        }
+        
+        // Hide sidebar if no tabs left
+        if (this.previewTabs.length === 0) {
+          this.rightSidebarVisible = false;
+        }
+      }
+    },
+    
+    addPreviewTab(type, title, content, filePath) {
+      // Check if tab already exists for this file
+      const existingTab = this.previewTabs.find(tab => tab.filePath === filePath);
+      
+      if (existingTab) {
+        // Tab already exists, just switch to it
+        this.selectedPreviewTab = existingTab.id;
+        
+        // Update content if it has changed
+        if (existingTab.content !== content) {
+          // Clean up old blob URL if it exists
+          if (existingTab.type === 'pdf' && existingTab.content.startsWith('blob:')) {
+            URL.revokeObjectURL(existingTab.content);
+          }
+          existingTab.content = content;
+        }
+      } else {
+        // Create new tab
+        const id = `${type}-${++this.previewTabCounter}`;
+        this.previewTabs.push({ id, type, title, content, filePath });
+        this.selectedPreviewTab = id;
+      }
+      
+      // Make sure right sidebar is visible
+      if (!this.rightSidebarVisible) {
+        this.rightSidebarVisible = true;
+      }
+    },
+    
+    getTabIcon(type) {
+      const icons = {
+        'output': '📄',
+        'image': '🖼️',
+        'pdf': '📑',
+        'data': '📊'
+      };
+      return icons[type] || '📄';
     },
     handleThemeChange(theme) {
       // Theme change event handler - can be used for additional logic if needed
@@ -516,15 +748,80 @@ export default {
       const isMediaFile = mediaExtensions.some(ext => path.toLowerCase().endsWith(ext));
       
       if (isMediaFile) {
-        // For media files, don't fetch content, just add to tabs
-        self.$store.commit('ide/handleGetFile', {
+        // For media files, fetch binary content and display in preview panel
+        const fileName = path.split('/').pop();
+        const fileExt = path.toLowerCase().split('.').pop();
+        
+        // Use the same approach as the working MediaViewer component
+        this.$store.dispatch(`ide/${types.IDE_GET_FILE}`, {
+          projectName: this.ideInfo.currProj?.data?.name,
           filePath: path,
-          data: '', // Empty content for media files
-          save: save,
-          isMedia: true
+          binary: true,
+          callback: (response) => {
+            console.log('Media file response:', {
+              code: response.code,
+              hasData: !!response.data,
+              dataContent: response.data?.content ? 'present' : 'missing',
+              contentLength: response.data?.content ? response.data.content.length : 0
+            });
+            
+            if (response.code === 0 && response.data) {
+              // Handle binary data - following MediaViewer's approach
+              let base64Content = response.data.content || response.data;
+              
+              // Check if we have content
+              if (base64Content && base64Content.length > 0) {
+                let previewContent;
+                let previewType;
+                
+                // Get MIME type
+                const mimeTypes = {
+                  'png': 'image/png',
+                  'jpg': 'image/jpeg',
+                  'jpeg': 'image/jpeg',
+                  'gif': 'image/gif',
+                  'bmp': 'image/bmp',
+                  'svg': 'image/svg+xml',
+                  'webp': 'image/webp',
+                  'pdf': 'application/pdf'
+                };
+                const mimeType = mimeTypes[fileExt] || 'application/octet-stream';
+                
+                // Create data URL directly (like MediaViewer does)
+                previewContent = `data:${mimeType};base64,${base64Content}`;
+                previewType = fileExt === 'pdf' ? 'pdf' : 'image';
+                
+                // Add to preview tabs with file path for duplicate detection
+                self.addPreviewTab(previewType, fileName, previewContent, path);
+                
+                // Make sure right sidebar is visible
+                if (!self.rightSidebarVisible) {
+                  self.rightSidebarVisible = true;
+                }
+                
+                // Still update the file tree selection
+                if (save !== false) {
+                  self.$store.dispatch(`ide/${types.IDE_SAVE_PROJECT}`, {});
+                }
+              } else {
+                // No content received
+                console.error('No content in response data');
+                ElMessage({
+                  type: 'error',
+                  message: `Failed to load ${fileName}: No content received`,
+                  duration: 3000
+                });
+              }
+            } else {
+              console.error('Failed to get media file:', path, response);
+              ElMessage({
+                type: 'error',
+                message: `Failed to load ${fileName}`,
+                duration: 3000
+              });
+            }
+          }
         });
-        if (save !== false)
-          self.$store.dispatch(`ide/${types.IDE_SAVE_PROJECT}`, {});
       } else {
         // For regular files, fetch content as before
         this.$store.dispatch(`ide/${types.IDE_GET_FILE}`, {
@@ -536,7 +833,8 @@ export default {
                 filePath: path,
                 data: dict.data,
                 save: save,
-                isMedia: false
+                isMedia: false,
+                projectName: self.ideInfo.currProj?.data?.name
               });
               if (save !== false)
                 self.$store.dispatch(`ide/${types.IDE_SAVE_PROJECT}`, {});
@@ -958,8 +1256,13 @@ export default {
       // Layout is handled by CSS flexbox instead of calculated heights
     },
     runPathSelected() {
-      // Auto-switch to Output tab when running programs
-      this.switchToOutputTab();
+      // Ensure console is expanded when running
+      if (!this.consoleExpanded) {
+        this.consoleExpanded = true;
+        this.updateEditorHeight();
+      }
+      
+      // Don't create output tab in right panel anymore - console is sufficient
       
       let selected = false;
       if (this.ideInfo.consoleSelected.run === false && this.ideInfo.consoleSelected.path === this.ideInfo.currProj.pathSelected) {
@@ -983,9 +1286,9 @@ export default {
         }
       }
       if (selected === false) {
-        // Clean up all old console items (except Terminal) to prevent duplicates
+        // Clean up all old console items to prevent duplicates
         for (let i = this.ideInfo.consoleItems.length - 1; i >= 0; i--) {
-          if (this.ideInfo.consoleItems[i].run === false && !(this.ideInfo.consoleItems[i].name === 'Terminal' && this.ideInfo.consoleItems[i].path === 'Terminal')) {
+          if (this.ideInfo.consoleItems[i].run === false) {
             this.$store.commit('ide/spliceConsoleItems', {start: i, count: 1});
           }
         }
@@ -1059,64 +1362,138 @@ export default {
       this.stop(null);
     },
     
-    // Split layout resizing methods
-    startResize(event) {
-      this.isResizing = true;
+    // Sidebar resizing methods
+    startResizeLeft(event) {
+      this.isResizingLeft = true;
       this.startX = event.clientX;
+      this.startWidth = this.leftSidebarWidth;
       
-      // Get current console width in pixels
-      const rightFrame = document.getElementById('right-frame');
-      const consolePanel = rightFrame.querySelector('.console-panel');
-      this.startConsoleWidth = consolePanel.offsetWidth;
-      
-      // Add event listeners
-      document.addEventListener('mousemove', this.handleResize);
-      document.addEventListener('mouseup', this.stopResize);
-      
-      // Prevent text selection during resize
+      document.addEventListener('mousemove', this.handleResizeLeft);
+      document.addEventListener('mouseup', this.stopResizeLeft);
       event.preventDefault();
     },
     
-    handleResize(event) {
-      if (!this.isResizing) return;
+    handleResizeLeft(event) {
+      if (!this.isResizingLeft) return;
       
-      const deltaX = this.startX - event.clientX; // Negative when moving left
-      const rightFrame = document.getElementById('right-frame');
-      const rightFrameWidth = rightFrame.offsetWidth;
+      const deltaX = event.clientX - this.startX;
+      const windowWidth = window.innerWidth;
+      const rightPanelWidth = this.rightSidebarVisible ? this.rightSidebarWidth : 0;
+      const maxLeftWidth = windowWidth - rightPanelWidth - this.minEditorWidth - 10; // 10px for resizers
       
-      // Calculate new console width
-      let newConsoleWidth = this.startConsoleWidth + deltaX;
+      // Calculate new width
+      let newWidth = this.startWidth + deltaX;
       
-      // Apply constraints
-      const minWidth = this.minConsoleWidth;
-      const maxWidth = (rightFrameWidth * this.maxConsoleWidth) / 100;
+      // Check if approaching limits
+      this.resizeWarning = newWidth < 160 || newWidth > maxLeftWidth - 10;
       
-      newConsoleWidth = Math.max(minWidth, Math.min(maxWidth, newConsoleWidth));
-      
-      // Update widths
-      const consolePercentage = (newConsoleWidth / rightFrameWidth) * 100;
-      const editorPercentage = 100 - consolePercentage;
-      
-      this.consoleWidth = `${consolePercentage}%`;
-      this.editorWidth = `${editorPercentage}%`;
+      // Constrain left sidebar width
+      newWidth = Math.max(150, Math.min(Math.min(500, maxLeftWidth), newWidth));
+      this.leftSidebarWidth = newWidth;
     },
     
-    stopResize() {
-      this.isResizing = false;
+    stopResizeLeft() {
+      this.isResizingLeft = false;
+      this.resizeWarning = false;
+      document.removeEventListener('mousemove', this.handleResizeLeft);
+      document.removeEventListener('mouseup', this.stopResizeLeft);
+      this.validateLayout();
+      this.saveLayoutPreferences();
+    },
+    
+    startResizeRight(event) {
+      this.isResizingRight = true;
+      this.startX = event.clientX;
+      this.startWidth = this.rightSidebarWidth;
       
-      // Remove event listeners
-      document.removeEventListener('mousemove', this.handleResize);
-      document.removeEventListener('mouseup', this.stopResize);
+      document.addEventListener('mousemove', this.handleResizeRight);
+      document.addEventListener('mouseup', this.stopResizeRight);
+      event.preventDefault();
+    },
+    
+    handleResizeRight(event) {
+      if (!this.isResizingRight) return;
       
-      // Save user preference (could be stored in localStorage later)
+      const deltaX = this.startX - event.clientX; // Inverted for right sidebar
+      const windowWidth = window.innerWidth;
+      const maxRightWidth = windowWidth - this.leftSidebarWidth - this.minEditorWidth - 10; // 10px for resizers
+      
+      // Calculate new width
+      let newWidth = this.startWidth + deltaX;
+      
+      // Check if approaching limits
+      this.resizeWarning = newWidth < 310 || newWidth > maxRightWidth - 10;
+      
+      // Constrain right sidebar width (removed 600px hard limit for better PDF viewing)
+      newWidth = Math.max(300, Math.min(maxRightWidth, newWidth));
+      this.rightSidebarWidth = newWidth;
+    },
+    
+    stopResizeRight() {
+      this.isResizingRight = false;
+      this.resizeWarning = false;
+      document.removeEventListener('mousemove', this.handleResizeRight);
+      document.removeEventListener('mouseup', this.stopResizeRight);
+      this.validateLayout();
+      this.saveLayoutPreferences();
+    },
+    
+    // Console resizing methods
+    startResizeConsole(event) {
+      this.isResizingConsole = true;
+      this.startY = event.clientY;
+      this.startHeight = this.consoleHeight;
+      
+      document.addEventListener('mousemove', this.handleResizeConsole);
+      document.addEventListener('mouseup', this.stopResizeConsole);
+      event.preventDefault();
+    },
+    
+    handleResizeConsole(event) {
+      if (!this.isResizingConsole) return;
+      
+      const deltaY = this.startY - event.clientY; // Negative when dragging down
+      const windowHeight = window.innerHeight;
+      const maxConsoleHeight = windowHeight - 200; // Leave space for editor
+      
+      // Calculate new height
+      let newHeight = this.startHeight + deltaY;
+      
+      // Constrain console height
+      newHeight = Math.max(100, Math.min(maxConsoleHeight, newHeight));
+      this.consoleHeight = newHeight;
+      
+      // Update editor height
+      this.updateEditorHeight();
+    },
+    
+    stopResizeConsole() {
+      this.isResizingConsole = false;
+      
+      // Remove event listeners using stored handlers
+      if (this._consoleMoveHandler) {
+        document.removeEventListener('mousemove', this._consoleMoveHandler);
+        this._consoleMoveHandler = null;
+      }
+      if (this._consoleUpHandler) {
+        document.removeEventListener('mouseup', this._consoleUpHandler);
+        this._consoleUpHandler = null;
+      }
+      
+      // Final update to ensure proper height
+      this.updateEditorHeight();
       this.saveLayoutPreferences();
     },
     
     saveLayoutPreferences() {
       // Store layout preferences in localStorage
       const preferences = {
-        consoleWidth: this.consoleWidth,
-        editorWidth: this.editorWidth
+        leftSidebarWidth: this.leftSidebarWidth,
+        rightSidebarWidth: this.rightSidebarWidth,
+        rightSidebarVisible: this.rightSidebarVisible,
+        consoleHeight: this.consoleHeight,
+        consoleExpanded: this.consoleExpanded,
+        wordWrap: this.wordWrap
       };
       localStorage.setItem('ide-layout-preferences', JSON.stringify(preferences));
     },
@@ -1127,58 +1504,217 @@ export default {
       if (stored) {
         try {
           const preferences = JSON.parse(stored);
-          this.consoleWidth = preferences.consoleWidth || '0%';
-          this.editorWidth = preferences.editorWidth || '100%';
+          this.leftSidebarWidth = preferences.leftSidebarWidth || 250;
+          this.rightSidebarWidth = preferences.rightSidebarWidth || 400;
+          this.rightSidebarVisible = preferences.rightSidebarVisible === true;
+          this.consoleHeight = preferences.consoleHeight || 200;
+          this.consoleExpanded = preferences.consoleExpanded !== false;
+          this.wordWrap = preferences.wordWrap !== false;
         } catch (e) {
           console.warn('Failed to load layout preferences:', e);
         }
       }
+      this.validateLayout();
+      this.updateEditorHeight();
     },
     
-    // Handle input from UnifiedConsole for running programs
-    handleProgramInput(data) {
-      // First, clear the waiting state immediately to provide user feedback
+    validateLayout() {
+      // Ensure layout doesn't violate minimum editor width
+      const windowWidth = window.innerWidth;
+      
+      // Don't validate on very small screens
+      if (windowWidth < 900) {
+        return;
+      }
+      
+      const totalSidebars = this.leftSidebarWidth + (this.rightSidebarVisible ? this.rightSidebarWidth : 0);
+      const availableForEditor = windowWidth - totalSidebars - 10; // 10px for resizers
+      
+      if (availableForEditor < this.minEditorWidth) {
+        // Adjust sidebars proportionally to maintain minimum editor width
+        const excess = this.minEditorWidth - availableForEditor;
+        
+        if (this.rightSidebarVisible) {
+          // Distribute excess between both sidebars
+          const leftRatio = this.leftSidebarWidth / (this.leftSidebarWidth + this.rightSidebarWidth);
+          const rightRatio = 1 - leftRatio;
+          
+          const leftReduction = Math.min(this.leftSidebarWidth - 150, excess * leftRatio);
+          const rightReduction = Math.min(this.rightSidebarWidth - 300, excess * rightRatio);
+          
+          // Apply reductions
+          this.leftSidebarWidth = Math.max(150, this.leftSidebarWidth - leftReduction);
+          this.rightSidebarWidth = Math.max(300, this.rightSidebarWidth - rightReduction);
+          
+          // If still not enough space, hide right sidebar
+          const newTotal = this.leftSidebarWidth + this.rightSidebarWidth;
+          if (windowWidth - newTotal - 10 < this.minEditorWidth) {
+            this.rightSidebarVisible = false;
+          }
+        } else {
+          // Only adjust left sidebar
+          this.leftSidebarWidth = Math.max(150, Math.min(this.leftSidebarWidth, windowWidth - this.minEditorWidth - 10));
+        }
+      }
+    },
+    
+    // Send input for running programs
+    sendProgramInput() {
+      if (!this.programInput.trim()) return;
+      
+      const input = this.programInput;
+      const programId = this.ideInfo.consoleSelected.id;
+      
+      // Add input to console output
+      this.$store.commit('ide/addConsoleOutput', {
+        id: programId,
+        type: 'input',
+        text: `▶ ${input}`
+      });
+      
+      // Clear input field
+      this.programInput = '';
+      
+      // Clear waiting state
       this.$store.commit('ide/setConsoleWaiting', {
-        id: data.programId,
+        id: programId,
         waiting: false,
         prompt: ''
       });
       
-      // Then send the input to the backend
+      // Send to backend
       this.$store.dispatch(`ide/${types.IDE_SEND_PROGRAM_INPUT}`, {
-        program_id: data.programId,
-        input: data.input,
+        program_id: programId,
+        input: input,
         callback: {
           limits: -1,
           callback: (dict) => {
-            // Handle response if needed
             console.log('Input sent:', dict);
-            
-            // Double-check state is cleared in case of any timing issues
-            this.$store.commit('ide/setConsoleWaiting', {
-              id: data.programId,
-              waiting: false
-            });
           }
+        }
+      });
+      
+      // Scroll to bottom
+      this.$nextTick(() => {
+        if (this.$refs.consoleOutputArea) {
+          this.$refs.consoleOutputArea.scrollTop = this.$refs.consoleOutputArea.scrollHeight;
         }
       });
     },
     
-    // Console tab methods
-    clearTerminal() {
-      this.terminalOutput = [];
-      this.terminalInput = '';
-      this.terminalHistory = [];
-      this.terminalHistoryIndex = -1;
+    // REPL methods (moved from terminal)
+    async executeReplCommand() {
+      if (!this.replInput.trim()) return;
+      
+      const command = this.replInput.trim();
+      
+      // Add to history
+      if (this.replHistory[this.replHistory.length - 1] !== command) {
+        this.replHistory.push(command);
+      }
+      this.replHistoryIndex = -1;
+      
+      // Ensure we have a console item for REPL output
+      this.ensureReplConsole();
+      
+      // Add command to console output
+      this.addReplOutput(`>>> ${command}`, 'input');
+      
+      // Clear input immediately for responsiveness
+      this.replInput = '';
+      
+      // Handle special commands
+      if (command === 'clear' || command === 'clear()') {
+        this.clearConsole();
+        return;
+      }
+      
+      // Initialize Pyodide if not ready
+      const isReady = await this.ensurePyodideReady();
+      if (!isReady) {
+        this.addReplOutput('Python environment failed to initialize', 'error');
+        return;
+      }
+      
+      // Execute Python code with Pyodide
+      try {
+        const result = this.pyodide.runPython(command);
+        if (result !== undefined && result !== null) {
+          this.addReplOutput(String(result), 'output');
+        }
+      } catch (error) {
+        this.addReplOutput(error.toString(), 'error');
+      }
     },
     
-    restartTerminal() {
-      this.clearTerminal();
-      this.terminalSessionActive = false;
-      // Restart Pyodide by reinitializing it
-      if (this.pyodideReady) {
-        this.initializePyodide();
-        this.addTerminalOutput('output', 'Python environment restarted.');
+    // Helper method to ensure REPL console exists
+    ensureReplConsole() {
+      // Check if we have a console selected with resultList
+      if (!this.ideInfo.consoleSelected || !this.ideInfo.consoleSelected.resultList) {
+        // Create a REPL console item if it doesn't exist
+        const replConsole = {
+          id: 'repl-console',
+          name: 'REPL',
+          path: 'REPL',
+          resultList: [],
+          run: false,
+          stop: false,
+          waitingForInput: false,
+          inputPrompt: ''
+        };
+        
+        // Check if REPL console already exists in consoleItems
+        const existingRepl = this.ideInfo.consoleItems.find(item => item.id === 'repl-console');
+        if (!existingRepl) {
+          this.$store.commit('ide/pushConsoleItem', replConsole);
+        }
+        
+        // Select the REPL console
+        this.$store.commit('ide/selectConsoleItem', 'repl-console');
+      }
+    },
+    
+    // Helper method to add output to REPL console
+    addReplOutput(text, type = 'output') {
+      // Use the store mutation to add output properly
+      if (this.ideInfo.consoleSelected && this.ideInfo.consoleSelected.id) {
+        this.$store.commit('ide/addConsoleOutput', {
+          id: this.ideInfo.consoleSelected.id,
+          type: type,
+          text: text
+        });
+        
+        // Scroll to bottom after adding output
+        this.$nextTick(() => {
+          if (this.$refs.consoleOutputArea) {
+            this.$refs.consoleOutputArea.scrollTop = this.$refs.consoleOutputArea.scrollHeight;
+          }
+        });
+      }
+    },
+    
+    navigateReplHistory(direction) {
+      if (this.replHistory.length === 0) return;
+      
+      if (direction === 'up') {
+        if (this.replHistoryIndex === -1) {
+          this.replHistoryIndex = this.replHistory.length - 1;
+        } else if (this.replHistoryIndex > 0) {
+          this.replHistoryIndex--;
+        }
+      } else if (direction === 'down') {
+        if (this.replHistoryIndex === -1) return;
+        if (this.replHistoryIndex < this.replHistory.length - 1) {
+          this.replHistoryIndex++;
+        } else {
+          this.replHistoryIndex = -1;
+          this.replInput = '';
+          return;
+        }
+      }
+      
+      if (this.replHistoryIndex >= 0) {
+        this.replInput = this.replHistory[this.replHistoryIndex];
       }
     },
     
@@ -1387,7 +1923,643 @@ Advanced packages (install with micropip):
 }
 </script>
 <style scoped>
-/* Console Mode Tabs */
+/* Layout Structure */
+.total-frame {
+  position: fixed;
+  width: 100%;
+  height: calc(100% - 50px);
+  top: 50px;
+  left: 0;
+  display: flex;
+  flex-direction: row;
+}
+
+/* Left Sidebar */
+.left-sidebar {
+  background: var(--bg-sidebar, #282828);
+  color: var(--text-primary, #CCCCCC);
+  height: 100%;
+  overflow: auto;
+  flex-shrink: 0;
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 10;
+}
+
+/* Center Frame */
+.center-frame {
+  position: absolute;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary, #1E1E1E);
+  min-width: 500px; /* Ensure minimum width for editor */
+  overflow: hidden;
+}
+
+/* Editor Section */
+.editor-section {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: height 0.3s ease;
+  flex: 1;
+  min-height: 200px; /* Ensure minimum editor height */
+}
+
+.editor-tab-bar {
+  height: 35px;
+  background: var(--bg-secondary, #252526);
+  border-bottom: 1px solid var(--border-primary, #3c3c3c);
+  display: flex;
+  align-items: center;
+}
+
+.editor-content {
+  flex: 1;
+  overflow: hidden;
+  background: var(--bg-primary, #1E1E1E);
+}
+
+/* Console Section */
+.console-section {
+  background: var(--bg-secondary, #252526);
+  border-top: 1px solid var(--border-primary, #3c3c3c);
+  transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  z-index: 5; /* Lower z-index to stay below right sidebar */
+  flex-direction: column;
+}
+
+.console-section.collapsed {
+  overflow: hidden;
+}
+
+/* Console Resizer */
+.console-resizer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 5px;
+  cursor: ns-resize;
+  background: transparent;
+  z-index: 20;
+  transition: background-color 0.2s ease;
+}
+
+.console-resizer:hover {
+  background: rgba(0, 122, 204, 0.3);
+}
+
+.console-resizer.resizing {
+  background: var(--accent-color, #007ACC);
+}
+
+.resizer-handle.horizontal {
+  width: 40px;
+  height: 2px;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--text-secondary, #858585);
+  border-radius: 1px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.console-resizer:hover .resizer-handle.horizontal,
+.console-resizer.resizing .resizer-handle.horizontal {
+  opacity: 1;
+}
+
+.console-header {
+  height: 35px;
+  background: var(--bg-secondary, #2A2A2D);
+  border-bottom: 1px solid var(--border-primary, #3c3c3c);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.2s ease;
+}
+
+.console-header:hover {
+  background: var(--bg-hover, #313133);
+}
+
+.console-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.collapse-icon {
+  display: inline-block;
+  transition: transform 0.3s ease;
+  font-size: 12px;
+  color: var(--text-secondary, #969696);
+}
+
+.collapse-icon.collapsed {
+  transform: rotate(-90deg);
+}
+
+.console-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary, #CCCCCC);
+}
+
+.console-count {
+  font-size: 12px;
+  color: var(--text-secondary, #969696);
+}
+
+.console-header-right {
+  display: flex;
+  gap: 8px;
+}
+
+.console-action-btn {
+  background: transparent;
+  border: 1px solid var(--border-secondary, #464647);
+  color: var(--text-secondary, #969696);
+  padding: 4px 12px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s ease;
+}
+
+.console-action-btn:hover {
+  background: var(--bg-hover, #3A3A3C);
+  border-color: var(--accent-color, #007ACC);
+  color: var(--text-primary, #FFFFFF);
+}
+
+.console-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: calc(100% - 35px);
+}
+
+.console-tab-bar {
+  height: 30px;
+  background: var(--bg-tertiary, #1E1E1E);
+  border-bottom: 1px solid var(--border-secondary, #464647);
+}
+
+.console-output-area {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--bg-primary, #1E1E1E);
+  padding: 12px;
+  font-family: 'Courier New', Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* Console output styles */
+.console-line {
+  margin-bottom: 2px;
+}
+
+.console-text {
+  color: var(--text-primary, #CCCCCC);
+  margin: 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.console-error {
+  color: var(--error-color, #F44747);
+  margin: 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.console-input-prompt {
+  color: var(--info-color, #3794FF);
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.prompt-arrow {
+  color: var(--accent-color, #007ACC);
+  font-weight: bold;
+}
+
+.console-system {
+  color: var(--text-secondary, #969696);
+  margin: 0;
+  font-style: italic;
+  white-space: pre-wrap;
+}
+
+/* Console input area when waiting for program input */
+.console-input-area {
+  border-top: 1px solid var(--border-secondary, #464647);
+  padding: 8px 12px;
+  background: var(--bg-tertiary, #1A1A1A);
+}
+
+.input-prompt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: var(--text-secondary, #969696);
+  font-size: 13px;
+}
+
+.prompt-icon {
+  font-size: 16px;
+}
+
+.input-field-container {
+  display: flex;
+  gap: 8px;
+}
+
+.program-input-field {
+  flex: 1;
+  background: var(--bg-primary, #1E1E1E);
+  border: 1px solid var(--border-secondary, #464647);
+  color: var(--text-primary, #FFFFFF);
+  padding: 6px 10px;
+  border-radius: 3px;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  outline: none;
+}
+
+.program-input-field:focus {
+  border-color: var(--accent-color, #007ACC);
+}
+
+.input-submit-btn {
+  background: var(--accent-color, #007ACC);
+  color: white;
+  border: none;
+  padding: 6px 16px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background-color 0.2s ease;
+}
+
+.input-submit-btn:hover {
+  background: #1a8cff;
+}
+
+/* REPL Section */
+.repl-section {
+  border-top: 1px solid var(--border-primary, #3c3c3c);
+  background: var(--bg-secondary, #252526);
+  padding: 8px 12px;
+  flex-shrink: 0; /* Prevent shrinking */
+  margin-top: auto; /* Push to bottom */
+}
+
+.repl-prompt {
+  display: flex;
+  align-items: center;
+}
+
+.prompt-symbol {
+  color: var(--accent-color, #007ACC);
+  font-weight: bold;
+  margin-right: 8px;
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+}
+
+.repl-input {
+  flex: 1;
+  background: var(--bg-primary, #1E1E1E);
+  border: 1px solid var(--border-secondary, #464647);
+  color: var(--text-primary, #FFFFFF);
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+  padding: 6px 8px;
+  border-radius: 3px;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.repl-input:focus {
+  border-color: var(--accent-color, #007ACC);
+}
+
+.repl-input::placeholder {
+  color: var(--text-muted, #6A6A6A);
+}
+
+/* Right Sidebar */
+.right-sidebar {
+  background: var(--bg-sidebar, #252526);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  position: absolute;
+  top: 0;
+  right: 0;
+  border-left: 1px solid var(--border-primary, #3c3c3c);
+  z-index: 20; /* Higher z-index to stay above console section */
+}
+
+/* Preview Tabs */
+.preview-tabs {
+  height: 35px;
+  background: var(--bg-secondary, #2A2A2D);
+  border-bottom: 1px solid var(--border-primary, #3c3c3c);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 4px;
+}
+
+.preview-tab-list {
+  display: flex;
+  flex: 1;
+  overflow-x: auto;
+  gap: 2px;
+}
+
+.preview-tab {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary, #969696);
+  padding: 6px 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s ease;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.preview-tab:hover {
+  background: var(--bg-hover, #2F2F31);
+  color: var(--text-primary, #CCCCCC);
+}
+
+.preview-tab.active {
+  background: var(--bg-active, #1E1E1E);
+  color: var(--text-primary, #FFFFFF);
+  border-bottom-color: var(--accent-color, #007ACC);
+}
+
+.tab-icon {
+  font-size: 14px;
+}
+
+.tab-title {
+  font-size: 13px;
+}
+
+.tab-close {
+  margin-left: 4px;
+  opacity: 0.6;
+  transition: opacity 0.2s ease;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.tab-close:hover {
+  opacity: 1;
+  color: var(--error-color, #F44747);
+}
+
+.preview-tab-add {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary, #969696);
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+.preview-tab-add:hover {
+  background: var(--bg-hover, #2F2F31);
+  color: var(--accent-color, #007ACC);
+}
+
+/* Preview Content */
+.preview-content {
+  flex: 1;
+  overflow: hidden;
+  background: var(--bg-primary, #1E1E1E);
+}
+
+.preview-panel {
+  height: 100%;
+  overflow: auto;
+}
+
+.output-panel {
+  height: 100%;
+  padding: 12px;
+}
+
+.output-content {
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+}
+
+.output-line {
+  margin-bottom: 4px;
+}
+
+.output-line.error {
+  color: var(--error-color, #F44747);
+}
+
+.output-line.warning {
+  color: var(--warning-color, #FFCC00);
+}
+
+.output-line.info {
+  color: var(--info-color, #3794FF);
+}
+
+.output-line pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.image-preview-panel {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: var(--bg-pattern, #1A1A1A);
+}
+
+.image-preview-panel img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.pdf-preview-panel {
+  height: 100%;
+}
+
+.pdf-preview-panel iframe {
+  width: 100%;
+  height: 100%;
+}
+
+.data-preview-panel {
+  height: 100%;
+  overflow: auto;
+  padding: 12px;
+  position: relative;
+  z-index: 21; /* Ensure CSV content and scrollbars are above everything */
+}
+
+/* Sidebar Resizers */
+.sidebar-resizer {
+  width: 5px;
+  height: 100%;
+  background: var(--border-primary, #3c3c3c);
+  cursor: col-resize;
+  position: absolute;
+  transition: background-color 0.2s ease;
+  z-index: 50;
+}
+
+.sidebar-resizer:hover {
+  background: var(--accent-color, #007ACC);
+}
+
+.sidebar-resizer.resizing {
+  background: var(--accent-color, #007ACC);
+}
+
+/* Visual feedback when approaching resize limits */
+.sidebar-resizer.resizing.at-limit {
+  background: var(--warning-color, #FFA500);
+}
+
+.sidebar-resizer.left {
+  /* Position will be set inline via :style */
+}
+
+.sidebar-resizer.right {
+  /* Position will be set inline via :style */
+}
+
+.resizer-handle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 30px;
+  background: var(--text-secondary, #858585);
+  border-radius: 1px;
+  opacity: 0.6;
+  transition: opacity 0.2s ease;
+}
+
+.sidebar-resizer:hover .resizer-handle,
+.sidebar-resizer.resizing .resizer-handle {
+  opacity: 1;
+}
+
+/* Prevent resizer from going into editor area */
+.sidebar-resizer.left {
+  min-left: 150px;
+  max-left: calc(100vw - 800px); /* min editor + right sidebar */
+}
+
+.sidebar-resizer.right {
+  min-right: 300px;
+  max-right: calc(100vw - 650px); /* min editor + left sidebar */
+}
+
+/* Show Preview Button */
+.show-preview-btn {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--accent-color, #007ACC);
+  color: white;
+  padding: 8px 6px;
+  border-radius: 4px 0 0 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  z-index: 15;
+  transition: all 0.2s ease;
+}
+
+.show-preview-btn:hover {
+  background: #1a8cff;
+  padding-right: 10px;
+}
+
+.show-preview-btn .tab-count {
+  background: rgba(255, 255, 255, 0.2);
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+/* Animations */
+@keyframes slideDown {
+  from {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+}
+
+.console-section {
+  animation: slideDown 0.3s ease-out;
+}
+
+.console-section.collapsed {
+  animation: slideUp 0.3s ease-out;
+}
+
+/* Console Mode Tabs (Legacy - Hidden) */
 .console-mode-tabs {
   display: flex;
   background-color: var(--bg-secondary, #252526);
@@ -1652,233 +2824,124 @@ Advanced packages (install with micropip):
   position: relative;
   overflow: hidden;
 }
+
 a {
   color: white;
 }
-.total-frame {
-  /*background-color:gray;*/
-  position: fixed;
-  width: 100%;
-  height: calc(100% - 50px); /* Subtract header height */
-  top: 50px;
-  /* top: 76px; */
-  left: 0;
-  z-index: 1; /* Below header */
-  /* display: inline-flex; */
-  /* left: 10px; */
-  /* border:1px solid #96c2f1; */
-  /* background:yellow; */
-  /*top: 200px;
-  left: 100px;*/
-}
+
 body {
   scrollbar-track-color: #3C3F41;
 }
+
 .top-menu {
   position: fixed;
   width: 100%;
   height: 50px;
   top: 0;
-  /* top: 40px; */
   left: 0;
   background: #313131;
-  /* background: #252526; */
   display: flex;
   align-items: center;
-  z-index: 9999; /* Ensure header stays on top of everything */
+  z-index: 9999;
 }
-.top-tab {
-  width: 100%;
-  /* background: #313335; */
-  /* background-color: yellow; */
-  background: var(--bg-secondary, #252526);
-}
-.left-frame {
-  /* width:200px; */
-  width: 200px;
-  height: calc(100% - 31px);
-  overflow-y: auto;
-  overflow-x: auto;
-  /* background: #2E3032; */
-  /* background: #383B3D; */
-  background: var(--bg-sidebar, #282828);
-  color: var(--text-primary, #CCCCCC);
-  /* scrollbar-track-color: #3C3F41; */
-  /* SCROLLBAR-TRACK-COLOR: aquamarine; */
-}
-.left-frame::-webkit-scrollbar {/*scrollbar overall style*/
-  width: 6px;     /*height and width correspond to horizontal and vertical scrollbar dimensions*/
+/* Scrollbar styles */
+.left-sidebar::-webkit-scrollbar,
+.console-output-area::-webkit-scrollbar,
+.preview-content::-webkit-scrollbar {
+  width: 6px;
   height: 6px;
 }
-.left-frame::-webkit-scrollbar-thumb {/*small block inside scrollbar*/
+
+.left-sidebar::-webkit-scrollbar-thumb,
+.console-output-area::-webkit-scrollbar-thumb,
+.preview-content::-webkit-scrollbar-thumb {
   background: #87939A;
+  border-radius: 3px;
 }
-.left-frame::-webkit-scrollbar-track {/*track inside scrollbar*/
+
+.left-sidebar::-webkit-scrollbar-track,
+.console-output-area::-webkit-scrollbar-track,
+.preview-content::-webkit-scrollbar-track {
   background: #2F2F2F;
 }
-.right-frame {
-  position: absolute;
-  left: 200px;
-  right: 0px;
-  height: 100%;
-  display: flex;
-  background: var(--bg-primary, #1E1E1E);
-  overflow: hidden;
-}
 
-/* Editor Panel */
-.editor-panel {
-  display: flex;
-  flex-direction: column;
-  min-width: 400px;
-  background: var(--bg-primary, #1E1E1E);
-  border-right: 1px solid var(--border-primary, #3c3c3c);
-}
-
-.editor-tab-bar {
-  height: 35px;
+/* Context Menu */
+.context-menu {
+  position: fixed;
   background: var(--bg-secondary, #252526);
-  border-bottom: 1px solid var(--border-primary, #3c3c3c);
-  display: flex;
-  align-items: center;
+  border: 1px solid var(--border-primary, #3c3c3c);
+  border-radius: 4px;
+  padding: 4px 0;
+  min-width: 150px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 10000;
 }
 
-.editor-content {
-  flex: 1;
-  overflow: hidden;
-  background: var(--bg-primary, #1E1E1E);
-}
-
-/* Panel Splitter */
-.panel-splitter {
-  width: 4px;
-  background: var(--border-primary, #3c3c3c);
-  cursor: col-resize;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background-color 0.2s ease;
-}
-
-.panel-splitter:hover {
-  background: var(--accent-color, #007acc);
-}
-
-.panel-splitter.resizing {
-  background: var(--accent-color, #007acc);
-}
-
-.splitter-handle {
-  width: 2px;
-  height: 30px;
-  background: var(--text-secondary, #858585);
-  border-radius: 1px;
-  opacity: 0.6;
-  transition: opacity 0.2s ease;
-}
-
-.panel-splitter:hover .splitter-handle,
-.panel-splitter.resizing .splitter-handle {
-  opacity: 1;
-}
-
-/* Console Toggle Button */
-.console-toggle-btn {
-  position: absolute;
-  top: 50%;
-  right: 0;
-  transform: translateY(-50%);
-  width: 20px;
-  height: 60px;
-  background: var(--accent-color, #007acc);
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.context-menu-item {
+  padding: 8px 16px;
   cursor: pointer;
-  font-size: 12px;
-  font-weight: bold;
-  border-radius: 4px 0 0 4px;
-  z-index: 15;
+  color: var(--text-primary, #CCCCCC);
+  font-size: 13px;
   transition: background-color 0.2s ease;
 }
 
-.console-toggle-btn:hover {
-  background: #1a8cff;
+.context-menu-item:hover {
+  background: var(--bg-hover, #094771);
 }
 
-/* Console Panel */
-.console-panel {
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 400px;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-primary, #1E1E1E);
-  border-left: 1px solid var(--border-primary, #3c3c3c);
-  z-index: 10;
-}
-
-.console-tab-bar {
-  height: 35px;
-  background: var(--bg-secondary, #252526);
-  border-bottom: 1px solid var(--border-primary, #3c3c3c);
-  display: flex;
-  align-items: center;
-}
-
-.console-content {
-  flex: 1;
-  overflow: hidden;
-  background: var(--bg-primary, #1E1E1E);
+.context-menu-divider {
+  height: 1px;
+  background: var(--border-secondary, #464647);
+  margin: 4px 0;
 }
 
 /* Responsive Design */
+@media (max-width: 1400px) {
+  .left-sidebar {
+    max-width: 200px;
+  }
+  
+  .right-sidebar {
+    max-width: 350px;
+  }
+  
+  .console-height {
+    max-height: 250px;
+  }
+}
+
 @media (max-width: 1200px) {
-  .right-frame {
-    flex-direction: column;
+  .left-sidebar {
+    width: 180px !important;
   }
   
-  .editor-panel {
-    width: 100% !important;
-    height: 60%;
-    min-width: auto;
-    border-right: none;
-    border-bottom: 1px solid var(--border-primary, #3c3c3c);
+  .right-sidebar {
+    width: 300px !important;
+  }
+}
+
+@media (max-width: 900px) {
+  /* Hide sidebars on small screens */
+  .left-sidebar {
+    width: 0 !important;
+    display: none;
   }
   
-  .panel-splitter {
-    width: 100%;
-    height: 4px;
-    cursor: row-resize;
+  .sidebar-resizer.left {
+    display: none;
   }
   
-  .splitter-handle {
-    width: 30px;
-    height: 2px;
+  .center-frame {
+    left: 0 !important;
+    right: 0 !important;
   }
   
-  .console-toggle-btn {
-    top: 60%;
-    right: 0;
-    width: 60px;
-    height: 20px;
-    border-radius: 4px 0 0 0;
+  .right-sidebar {
+    display: none;
   }
   
-  .console-panel {
-    position: absolute;
-    top: 60%;
-    left: 0;
-    right: 0;
-    width: 100% !important;
-    height: 40%;
-    min-width: auto;
-    border-left: none;
-    border-top: 1px solid var(--border-primary, #3c3c3c);
+  .sidebar-resizer.right {
+    display: none;
   }
 }
 

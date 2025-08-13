@@ -3,9 +3,28 @@ matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+import sys
 
-# Get the directory of the current script
-current_dir = os.path.dirname(os.path.abspath(__file__))
+# Get the directory of the current script - handles both __file__ and sys.argv[0]
+if hasattr(sys.modules[__name__], '__file__'):
+    script_path = os.path.abspath(__file__)
+else:
+    script_path = os.path.abspath(sys.argv[0])
+
+current_dir = os.path.dirname(script_path)
+# Ensure we're in the Python directory under server/projects/ide
+if 'temp' in current_dir:
+    # If running from temp, find the actual script location
+    import inspect
+    frame = inspect.currentframe()
+    if frame:
+        filename = inspect.getfile(frame)
+        if filename and os.path.exists(filename):
+            current_dir = os.path.dirname(os.path.abspath(filename))
+    # Fallback to the known Python directory
+    if 'temp' in current_dir:
+        current_dir = '/home/sachinadlakha/on-campus/PythonIDE-Clean/server/projects/ide/Python'
+
 output_path = os.path.join(current_dir, 'test_plot.png')
 
 # Create sample data
@@ -51,8 +70,18 @@ axes[1, 1].grid(True, alpha=0.3)
 # Adjust layout and save
 plt.tight_layout()
 plt.savefig(output_path, dpi=100, bbox_inches='tight')
-print(f"Plot saved successfully to: {output_path}")
-print(f"File size: {os.path.getsize(output_path)} bytes")
+plt.close()  # Close the figure to free memory
+
+# Ensure file is fully written to disk
+import time
+time.sleep(0.1)  # Small delay to ensure file system sync
+
+# Verify file was created
+if os.path.exists(output_path):
+    print(f"Plot saved successfully to: {output_path}")
+    print(f"File size: {os.path.getsize(output_path)} bytes")
+else:
+    print(f"Error: File was not created at {output_path}")
 
 # Show plot (if supported by the environment)
 # plt.show()  # Commented out as it may not work in non-interactive environments

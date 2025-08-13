@@ -61,6 +61,10 @@ export default {
     codeItem: Object,
     codeItemIndex: Number,
     consoleLimit: Boolean,
+    wordWrap: {
+      type: Boolean,
+      default: true
+    }
   },
   data () {
     return {
@@ -131,7 +135,7 @@ export default {
         styleSelectedText: true,
         highlightSelectionMatches: { showToken: /\w/, annotateScrollbar: true },
         line: true,
-        lineWrapping: false,
+        lineWrapping: this.wordWrap,
         showCursorWhenSelecting: true,
         completeSingle: false,
         gutters: ['CodeMirror-linenumbers', 'CodeMirror-foldgutter'],
@@ -267,6 +271,14 @@ export default {
   },
   components: {
     Codemirror,
+  },
+  watch: {
+    wordWrap(newVal) {
+      // Update CodeMirror lineWrapping option when prop changes
+      if (this.$refs.codeEditor && this.$refs.codeEditor.codemirror) {
+        this.$refs.codeEditor.codemirror.setOption('lineWrapping', newVal);
+      }
+    }
   },
   methods: {
     updateEditorTheme() {

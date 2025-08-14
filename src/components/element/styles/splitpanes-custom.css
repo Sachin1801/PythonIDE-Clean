@@ -1,0 +1,180 @@
+/* Splitpanes Custom Styling */
+
+/* Base splitpanes container */
+.splitpanes {
+  height: 100%;
+  width: 100%;
+  position: relative;
+}
+
+.splitpanes__pane {
+  overflow: auto;
+  position: relative;
+}
+
+/* Custom splitter styling */
+.splitpanes.default-theme .splitpanes__splitter {
+  background-color: var(--border-primary, #3c3c3c);
+  position: relative;
+  transition: background-color 0.15s ease;
+  z-index: 50;
+  /* Performance optimizations */
+  will-change: background-color;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+.splitpanes.default-theme .splitpanes__splitter:hover {
+  background-color: var(--accent-color, #007ACC);
+}
+
+.splitpanes.default-theme .splitpanes__splitter.splitpanes__splitter__active {
+  background-color: var(--accent-color, #007ACC);
+  z-index: 100;
+}
+
+/* Horizontal splitters (for console) */
+.splitpanes--horizontal > .splitpanes__splitter {
+  height: 5px;
+  cursor: ns-resize;
+  margin: 0;
+}
+
+.splitpanes--horizontal > .splitpanes__splitter:before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 40px;
+  height: 2px;
+  background: var(--text-secondary, #858585);
+  border-radius: 1px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.splitpanes--horizontal > .splitpanes__splitter:hover:before,
+.splitpanes--horizontal > .splitpanes__splitter.splitpanes__splitter__active:before {
+  opacity: 1;
+}
+
+/* Vertical splitters (for sidebars) */
+.splitpanes--vertical > .splitpanes__splitter {
+  width: 5px;
+  cursor: col-resize;
+  margin: 0;
+}
+
+.splitpanes--vertical > .splitpanes__splitter:before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 30px;
+  background: var(--text-secondary, #858585);
+  border-radius: 1px;
+  opacity: 0.6;
+  transition: opacity 0.15s ease;
+}
+
+.splitpanes--vertical > .splitpanes__splitter:hover:before,
+.splitpanes--vertical > .splitpanes__splitter.splitpanes__splitter__active:before {
+  opacity: 1;
+}
+
+/* Disable text selection during resize */
+.splitpanes--dragging {
+  user-select: none;
+}
+
+/* Pane specific styles */
+.splitpanes__pane {
+  transition: none;
+}
+
+/* Smooth resizing */
+.splitpanes--dragging .splitpanes__pane {
+  transition: none !important;
+}
+
+/* Dark theme support */
+[data-theme="dark"] .splitpanes.default-theme .splitpanes__splitter {
+  background-color: var(--border-primary, #3c3c3c);
+}
+
+[data-theme="dark"] .splitpanes.default-theme .splitpanes__splitter:hover {
+  background-color: var(--accent-color, #007ACC);
+}
+
+/* Light theme support */
+[data-theme="light"] .splitpanes.default-theme .splitpanes__splitter {
+  background-color: var(--border-primary, #e1e1e1);
+}
+
+[data-theme="light"] .splitpanes.default-theme .splitpanes__splitter:hover {
+  background-color: var(--accent-color, #0078d4);
+}
+
+/* High contrast theme support */
+[data-theme="contrast"] .splitpanes.default-theme .splitpanes__splitter {
+  background-color: var(--border-primary, #ffffff);
+}
+
+[data-theme="contrast"] .splitpanes.default-theme .splitpanes__splitter:hover {
+  background-color: var(--accent-color, #ffff00);
+}
+
+/* Fix for nested splitpanes */
+.splitpanes .splitpanes {
+  overflow: visible;
+}
+
+/* Ensure proper layout in total-frame */
+#total-frame .splitpanes {
+  height: calc(100% - 5px);
+  position: relative;
+}
+
+/* Left sidebar specific */
+.left-sidebar {
+  height: 100%;
+  overflow-y: auto;
+  background: var(--bg-primary, #1e1e1e);
+}
+
+/* Editor section specific */
+.editor-section {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary, #1e1e1e);
+}
+
+/* Console section specific */
+.console-section {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary, #252526);
+}
+
+/* Right sidebar specific */
+.right-sidebar {
+  height: 100%;
+  overflow-y: auto;
+  background: var(--bg-secondary, #252526);
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .splitpanes--vertical > .splitpanes__splitter {
+    width: 10px;
+  }
+  
+  .splitpanes--horizontal > .splitpanes__splitter {
+    height: 10px;
+  }
+}

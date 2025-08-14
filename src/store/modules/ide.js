@@ -188,8 +188,8 @@ const mutations = {
       }
     }
     
-    // Check tab limit (max 6 tabs)
-    const MAX_TABS = 6;
+    // Check tab limit (max 5 tabs)
+    const MAX_TABS = 5;
     if (state.ideInfo.codeItems.length >= MAX_TABS) {
       // Remove the oldest tab (first item) to make room
       const closedTab = state.ideInfo.codeItems.shift();

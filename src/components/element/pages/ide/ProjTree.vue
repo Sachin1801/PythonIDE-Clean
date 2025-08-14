@@ -2,9 +2,6 @@
   <div class="proj-tree-container">
     <div class="tree-header">
       <span class="tree-title">Project Files</span>
-      <div class="refresh-btn" @click="refreshTree" title="Refresh">
-        <RefreshCw :size="16" />
-      </div>
     </div>
     <el-tree
       id="tree-root"
@@ -42,15 +39,9 @@
       <div class="menu-item" @click="handleMenuAction('open', contextMenu.data)" v-if="contextMenu.data.type === 'file'">
         <span>Open</span>
       </div>
-      <div class="menu-item" @click="handleMenuAction('run', contextMenu.data)" v-if="contextMenu.data.type === 'file' && contextMenu.data.path.endsWith('.py')">
-        <span>Run</span>
-      </div>
       <div class="menu-divider" v-if="contextMenu.data.type === 'file'"></div>
       <div class="menu-item" @click="handleMenuAction('rename', contextMenu.data)">
         <span>Rename</span>
-      </div>
-      <div class="menu-item" @click="handleMenuAction('move', contextMenu.data)">
-        <span>Move</span>
       </div>
       <div class="menu-divider"></div>
       <div class="menu-item" @click="handleMenuAction('download', contextMenu.data)" v-if="contextMenu.data.type === 'file'">
@@ -68,15 +59,9 @@
       <div class="menu-item" @click="handleMenuAction('open', dropdown.data)" v-if="dropdown.data.type === 'file'">
         <span>Open</span>
       </div>
-      <div class="menu-item" @click="handleMenuAction('run', dropdown.data)" v-if="dropdown.data.type === 'file' && dropdown.data.path.endsWith('.py')">
-        <span>Run</span>
-      </div>
       <div class="menu-divider" v-if="dropdown.data.type === 'file'"></div>
       <div class="menu-item" @click="handleMenuAction('rename', dropdown.data)">
         <span>Rename</span>
-      </div>
-      <div class="menu-item" @click="handleMenuAction('move', dropdown.data)">
-        <span>Move</span>
       </div>
       <div class="menu-divider"></div>
       <div class="menu-item" @click="handleMenuAction('download', dropdown.data)" v-if="dropdown.data.type === 'file'">
@@ -235,10 +220,32 @@ export default {
     
     showContextMenu(event, data) {
       this.closeAllMenus();
+      
+      // Calculate position to prevent overflow
+      const menuWidth = 150; // Approximate menu width
+      const menuHeight = 200; // Approximate max menu height
+      let x = event.clientX;
+      let y = event.clientY;
+      
+      // Adjust if menu would overflow right edge
+      if (x + menuWidth > window.innerWidth) {
+        x = window.innerWidth - menuWidth - 10;
+      }
+      
+      // Adjust if menu would overflow bottom edge
+      if (y + menuHeight > window.innerHeight) {
+        y = window.innerHeight - menuHeight - 10;
+      }
+      
+      // Ensure menu doesn't go beyond left edge
+      if (x < 10) {
+        x = 10;
+      }
+      
       this.contextMenu = {
         visible: true,
-        x: event.clientX,
-        y: event.clientY,
+        x: x,
+        y: y,
         data: data
       };
       
@@ -324,19 +331,10 @@ export default {
             // User cancelled
           });
           break;
-        case 'run':
-          if (data.type === 'file' && data.path.endsWith('.py')) {
-            this.$emit('run-item', data.path);
-          }
-          break;
         case 'download':
           if (data.type === 'file') {
             this.$emit('download-item', data);
           }
-          break;
-        case 'move':
-          // TODO: Implement move functionality
-          ElMessage.info('Move functionality coming soon');
           break;
       }
     },
@@ -591,13 +589,15 @@ export default {
 .context-menu,
 .dropdown-menu {
   position: fixed;
-  background: #252526;
-  border: 1px solid #464647;
+  background: var(--bg-secondary, #252526);
+  border: 1px solid var(--border-color, #464647);
   border-radius: 4px;
   padding: 4px 0;
   min-width: 150px;
+  max-width: 250px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  z-index: 10000;
+  z-index: 99999;
+  overflow: hidden;
 }
 
 .menu-item {

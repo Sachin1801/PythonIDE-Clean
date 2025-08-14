@@ -7,6 +7,7 @@ import router from './router'
 import store from './store'
 require('@/assets/css/common.css')
 require('@/assets/css/theme.css')
+require('@/assets/css/themes.css')
 
 const app = createApp(App)
 app.use(router)

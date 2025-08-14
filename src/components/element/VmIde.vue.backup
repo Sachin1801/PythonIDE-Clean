@@ -26,26 +26,29 @@
       @update-auto-save-interval="updateAutoSaveInterval"
     />
     <div id="total-frame" class="total-frame">
-      <!-- Main Horizontal Splitpanes for Left/Center/Right -->
-      <splitpanes class="default-theme main-splitpanes">
-        <!-- Left Sidebar Pane - Always present in DOM -->
-        <pane :size="leftSidebarSize" :min-size="0" :max-size="40">
-          <div id="left-sidebar" class="left-sidebar" v-show="leftSidebarVisible">
-            <ProjTree 
-              v-on:get-item="getFile"
-              @context-menu="showContextMenu"
-            ></ProjTree>
-          </div>
-        </pane>
-        
-        <!-- Center Content Pane -->
-        <pane :size="centerSize" :min-size="30">
-          <div id="center-frame" class="center-frame">
-            <!-- Nested Horizontal Splitpanes for Editor/Console -->
-            <splitpanes horizontal class="default-theme">
-              <!-- Editor Pane -->
-              <pane :size="consoleMaximized ? 30 : (consoleExpanded ? 70 : 95)" :min-size="30">
-                <div class="editor-section">
+      <!-- Left Sidebar with File Tree (Draggable) -->
+      <div id="left-sidebar" class="left-sidebar" 
+           v-show="leftSidebarVisible"
+           :style="{ width: leftSidebarWidth + 'px' }">
+        <ProjTree 
+          v-on:get-item="getFile"
+          @context-menu="showContextMenu"
+        ></ProjTree>
+      </div>
+      
+      <!-- Left Sidebar Resizer -->
+      <div class="sidebar-resizer left" 
+           v-show="leftSidebarVisible"
+           @mousedown="startResizeLeft" 
+           :class="{ 'resizing': isResizingLeft, 'at-limit': resizeWarning && isResizingLeft }"
+           :style="{ left: leftSidebarWidth + 'px' }">
+        <div class="resizer-handle"></div>
+      </div>
+      
+      <!-- Center Content Area -->
+      <div id="center-frame" class="center-frame" :style="{ left: leftSidebarVisible ? leftSidebarWidth + 5 + 'px' : '0', right: (rightSidebarVisible && previewTabs.length > 0) ? rightSidebarWidth + 5 + 'px' : '0' }">
+        <!-- Editor Section -->
+        <div class="editor-section" :style="{ height: editorHeight }">
           <div class="editor-tab-bar">
             <CodeTabs
               v-if="ideInfo.codeItems.length > 0"
@@ -66,13 +69,18 @@
                 v-on:update-item="updateItem"></IdeEditor>
             </template>
           </div>
-                </div>
-              </pane>
-              
-              <!-- Console Pane -->
-              <pane :size="consoleMaximized ? 70 : (consoleExpanded ? 30 : 5)" :min-size="5" :max-size="70">
-                <div class="console-section">
-              <!-- Console Header with Collapse/Expand Button -->
+        </div>
+
+        <!-- Console Section Below Editor -->
+        <div class="console-section" :class="{ 'collapsed': !consoleExpanded }" :style="{ height: consoleExpanded ? consoleHeight + 'px' : '35px' }">
+          <!-- Console Resize Handle -->
+          <div class="console-resizer" 
+               @mousedown="startResizeConsole"
+               :class="{ 'resizing': isResizingConsole }">
+            <div class="resizer-handle horizontal"></div>
+          </div>
+          
+          <!-- Console Header with Collapse/Expand Button -->
           <div class="console-header">
             <div class="console-header-left">
               <span class="console-title">{{ isReplMode ? 'Python REPL' : 'Console' }}</span>
@@ -169,73 +177,9 @@
               </div>
             </div>
           </div>
-                </div>
-              </pane>
-            </splitpanes>
-          </div>
-        </pane>
-        
-                 <!-- Right Sidebar Pane - Always present in DOM -->
-         <pane :size="rightSidebarSize" :min-size="0" :max-size="50">
-           <div id="right-sidebar" class="right-sidebar">
-            <!-- Hidden placeholder when sidebar is not visible -->
-            <div v-show="!rightSidebarVisible || previewTabs.length === 0" class="right-sidebar-placeholder">
-              <!-- Empty space with proper background -->
-            </div>
-            
-            <!-- Preview/Output Tabs -->
-            <div class="preview-tabs" v-show="rightSidebarVisible && previewTabs.length > 0">
-              <div class="preview-tab-list">
-                <button 
-                  v-for="tab in previewTabs" 
-                  :key="tab.id"
-                  :class="['preview-tab', { 'active': selectedPreviewTab === tab.id }]"
-                  @click="selectPreviewTab(tab.id)">
-                  <span class="tab-icon">{{ getTabIcon(tab.type) }}</span>
-                  <span class="tab-title">{{ tab.title }}</span>
-                  <span class="tab-close" @click.stop="closePreviewTab(tab.id)">×</span>
-                </button>
-              </div>
-              <button class="preview-tab-add" @click="toggleRightSidebar" title="Hide Preview Panel">
-                ×
-              </button>
-            </div>
-            
-            <!-- Preview Content Area -->
-            <div class="preview-content" v-show="rightSidebarVisible && previewTabs.length > 0">
-              <template v-for="tab in previewTabs" :key="tab.id">
-                <div v-show="selectedPreviewTab === tab.id" class="preview-panel">
-                  <!-- Output Panel -->
-                  <div v-if="tab.type === 'output'" class="output-panel">
-                    <div class="output-content">
-                      <div v-for="(line, idx) in tab.content" :key="idx" 
-                           :class="['output-line', line.type]">
-                        <pre>{{ line.text }}</pre>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <!-- Image Preview Panel -->
-                  <div v-else-if="tab.type === 'image'" class="image-preview-panel">
-                    <img :src="tab.content" :alt="tab.title" />
-                  </div>
-                  
-                  <!-- PDF Preview Panel -->
-                  <div v-else-if="tab.type === 'pdf'" class="pdf-preview-panel">
-                    <iframe :src="tab.content" frameborder="0"></iframe>
-                  </div>
-                  
-                  <!-- CSV/Data Preview Panel -->
-                  <div v-else-if="tab.type === 'data'" class="data-preview-panel">
-                    <CsvViewer :content="tab.content" />
-                  </div>
-                </div>
-              </template>
-            </div>
-          </div>
-        </pane>
-      </splitpanes>
-      
+        </div>
+      </div>
+
       <!-- Show Preview Button (when hidden but has content) -->
       <div v-if="!rightSidebarVisible && previewTabs.length > 0" 
            class="show-preview-btn" 
@@ -244,6 +188,86 @@
         <span class="tab-count">{{ previewTabs.length }}</span>
         <span>◀</span>
       </div>
+      
+      <!-- Right Sidebar Resizer -->
+      <div v-if="rightSidebarVisible && previewTabs.length > 0" 
+           class="sidebar-resizer right"
+           @mousedown="startResizeRight"
+           :class="{ 'resizing': isResizingRight, 'at-limit': resizeWarning && isResizingRight }"
+           :style="{ right: rightSidebarWidth + 'px' }">
+        <div class="resizer-handle"></div>
+        <div class="resizer-arrows">
+          <button class="resizer-arrow left" 
+                  @click="expandRightPanel" 
+                  title="Expand preview panel">
+            <ChevronLeft :size="14" />
+          </button>
+          <button class="resizer-arrow right" 
+                  @click="collapseRightPanel" 
+                  title="Collapse preview panel">
+            <ChevronRight :size="14" />
+          </button>
+        </div>
+      </div>
+      
+      <!-- Right Sidebar for Preview/Output (Draggable) -->
+      <div v-if="rightSidebarVisible && previewTabs.length > 0" 
+           id="right-sidebar" 
+           class="right-sidebar" 
+           :style="{ width: rightSidebarWidth + 'px' }">
+        
+        <!-- Preview/Output Tabs -->
+        <div class="preview-tabs">
+          <div class="preview-tab-list">
+            <button 
+              v-for="tab in previewTabs" 
+              :key="tab.id"
+              :class="['preview-tab', { 'active': selectedPreviewTab === tab.id }]"
+              @click="selectPreviewTab(tab.id)">
+              <span class="tab-icon">{{ getTabIcon(tab.type) }}</span>
+              <span class="tab-title">{{ tab.title }}</span>
+              <span class="tab-close" @click.stop="closePreviewTab(tab.id)">×</span>
+            </button>
+          </div>
+          <button class="preview-tab-add" @click="toggleRightSidebar" title="Hide Preview Panel">
+            ×
+          </button>
+        </div>
+        
+        <!-- Preview Content Area -->
+        <div class="preview-content">
+          <template v-for="tab in previewTabs" :key="tab.id">
+            <div v-show="selectedPreviewTab === tab.id" class="preview-panel">
+              <!-- Output Panel -->
+              <div v-if="tab.type === 'output'" class="output-panel">
+                <div class="output-content">
+                  <div v-for="(line, idx) in tab.content" :key="idx" 
+                       :class="['output-line', line.type]">
+                    <pre>{{ line.text }}</pre>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Image Preview Panel -->
+              <div v-else-if="tab.type === 'image'" class="image-preview-panel">
+                <img :src="tab.content" :alt="tab.title" />
+              </div>
+              
+              <!-- PDF Preview Panel -->
+              <div v-else-if="tab.type === 'pdf'" class="pdf-preview-panel">
+                <iframe :src="tab.content" frameborder="0"></iframe>
+              </div>
+              
+              <!-- CSV/Data Preview Panel -->
+              <div v-else-if="tab.type === 'data'" class="data-preview-panel">
+                <CsvViewer :content="tab.content" />
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+      
+      <!-- Dialogs moved outside of total-frame -->
     </div>
     <!-- Dialogs -->
     <DialogProjs v-if="showProjsDialog"
@@ -271,8 +295,6 @@
 </template>
 
 <script>
-import { Splitpanes, Pane } from 'splitpanes';
-import 'splitpanes/dist/splitpanes.css';
 import * as types from '../../store/mutation-types';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Minimize2 } from 'lucide-vue-next';
@@ -373,8 +395,6 @@ export default {
   },
   mixins: [DualModeREPL],
   components: {
-    Splitpanes,
-    Pane,
     TopMenu,
     CodeTabs,
     UnifiedConsole,
@@ -401,23 +421,15 @@ export default {
     this.throttledHandleResizeLeft = this.throttle(this.handleResizeLeft, 16); // ~60fps
     this.throttledHandleResizeRight = this.throttle(this.handleResizeRight, 16);
     this.throttledHandleResizeConsole = this.throttle(this.handleResizeConsole, 16);
-
+    
     // Initialize WebSocket if needed
     try {
-      console.log('🔌 [VmIde] Initializing WebSocket...');
       if (!this.wsInfo || !this.wsInfo.rws) {
         this.$store.dispatch('websocket/init', {});
-        console.log('✅ [VmIde] WebSocket initialization dispatched');
-      } else {
-        console.log('ℹ️ [VmIde] WebSocket already initialized');
       }
     } catch (error) {
-      console.error('❌ [VmIde] Error initializing WebSocket:', error);
+      console.error('Error initializing WebSocket:', error);
     }
-
-    // TEMPORARY: Add a test preview tab to show the right sidebar
-    // Remove this after testing
-    this.addPreviewTab('image', 'test_image.png', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==');
     
     // Set up WebSocket message handler for REPL after a delay to ensure WebSocket is ready
     this.$nextTick(() => {
@@ -438,23 +450,14 @@ export default {
     
     const self = this;
     const t = setInterval(() => {
-      console.log("⏱️ [VmIde] WebSocket check:", { 
-        connected: self.wsInfo.connected, 
-        wsInfo: self.wsInfo 
-      });
       if (self.wsInfo.connected) {
-        console.log("📡 [VmIde] WebSocket connected, listing projects...");
         this.$store.dispatch(`ide/${types.IDE_LIST_PROJECTS}`, {
           callback: (dict) => {
-            console.log("📋 [VmIde] Project list response:", dict);
             clearInterval(t);
             if (dict.code == 0) {
-              console.log("✅ [VmIde] Projects found:", dict.data);
               this.$store.commit('ide/handleProjects', dict.data);
               // Load all default projects instead of just one
               self.loadAllDefaultProjects();
-            } else {
-              console.error("❌ [VmIde] Failed to list projects:", dict);
             }
           }
         })
@@ -511,22 +514,6 @@ export default {
     showConsole() {
       const show = this.ideInfo.consoleItems.length !== 0;
       return show;
-    },
-    // Computed properties for splitpanes sizes (in percentages)
-    leftSidebarSize() {
-      // Always return a size, even when hidden
-      // This ensures splitpanes can properly manage the panes
-      return this.leftSidebarVisible ? 20 : 0;
-    },
-    rightSidebarSize() {
-      // Always return a size, even when hidden
-      return (this.rightSidebarVisible && this.previewTabs.length > 0) ? 30 : 0;
-    },
-    centerSize() {
-      // Calculate center size based on what's visible
-      const leftSize = this.leftSidebarVisible ? 20 : 0;
-      const rightSize = (this.rightSidebarVisible && this.previewTabs.length > 0) ? 30 : 0;
-      return 100 - leftSize - rightSize;
     }
   },
   watch: {
@@ -730,47 +717,25 @@ export default {
         const originalOnMessage = this.wsInfo.rws.onmessage;
         
         this.wsInfo.rws.onmessage = (event) => {
-          // Handle REPL messages FIRST before the store consumes them
+          // Call original handler first
+          if (originalOnMessage) {
+            originalOnMessage(event);
+          }
+          
+          // Handle REPL messages
           try {
             const message = JSON.parse(event.data);
             
-            // Log ALL WebSocket messages to debug
-            console.log("📥 [VmIde] ALL WebSocket msg:", {
-              id: message.id,
-              cmd_id: message.cmd_id,
-              code: message.code,
-              cmd: message.cmd,
-              programId: message.data?.program_id,
-              ourSessionId: this.replSessionId,
-              fullMsg: message
-            });
-            
-            // Check if this is a REPL message - check ALL possible ID fields
-            // The backend might send responses with the command ID, not session ID
-            // Also check for any program output when REPL is active
-            const isRepl = (
-                message.id === this.replSessionId || 
+            // Check if this is a REPL message - check both id and cmd_id fields
+            // Also check if it's a program output message with our session ID
+            if (message.id === this.replSessionId || 
                 message.cmd_id === this.replSessionId ||
-                (message.data && message.data.program_id === this.replSessionId) ||
-                // If REPL is active and this looks like output, capture it
-                (this.isReplMode && this.replSessionId && 
-                 (message.code === 0 || message.code === 2000 || message.code === 1111) &&
-                 message.data && (message.data.stdout || message.data.stderr || message.data.program_id))
-            );
-                
-            console.log(`🔍 Match check: id=${message.id===this.replSessionId}, cmd_id=${message.cmd_id===this.replSessionId}, prog_id=${message.data?.program_id===this.replSessionId}, isReplMode=${this.isReplMode}, code=${message.code}`);
-                
-            if (isRepl) {
-              console.log('🎯 REPL message matched!');
+                (message.data && message.data.program_id === this.replSessionId)) {
+              console.log('REPL message received:', message);
               this.handleBackendReplResponse(message);
             }
           } catch (e) {
             // Not JSON or parsing error, ignore
-          }
-          
-          // THEN call original handler so store can process other messages
-          if (originalOnMessage) {
-            originalOnMessage(event);
           }
         };
         
@@ -878,27 +843,33 @@ export default {
     },
 
     expandConsole() {
-      // Expand console to take most of the vertical space in the center frame
-      // This works with splitpanes by changing the consoleExpanded flag
+      // Expand console to take full vertical space (except header)
       if (!this.consoleMaximized) {
+        this.previousConsoleHeight = this.consoleHeight;
+        // Calculate max height (leave space only for top header - 50px)
+        const windowHeight = window.innerHeight;
+        this.consoleHeight = windowHeight - 85; // 50px header + 35px tab bar
         this.consoleMaximized = true;
         this.consoleExpanded = true;
-        // The console will take 70% when maximized (see template)
+        this.updateEditorHeight();
       }
     },
 
     restoreConsole() {
-      // Restore console to normal size (30%)
+      // Restore console to previous height
       if (this.consoleMaximized) {
+        this.consoleHeight = this.previousConsoleHeight || 200;
         this.consoleMaximized = false;
         this.consoleExpanded = true;
+        this.updateEditorHeight();
       }
     },
 
     collapseConsole() {
-      // Minimize console completely (only header visible at 5%)
+      // Minimize console completely (only header visible)
       this.consoleExpanded = false;
       this.consoleMaximized = false;
+      this.updateEditorHeight();
     },
     
     selectPreviewTab(tabId) {
@@ -1123,24 +1094,18 @@ export default {
       });
     },
     loadAllDefaultProjects() {
-      console.log('🚀 [loadAllDefaultProjects] Starting to load default projects');
       const self = this;
       const defaultProjects = ['Local', 'Lecture Notes', 'Python'];
       const loadedProjects = [];
       let loadCount = 0;
       
-      console.log('📋 [loadAllDefaultProjects] Project list:', this.ideInfo.projList);
-      
       defaultProjects.forEach(projectName => {
         // Check if project exists in the list
         const projectExists = this.ideInfo.projList.some(p => p.name === projectName);
-        console.log(`🔍 [loadAllDefaultProjects] Checking ${projectName}: exists=${projectExists}`);
-        
         if (projectExists) {
           this.$store.dispatch(`ide/${types.IDE_GET_PROJECT}`, {
             projectName: projectName,
             callback: (dict) => {
-              console.log(`📥 [loadAllDefaultProjects] Response for ${projectName}:`, dict);
               if (dict.code == 0) {
                 loadedProjects.push(dict.data);
                 loadCount++;
@@ -1149,15 +1114,12 @@ export default {
                 if (loadCount === defaultProjects.filter(p => 
                   self.ideInfo.projList.some(proj => proj.name === p)
                 ).length) {
-                  console.log('✅ [loadAllDefaultProjects] All projects loaded:', loadedProjects);
                   self.$store.commit('ide/handleMultipleProjects', loadedProjects);
                   // Also set the first project as current for compatibility
                   if (loadedProjects.length > 0) {
                     self.$store.commit('ide/handleProject', loadedProjects[0]);
                   }
                 }
-              } else {
-                console.error(`❌ [loadAllDefaultProjects] Failed to load ${projectName}:`, dict);
               }
             }
           });
@@ -2129,7 +2091,6 @@ export default {
     
     // Helper method to ensure REPL console exists
     ensureReplConsole() {
-      console.log("🔍 [VmIde] ensureReplConsole called");
       // Check if we have a console selected with resultList
       if (!this.ideInfo.consoleSelected || !this.ideInfo.consoleSelected.resultList) {
         // Create a REPL console item if it doesn't exist
@@ -2157,7 +2118,6 @@ export default {
     
     // Helper method to add output to REPL console
     addReplOutput(text, type = 'output') {
-      console.log(`📢 [VmIde] addReplOutput: [${type}] ${text}`);
       // Use the store mutation to add output properly
       if (this.ideInfo.consoleSelected && this.ideInfo.consoleSelected.id) {
         this.$store.commit('ide/addConsoleOutput', {
@@ -2370,19 +2330,20 @@ Advanced packages (install with micropip):
   height: 100%;
   overflow: auto;
   flex-shrink: 0;
-  /* Use normal flow inside Splitpanes */
-  position: relative;
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 10;
 }
 
 /* Center Frame */
 .center-frame {
-  /* Must participate in Splitpanes layout */
-  position: relative;
+  position: absolute;
   height: 100%;
   display: flex;
   flex-direction: column;
   background: var(--bg-primary, #1E1E1E);
-  min-width: 0; /* Allow pane to shrink without forcing overflow */
+  min-width: 500px; /* Ensure minimum width for editor */
   overflow: hidden;
 }
 
@@ -2733,24 +2694,13 @@ Advanced packages (install with micropip):
 .right-sidebar {
   background: var(--bg-sidebar, #252526);
   height: 100%;
-  width: 100%;
-  position: relative;
   display: flex;
   flex-direction: column;
+  position: absolute;
+  top: 0;
+  right: 0;
   border-left: 1px solid var(--border-primary, #3c3c3c);
   z-index: 20; /* Higher z-index to stay above console section */
-}
-
-/* Right sidebar placeholder when hidden */
-.right-sidebar-placeholder {
-  width: 100%;
-  height: 100%;
-  background: var(--bg-sidebar, #252526);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-secondary, #858585);
-  font-size: 14px;
 }
 
 /* Preview Tabs */
@@ -3568,95 +3518,5 @@ body {
 .console-action-btn.active {
   background: var(--accent-color, #007ACC);
   color: white;
-}
-
-/* Main splitpanes container */
-.main-splitpanes {
-  height: 100%;
-  width: 100%;
-}
-
-/* Hide old resizers since splitpanes handles them */
-.sidebar-resizer {
-  display: none !important;
-}
-
-/* Splitpanes Styling - for all splitpanes */
-.splitpanes.default-theme .splitpanes__splitter {
-  background-color: var(--border-primary, #3c3c3c);
-  position: relative;
-  z-index: 20;
-}
-
-/* Style vertical splitters (between sidebars and center) */
-.main-splitpanes.splitpanes--vertical > .splitpanes__splitter {
-  width: 8px;
-  background-color: var(--border-primary, #3c3c3c);
-  cursor: col-resize;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.main-splitpanes.splitpanes--vertical > .splitpanes__splitter:hover {
-  background-color: var(--accent-color, #007ACC);
-}
-
-/* Add arrow indicators for vertical splitters */
-.main-splitpanes.splitpanes--vertical > .splitpanes__splitter::before {
-  content: '⋮';
-  color: rgba(255, 255, 255, 0.3);
-  font-size: 20px;
-  font-weight: bold;
-}
-
-.main-splitpanes.splitpanes--vertical > .splitpanes__splitter:hover::before {
-  color: rgba(255, 255, 255, 0.8);
-}
-
-/* Console horizontal splitter */
-#center-frame .splitpanes--horizontal > .splitpanes__splitter {
-  height: 8px;
-  cursor: ns-resize;
-  background-color: var(--border-primary, #3c3c3c);
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-#center-frame .splitpanes--horizontal > .splitpanes__splitter:hover {
-  background-color: var(--accent-color, #007ACC);
-}
-
-/* Add horizontal drag indicator */
-#center-frame .splitpanes--horizontal > .splitpanes__splitter::before {
-  content: '⋯';
-  color: rgba(255, 255, 255, 0.3);
-  font-size: 20px;
-  font-weight: bold;
-  letter-spacing: 2px;
-}
-
-#center-frame .splitpanes--horizontal > .splitpanes__splitter:hover::before {
-  color: rgba(255, 255, 255, 0.8);
-}
-
-/* Fix layout */
-#center-frame .splitpanes {
-  height: 100%;
-}
-
-#center-frame .splitpanes__pane {
-  overflow: hidden;
-  /* Ensure no white gaps show; inherit dark background */
-  background: var(--bg-primary, #1E1E1E);
-}
-
-.splitpanes__pane .editor-section,
-.splitpanes__pane .console-section {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
 }
 </style>

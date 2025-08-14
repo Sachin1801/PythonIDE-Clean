@@ -18,6 +18,7 @@ from .simple_interactive_thread import SimpleInteractiveThread
 from .pty_interactive_thread import PTYInteractiveThread
 from .working_simple_thread import WorkingSimpleThread
 from .working_input_thread import WorkingInputThread
+from .repl_thread import PythonREPLThread
 from .bug_report_handler import handle_bug_report
 from common.config import Config
 
@@ -395,6 +396,20 @@ print("="*50)
                 'error': str(e),
                 'message': 'Failed to submit bug report'
             })
+    
+    async def start_python_repl(self, client, cmd_id, data):
+        """Start a Python REPL session"""
+        prj_name = data.get('projectName', 'repl')
+        print(f"[BACKEND-DEBUG] Starting Python REPL for project: {prj_name}")
+        
+        # Create REPL thread
+        thread = PythonREPLThread(cmd_id, client, asyncio.get_event_loop())
+        print(f"[BACKEND-DEBUG] REPL thread created for cmd_id: {cmd_id}")
+        
+        # Register the thread
+        client.handler_info.set_subprogram(cmd_id, thread)
+        await response(client, cmd_id, 0, {'type': 'repl_started'})
+        client.handler_info.start_subprogram(cmd_id)
 
 
 class SubProgramThread(threading.Thread):

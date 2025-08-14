@@ -443,4 +443,29 @@ export default {
 [data-theme="light"] .nav__dropdown-item a:hover {
   background: #e8e8e8;
 }
+
+/* Light mode specific run/stop button fixes */
+[data-theme="light"] .run-btn {
+  background: #28a745;
+  color: white;
+  border: 1px solid #239a3b;
+}
+
+[data-theme="light"] .run-btn:hover {
+  background: #239a3b;
+  box-shadow: 0 2px 4px rgba(40, 167, 69, 0.2);
+  transform: translateY(-1px);
+}
+
+[data-theme="light"] .stop-btn {
+  background: #dc3545;
+  color: white;
+  border: 1px solid #c82333;
+}
+
+[data-theme="light"] .stop-btn:hover {
+  background: #c82333;
+  box-shadow: 0 2px 4px rgba(220, 53, 69, 0.2);
+  transform: translateY(-1px);
+}
 </style>

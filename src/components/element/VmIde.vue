@@ -44,7 +44,7 @@
             <!-- Nested Horizontal Splitpanes for Editor/Console -->
             <splitpanes horizontal class="default-theme">
               <!-- Editor Pane -->
-              <pane :size="consoleMaximized ? 30 : (consoleExpanded ? 70 : 95)" :min-size="30">
+              <pane :size="editorPaneSize" :min-size="5">
                 <div class="editor-section">
           <div class="editor-tab-bar">
             <CodeTabs
@@ -70,7 +70,7 @@
               </pane>
               
               <!-- Console Pane -->
-              <pane :size="consoleMaximized ? 70 : (consoleExpanded ? 30 : 5)" :min-size="5" :max-size="70">
+              <pane :size="consolePaneSize" :min-size="5" :max-size="95">
                 <div class="console-section">
               <!-- Console Header with Collapse/Expand Button -->
           <div class="console-header">
@@ -79,20 +79,21 @@
             </div>
             <div class="console-header-center">
               <button class="console-expand-arrow" 
-                      @click="expandConsole" 
+                      @click="handleConsoleUpArrow" 
                       title="Maximize console"
-                      v-if="!consoleMaximized">
+                      v-if="consoleMode !== 'maximized'">
                 <ChevronUp :size="16" />
               </button>
               <button class="console-expand-arrow" 
-                      @click="restoreConsole" 
+                      @click="handleConsoleRestore" 
                       title="Restore console"
-                      v-if="consoleMaximized">
+                      v-if="consoleMode === 'maximized'">
                 <Minimize2 :size="16" />
               </button>
               <button class="console-expand-arrow" 
-                      @click="collapseConsole" 
-                      title="Minimize console">
+                      @click="handleConsoleDownArrow" 
+                      title="Minimize console"
+                      v-if="consoleMode === 'normal'">
                 <ChevronDown :size="16" />
               </button>
             </div>
@@ -142,14 +143,15 @@
                 <span>{{ ideInfo.consoleSelected.inputPrompt || 'Enter input:' }}</span>
               </div>
               <div class="input-field-container">
-                <input
+                <textarea
                   v-model="programInput"
-                  @keyup.enter="sendProgramInput"
+                  @keydown="handleProgramInputKeydown"
                   ref="programInputField"
                   class="program-input-field"
                   placeholder="Type your input and press Enter..."
+                  :rows="programInputRows"
                   autofocus
-                />
+                ></textarea>
                 <button @click="sendProgramInput" class="input-submit-btn">Send</button>
               </div>
             </div>
@@ -236,10 +238,29 @@
         </pane>
       </splitpanes>
       
+      <!-- Right Panel Control Arrows -->
+      <div v-if="rightPanelMode !== 'closed' && previewTabs.length > 0" class="right-panel-controls">
+        <button 
+          class="control-arrow left-arrow"
+          @click="handleLeftArrowClick"
+          :title="'Expand preview to full width'"
+          v-if="rightPanelMode === 'normal'"
+        >
+          <ChevronLeft :size="16" />
+        </button>
+        <button 
+          class="control-arrow right-arrow"
+          @click="handleRightArrowClick"
+          :title="rightPanelMode === 'expanded' ? 'Restore to normal size' : 'Collapse preview panel'"
+        >
+          <ChevronRight :size="16" />
+        </button>
+      </div>
+      
       <!-- Show Preview Button (when hidden but has content) -->
-      <div v-if="!rightSidebarVisible && previewTabs.length > 0" 
+      <div v-if="rightPanelMode === 'closed' && previewTabs.length > 0" 
            class="show-preview-btn" 
-           @click="rightSidebarVisible = true"
+           @click="restoreRightPanel"
            title="Show Preview Panel">
         <span class="tab-count">{{ previewTabs.length }}</span>
         <span>◀</span>
@@ -324,6 +345,22 @@ export default {
       previousConsoleHeight: 200,
       rightPanelExpanded: false,
       previousRightWidth: 400,
+      
+      // Right panel state management
+      rightPanelMode: 'closed', // 'closed', 'normal', 'expanded'
+      
+      // Console state management
+      consoleMode: 'collapsed', // 'collapsed', 'normal', 'maximized'
+      consolePreviousMode: 'normal', // For restoration from maximized
+      wasConsoleOpenBeforeRightExpand: false, // Track console state before right panel expansion
+      
+      // Legacy properties (keep for compatibility)
+      rightPanelState: 'normal',
+      rightPanelNormalWidth: 400,
+      previousConsoleState: {
+        expanded: true,
+        height: 200
+      },
       editorHeight: 'calc(100% - 235px)', // Adjust based on console height
       minEditorWidth: 500, // Minimum width for the code editor area
       
@@ -339,6 +376,7 @@ export default {
       
       // Program input
       programInput: '',
+      programInputRows: 1,
       
       // Word wrap
       wordWrap: true, // Enabled by default
@@ -418,6 +456,10 @@ export default {
     // TEMPORARY: Add a test preview tab to show the right sidebar
     // Remove this after testing
     this.addPreviewTab('image', 'test_image.png', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==');
+    
+    // Set initial state for testing
+    this.rightPanelMode = 'normal';
+    this.consoleMode = 'collapsed';
     
     // Set up WebSocket message handler for REPL after a delay to ensure WebSocket is ready
     this.$nextTick(() => {
@@ -519,14 +561,36 @@ export default {
       return this.leftSidebarVisible ? 20 : 0;
     },
     rightSidebarSize() {
-      // Always return a size, even when hidden
-      return (this.rightSidebarVisible && this.previewTabs.length > 0) ? 30 : 0;
+      // Handle different states based on new mode system
+      if (this.rightPanelMode === 'closed' || this.previewTabs.length === 0) {
+        return 0;
+      }
+      if (this.rightPanelMode === 'expanded') {
+        // Take 70% of non-sidebar space when expanded
+        const leftSize = this.leftSidebarVisible ? 20 : 0;
+        return 100 - leftSize - 10; // Leave 10% for minimal editor
+      }
+      // Normal state - 30%
+      return 30;
     },
     centerSize() {
       // Calculate center size based on what's visible
       const leftSize = this.leftSidebarVisible ? 20 : 0;
-      const rightSize = (this.rightSidebarVisible && this.previewTabs.length > 0) ? 30 : 0;
+      const rightSize = this.rightSidebarSize;  // Access as property, not function
       return 100 - leftSize - rightSize;
+    },
+    // New computed properties for console sizing
+    editorPaneSize() {
+      // Vertical sizing within center frame
+      if (this.consoleMode === 'maximized') return 5;  // Just header visible
+      if (this.consoleMode === 'collapsed') return 95; // Console minimized
+      return 70; // Normal - editor gets 70%
+    },
+    consolePaneSize() {
+      // Vertical sizing within center frame
+      if (this.consoleMode === 'maximized') return 95;  // Almost full height
+      if (this.consoleMode === 'collapsed') return 5;   // Just header
+      return 30; // Normal - console gets 30%
     }
   },
   watch: {
@@ -652,6 +716,7 @@ export default {
       
       // Also clear program input
       this.programInput = '';
+      this.programInputRows = 1;
     },
     
     toggleWordWrap() {
@@ -876,6 +941,142 @@ export default {
         this.rightSidebarWidth = 300;
       }
     },
+    
+    // Right panel control methods
+    handleLeftArrowClick() {
+      if (this.rightPanelMode === 'normal') {
+        // Save console state before forcing it closed
+        this.wasConsoleOpenBeforeRightExpand = (this.consoleMode !== 'collapsed');
+        
+        // Force close console to maximize space
+        this.consoleMode = 'collapsed';
+        this.consoleExpanded = false;
+        this.consoleMaximized = false;
+        
+        // Expand right panel to take over editor space
+        this.rightPanelMode = 'expanded';
+        this.rightSidebarVisible = true;
+        
+        this.saveLayoutPreferences();
+      }
+      // Left arrow only works from normal state
+    },
+    
+    handleRightArrowClick() {
+      if (this.rightPanelMode === 'expanded') {
+        // From expanded, return to normal (30%)
+        this.rightPanelMode = 'normal';
+        
+        // Restore console if it was open before expansion
+        if (this.wasConsoleOpenBeforeRightExpand) {
+          this.consoleMode = 'normal';
+          this.consoleExpanded = true;
+        }
+      } else if (this.rightPanelMode === 'normal') {
+        // From normal, close completely
+        this.rightPanelMode = 'closed';
+        this.rightSidebarVisible = false;
+      }
+      
+      this.saveLayoutPreferences();
+    },
+    
+    expandRightPanelToFull() {
+      // Save current state before expanding
+      if (this.rightPanelState === 'normal') {
+        this.rightPanelNormalWidth = this.rightSidebarWidth;
+      }
+      
+      // Save console state
+      this.previousConsoleState.expanded = this.consoleExpanded;
+      this.previousConsoleState.height = this.consoleHeight;
+      
+      // Force close console
+      this.consoleExpanded = false;
+      this.consoleMaximized = false;
+      
+      // Calculate new width (take all space except left sidebar)
+      const windowWidth = window.innerWidth;
+      const leftWidth = this.leftSidebarVisible ? this.leftSidebarWidth : 0;
+      this.rightSidebarWidth = windowWidth - leftWidth - 10; // 10px for resizers
+      
+      // Update state
+      this.rightPanelState = 'expanded';
+      this.rightPanelExpanded = true;
+      this.rightSidebarVisible = true;
+      
+      this.updateEditorHeight();
+      this.saveLayoutPreferences();
+    },
+    
+    collapseRightPanelCompletely() {
+      // Save current width if in normal state
+      if (this.rightPanelState === 'normal') {
+        this.rightPanelNormalWidth = this.rightSidebarWidth;
+      }
+      
+      // Collapse the panel
+      this.rightSidebarVisible = false;
+      this.rightPanelState = 'collapsed';
+      this.rightPanelExpanded = false;
+      
+      this.saveLayoutPreferences();
+    },
+    
+    restoreRightPanelToNormal() {
+      // Restore to normal width
+      this.rightSidebarWidth = this.rightPanelNormalWidth || 400;
+      this.rightSidebarVisible = true;
+      this.rightPanelState = 'normal';
+      this.rightPanelExpanded = false;
+      
+      // Restore console if it was open before expansion
+      if (this.previousConsoleState.expanded) {
+        this.consoleExpanded = true;
+        this.consoleHeight = this.previousConsoleState.height || 200;
+      }
+      
+      this.updateEditorHeight();
+      this.saveLayoutPreferences();
+    },
+    
+    restoreRightPanel() {
+      // Called when clicking the show preview button
+      // Restore to normal state
+      this.rightPanelMode = 'normal';
+      this.rightSidebarVisible = true;
+      this.saveLayoutPreferences();
+    },
+    
+    // Console control methods
+    handleConsoleUpArrow() {
+      if (this.consoleMode === 'collapsed' || this.consoleMode === 'normal') {
+        this.consolePreviousMode = this.consoleMode;
+        this.consoleMode = 'maximized';
+        this.consoleMaximized = true;
+        this.consoleExpanded = true;
+        this.updateEditorHeight();
+      }
+    },
+    
+    handleConsoleDownArrow() {
+      if (this.consoleMode === 'normal') {
+        this.consoleMode = 'collapsed';
+        this.consoleExpanded = false;
+        this.consoleMaximized = false;
+        this.updateEditorHeight();
+      }
+      // Do nothing if maximized or already collapsed
+    },
+    
+    handleConsoleRestore() {
+      if (this.consoleMode === 'maximized') {
+        this.consoleMode = this.consolePreviousMode || 'normal';
+        this.consoleMaximized = false;
+        this.consoleExpanded = (this.consoleMode === 'normal');
+        this.updateEditorHeight();
+      }
+    },
 
     expandConsole() {
       // Expand console to take most of the vertical space in the center frame
@@ -952,8 +1153,9 @@ export default {
         this.selectedPreviewTab = id;
       }
       
-      // Make sure right sidebar is visible
-      if (!this.rightSidebarVisible) {
+      // Make sure right sidebar is visible and in normal mode
+      if (this.rightPanelMode === 'closed') {
+        this.rightPanelMode = 'normal';
         this.rightSidebarVisible = true;
       }
     },
@@ -1782,6 +1984,13 @@ export default {
         });
       }
 
+      // Open console at normal state (30%) when running program
+      if (this.consoleMode === 'collapsed') {
+        this.consoleMode = 'normal';
+        this.consoleExpanded = true;
+        this.consoleMaximized = false;
+      }
+      
       // Remove duplicate console item creation - this was causing multiple input fields
       this.$store.dispatch(`ide/${types.IDE_RUN_PYTHON_PROGRAM}`, {
         msgId: this.ideInfo.consoleId,
@@ -1798,6 +2007,13 @@ export default {
     runConsoleSelected() {
       // Auto-switch to Output tab when running programs
       this.switchToOutputTab();
+      
+      // Open console at normal state (30%) when running program
+      if (this.consoleMode === 'collapsed') {
+        this.consoleMode = 'normal';
+        this.consoleExpanded = true;
+        this.consoleMaximized = false;
+      }
       
       this.$store.dispatch(`ide/${types.IDE_RUN_PYTHON_PROGRAM}`, {
         msgId: this.ideInfo.consoleSelected.id,
@@ -1961,7 +2177,12 @@ export default {
         rightSidebarVisible: this.rightSidebarVisible,
         consoleHeight: this.consoleHeight,
         consoleExpanded: this.consoleExpanded,
-        wordWrap: this.wordWrap
+        wordWrap: this.wordWrap,
+        // New state preferences
+        rightPanelMode: this.rightPanelMode,
+        consoleMode: this.consoleMode,
+        consolePreviousMode: this.consolePreviousMode,
+        wasConsoleOpenBeforeRightExpand: this.wasConsoleOpenBeforeRightExpand
       };
       localStorage.setItem('ide-layout-preferences', JSON.stringify(preferences));
     },
@@ -1978,6 +2199,17 @@ export default {
           this.consoleHeight = preferences.consoleHeight || 200;
           this.consoleExpanded = preferences.consoleExpanded !== false;
           this.wordWrap = preferences.wordWrap !== false;
+          
+          // Load new state preferences
+          this.rightPanelMode = preferences.rightPanelMode || 'closed';
+          this.consoleMode = preferences.consoleMode || 'collapsed';
+          this.consolePreviousMode = preferences.consolePreviousMode || 'normal';
+          this.wasConsoleOpenBeforeRightExpand = preferences.wasConsoleOpenBeforeRightExpand || false;
+          
+          // Update visibility based on mode
+          this.rightSidebarVisible = (this.rightPanelMode !== 'closed');
+          this.consoleExpanded = (this.consoleMode !== 'collapsed');
+          this.consoleMaximized = (this.consoleMode === 'maximized');
         } catch (e) {
           console.warn('Failed to load layout preferences:', e);
         }
@@ -2026,6 +2258,68 @@ export default {
       }
     },
     
+    // Handle keydown for program input
+    handleProgramInputKeydown(event) {
+      if (event.key === 'Enter') {
+        if (event.shiftKey) {
+          // Shift+Enter: new line
+          event.preventDefault();
+          const start = event.target.selectionStart;
+          const end = event.target.selectionEnd;
+          const value = this.programInput;
+          this.programInput = value.substring(0, start) + '\n' + value.substring(end);
+          
+          // Move cursor after the newline
+          this.$nextTick(() => {
+            event.target.selectionStart = event.target.selectionEnd = start + 1;
+            this.updateProgramInputRows();
+          });
+        } else {
+          // Enter without Shift: send input
+          event.preventDefault();
+          this.sendProgramInput();
+        }
+      } else if (event.key === 'Tab') {
+        // Tab: insert 4 spaces
+        event.preventDefault();
+        const start = event.target.selectionStart;
+        const end = event.target.selectionEnd;
+        const value = this.programInput;
+        this.programInput = value.substring(0, start) + '    ' + value.substring(end);
+        
+        // Move cursor after the spaces
+        this.$nextTick(() => {
+          event.target.selectionStart = event.target.selectionEnd = start + 4;
+          this.updateProgramInputRows();
+        });
+      }
+      
+      // Auto-adjust rows
+      this.$nextTick(() => {
+        this.updateProgramInputRows();
+      });
+    },
+    
+    updateProgramInputRows() {
+      // Calculate rows based on content and scrollHeight
+      const maxRows = 7;
+      const lines = this.programInput.split('\n').length;
+      
+      if (this.$refs.programInputField) {
+        // Reset to 1 row to get accurate scrollHeight
+        this.programInputRows = 1;
+        this.$nextTick(() => {
+          const textarea = this.$refs.programInputField;
+          const lineHeight = parseInt(window.getComputedStyle(textarea).lineHeight) || 20;
+          const scrollHeight = textarea.scrollHeight;
+          const calculatedRows = Math.ceil(scrollHeight / lineHeight);
+          this.programInputRows = Math.min(maxRows, Math.max(1, calculatedRows));
+        });
+      } else {
+        this.programInputRows = Math.min(maxRows, Math.max(1, lines));
+      }
+    },
+    
     // Send input for running programs
     sendProgramInput() {
       if (!this.programInput.trim()) return;
@@ -2040,8 +2334,9 @@ export default {
         text: `▶ ${input}`
       });
       
-      // Clear input field
+      // Clear input field and reset rows
       this.programInput = '';
+      this.programInputRows = 1;
       
       // Clear waiting state
       this.$store.commit('ide/setConsoleWaiting', {
@@ -2081,12 +2376,10 @@ export default {
           const value = this.replInput;
           this.replInput = value.substring(0, start) + '\n' + value.substring(end);
           
-          // Update rows
-          this.replInputRows = Math.min(10, this.replInput.split('\n').length);
-          
           // Move cursor after the newline
           this.$nextTick(() => {
             event.target.selectionStart = event.target.selectionEnd = start + 1;
+            this.updateReplRows();
           });
         } else {
           // Enter without Shift: execute
@@ -2104,6 +2397,7 @@ export default {
         // Move cursor after the spaces
         this.$nextTick(() => {
           event.target.selectionStart = event.target.selectionEnd = start + 4;
+          this.updateReplRows();
         });
       } else if (event.key === 'ArrowUp' && event.target.selectionStart === 0 && !this.replInput.includes('\n')) {
         // Up arrow at start of input: navigate history
@@ -2115,11 +2409,30 @@ export default {
         this.navigateReplHistory('down');
       }
       
-      // Auto-adjust rows
+      // Auto-adjust rows after any key press
       this.$nextTick(() => {
-        const lines = this.replInput.split('\n').length;
-        this.replInputRows = Math.min(10, Math.max(1, lines));
+        this.updateReplRows();
       });
+    },
+    
+    updateReplRows() {
+      // Calculate rows based on content and scrollHeight
+      const maxRows = 7;
+      const lines = this.replInput.split('\n').length;
+      
+      if (this.$refs.replInputField) {
+        // Reset to 1 row to get accurate scrollHeight
+        this.replInputRows = 1;
+        this.$nextTick(() => {
+          const textarea = this.$refs.replInputField;
+          const lineHeight = parseInt(window.getComputedStyle(textarea).lineHeight) || 20;
+          const scrollHeight = textarea.scrollHeight;
+          const calculatedRows = Math.ceil(scrollHeight / lineHeight);
+          this.replInputRows = Math.min(maxRows, Math.max(1, calculatedRows));
+        });
+      } else {
+        this.replInputRows = Math.min(maxRows, Math.max(1, lines));
+      }
     },
     
     async executeReplCommand() {
@@ -2665,10 +2978,17 @@ Advanced packages (install with micropip):
   font-family: 'Courier New', monospace;
   font-size: 13px;
   outline: none;
+  resize: none; /* Prevent manual resize */
+  overflow-y: auto; /* Scroll when exceeds max-height */
+  min-height: 32px; /* Approximately 1 line */
+  max-height: 150px; /* Approximately 7 lines */
+  line-height: 20px;
+  transition: height 0.15s ease;
 }
 
 .program-input-field:focus {
   border-color: var(--accent-color, #007ACC);
+  box-shadow: 0 0 0 1px var(--accent-color, #007ACC);
 }
 
 .input-submit-btn {
@@ -2718,11 +3038,17 @@ Advanced packages (install with micropip):
   padding: 6px 8px;
   border-radius: 3px;
   outline: none;
-  transition: border-color 0.2s ease;
+  resize: none; /* Prevent manual resize */
+  overflow-y: auto; /* Scroll when exceeds max-height */
+  min-height: 32px; /* Approximately 1 line */
+  max-height: 150px; /* Approximately 7 lines */
+  line-height: 20px;
+  transition: border-color 0.2s ease, height 0.15s ease;
 }
 
 .repl-input:focus {
   border-color: var(--accent-color, #007ACC);
+  box-shadow: 0 0 0 1px var(--accent-color, #007ACC);
 }
 
 .repl-input::placeholder {
@@ -3043,6 +3369,58 @@ Advanced packages (install with micropip):
   border-radius: 10px;
   font-size: 12px;
   font-weight: bold;
+}
+
+/* Right Panel Control Arrows */
+.right-panel-controls {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 100;
+  pointer-events: none; /* Let clicks pass through except on buttons */
+}
+
+.right-panel-controls .control-arrow {
+  pointer-events: auto;
+  background: var(--bg-secondary, #2d2d30);
+  border: 1px solid var(--border-primary, #3c3c3c);
+  color: var(--text-primary, #cccccc);
+  width: 24px;
+  height: 24px;
+  border-radius: 4px 0 0 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  opacity: 0.7;
+}
+
+.right-panel-controls .control-arrow:hover {
+  background: var(--accent-color, #007ACC);
+  color: white;
+  opacity: 1;
+  transform: translateX(-2px);
+}
+
+.right-panel-controls .control-arrow:active {
+  transform: translateX(0);
+}
+
+/* Light theme support for control arrows */
+[data-theme="light"] .right-panel-controls .control-arrow {
+  background: #ffffff;
+  border-color: #e0e0e0;
+  color: #333333;
+}
+
+[data-theme="light"] .right-panel-controls .control-arrow:hover {
+  background: #007ACC;
+  color: white;
 }
 
 /* Animations */
@@ -3638,8 +4016,127 @@ body {
   letter-spacing: 2px;
 }
 
-#center-frame .splitpanes--horizontal > .splitpanes__splitter:hover::before {
-  color: rgba(255, 255, 255, 0.8);
+  #center-frame .splitpanes--horizontal > .splitpanes__splitter:hover::before {
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+/* Theme Support for Preview Panels and Tabs */
+
+/* Light Theme */
+[data-theme="light"] .right-sidebar {
+  background: var(--bg-sidebar, #f3f3f3);
+  border-left-color: var(--border-primary, #e0e0e0);
+}
+
+[data-theme="light"] .right-sidebar-placeholder {
+  background: var(--bg-sidebar, #f3f3f3);
+  color: var(--text-secondary, #6a6a6a);
+}
+
+[data-theme="light"] .preview-tabs {
+  background: var(--bg-secondary, #e8e8e8);
+  border-bottom-color: var(--border-primary, #d0d0d0);
+}
+
+[data-theme="light"] .preview-tab {
+  color: var(--text-secondary, #616161);
+}
+
+[data-theme="light"] .preview-tab:hover {
+  background: var(--bg-hover, #d4d4d4);
+  color: var(--text-primary, #333333);
+}
+
+[data-theme="light"] .preview-tab.active {
+  background: var(--bg-active, #ffffff);
+  color: var(--text-primary, #333333);
+  border-bottom-color: var(--accent-color, #0078d4);
+}
+
+[data-theme="light"] .preview-tab-add {
+  color: var(--text-secondary, #616161);
+}
+
+[data-theme="light"] .preview-tab-add:hover {
+  background: var(--bg-hover, #d4d4d4);
+  color: var(--accent-color, #0078d4);
+}
+
+[data-theme="light"] .preview-content {
+  background: var(--bg-primary, #ffffff);
+}
+
+[data-theme="light"] .image-preview-panel {
+  background: var(--bg-pattern, #f8f8f8);
+}
+
+[data-theme="light"] .output-panel {
+  background: var(--bg-primary, #ffffff);
+  color: var(--text-primary, #333333);
+}
+
+[data-theme="light"] .pdf-preview-panel {
+  background: var(--bg-primary, #ffffff);
+}
+
+/* High Contrast Theme */
+[data-theme="high-contrast"] .right-sidebar {
+  background: var(--bg-sidebar, #000000);
+  border-left: 2px solid var(--border-primary, #ffffff);
+}
+
+[data-theme="high-contrast"] .right-sidebar-placeholder {
+  background: var(--bg-sidebar, #000000);
+  color: var(--text-secondary, #ffffff);
+}
+
+[data-theme="high-contrast"] .preview-tabs {
+  background: var(--bg-secondary, #000000);
+  border-bottom: 2px solid var(--border-primary, #ffffff);
+}
+
+[data-theme="high-contrast"] .preview-tab {
+  color: var(--text-secondary, #ffffff);
+  border: 1px solid transparent;
+}
+
+[data-theme="high-contrast"] .preview-tab:hover {
+  background: var(--bg-hover, #1a1a1a);
+  color: var(--text-primary, #ffffff);
+  border-color: var(--accent-color, #ffff00);
+}
+
+[data-theme="high-contrast"] .preview-tab.active {
+  background: var(--bg-active, #0f0f0f);
+  color: var(--text-primary, #ffffff);
+  border-color: var(--accent-color, #ffff00);
+  border-bottom-color: var(--accent-color, #ffff00);
+}
+
+[data-theme="high-contrast"] .preview-tab-add {
+  color: var(--text-secondary, #ffffff);
+}
+
+[data-theme="high-contrast"] .preview-tab-add:hover {
+  background: var(--bg-hover, #1a1a1a);
+  color: var(--accent-color, #ffff00);
+}
+
+[data-theme="high-contrast"] .preview-content {
+  background: var(--bg-primary, #000000);
+}
+
+[data-theme="high-contrast"] .image-preview-panel {
+  background: var(--bg-pattern, #0f0f0f);
+}
+
+[data-theme="high-contrast"] .output-panel {
+  background: var(--bg-primary, #000000);
+  color: var(--text-primary, #ffffff);
+}
+
+[data-theme="high-contrast"] .pdf-preview-panel {
+  background: var(--bg-primary, #000000);
 }
 
 /* Fix layout */

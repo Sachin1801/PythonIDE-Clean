@@ -628,6 +628,119 @@ export default {
   background: #464647;
   margin: 4px 0;
 }
+
+/* Theme Support for Context Menu */
+[data-theme="light"] .context-menu {
+  background: #ffffff;
+  border-color: #d0d0d0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+[data-theme="light"] .menu-item {
+  color: #333333;
+}
+
+[data-theme="light"] .menu-item:hover {
+  background: #e8e8e8;
+}
+
+[data-theme="light"] .menu-item.danger {
+  color: #d63384;
+}
+
+[data-theme="light"] .menu-item.danger:hover {
+  background: rgba(214, 51, 132, 0.1);
+}
+
+[data-theme="light"] .menu-divider {
+  background: #e0e0e0;
+}
+
+/* High Contrast Theme */
+[data-theme="high-contrast"] .context-menu {
+  background: #000000;
+  border: 2px solid #ffffff;
+  box-shadow: 0 4px 12px rgba(255, 255, 255, 0.3);
+}
+
+[data-theme="high-contrast"] .menu-item {
+  color: #ffffff;
+}
+
+[data-theme="high-contrast"] .menu-item:hover {
+  background: #333333;
+  border: 1px solid #ffff00;
+}
+
+[data-theme="high-contrast"] .menu-item.danger {
+  color: #ff6b6b;
+}
+
+[data-theme="high-contrast"] .menu-item.danger:hover {
+  background: rgba(255, 107, 107, 0.2);
+  border-color: #ff6b6b;
+}
+
+[data-theme="high-contrast"] .menu-divider {
+  background: #ffffff;
+}
+
+/* Theme Support for Project Tree File Selection */
+
+/* Light Theme - Project Tree */
+[data-theme="light"] .ide-project-list {
+  background: #f8f8f8;
+  color: #333333;
+}
+
+[data-theme="light"] .ide-project-list .el-tree-node.is-current > .el-tree-node__content {
+  background-color: #e3f2fd !important;
+}
+
+[data-theme="light"] .ide-project-list .el-tree-node__content:hover {
+  background-color: #f0f0f0 !important;
+}
+
+[data-theme="light"] .ide-project-list .el-tree-node:focus > .el-tree-node__content {
+  background: #e3f2fd !important;
+}
+
+[data-theme="light"] .tree::-webkit-scrollbar-thumb {
+  background: #c0c0c0;
+}
+
+[data-theme="light"] .tree::-webkit-scrollbar-track {
+  background: #f0f0f0;
+}
+
+/* High Contrast Theme - Project Tree */
+[data-theme="high-contrast"] .ide-project-list {
+  background: #000000;
+  color: #ffffff;
+}
+
+[data-theme="high-contrast"] .ide-project-list .el-tree-node.is-current > .el-tree-node__content {
+  background-color: #ffff00 !important;
+  color: #000000 !important;
+}
+
+[data-theme="high-contrast"] .ide-project-list .el-tree-node__content:hover {
+  background-color: #333333 !important;
+  border: 1px solid #ffff00 !important;
+}
+
+[data-theme="high-contrast"] .ide-project-list .el-tree-node:focus > .el-tree-node__content {
+  background: #ffff00 !important;
+  color: #000000 !important;
+}
+
+[data-theme="high-contrast"] .tree::-webkit-scrollbar-thumb {
+  background: #ffffff;
+}
+
+[data-theme="high-contrast"] .tree::-webkit-scrollbar-track {
+  background: #333333;
+}
 </style>
 
 

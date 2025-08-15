@@ -20,7 +20,7 @@ const wsInfoMap = {
       maxRetries: Infinity,
       maxEnqueuedMessages: Infinity,
       startClosed: false,
-      debug: false,
+      debug: true,
     },
     logger: console,
     rws: null, // WebSocket instance
@@ -285,6 +285,8 @@ const actions = {
     context.commit('setLocation', { wsKey: wsKey, location: location });
     context.commit('setOptions', { wsKey: wsKey, options: options });
     const url = `${wsInfo.location.protocol}//${wsInfo.location.host}${wsInfo.location.port ? ':' + wsInfo.location.port : ''}${wsInfo.location.pathname}${wsInfo.location.search}`;
+    console.log('🔌 [WebSocket] Attempting connection to:', url);
+    console.log('🔌 [WebSocket] Location config:', wsInfo.location);
     wsInfo.logger.log(`Websocket init: ${url}`);
 
     if (wsInfo.rws) {

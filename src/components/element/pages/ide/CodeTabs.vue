@@ -1,5 +1,27 @@
 <template>
+  <!-- Single Combined Tabs Container -->
   <div class="code-tabs-container">
+    <!-- Sidebar Toggle Button (on left) -->
+    <button 
+      v-if="sidebarVisible"
+      class="sidebar__contract" 
+      @click="toggleSidebar"
+      aria-label="Close files navigation"
+      title="Hide file explorer"
+    >
+      <ChevronLeft :size="16" />
+    </button>
+    <button 
+      v-else
+      class="sidebar__expand" 
+      @click="toggleSidebar"
+      aria-label="Open files navigation"
+      title="Show file explorer"
+    >
+      <ChevronRight :size="16" />
+    </button>
+    
+    <!-- Tabs List -->
     <div class="code-tab-list">
       <button
         v-for="item in codeItems"
@@ -20,10 +42,12 @@
         </span>
       </button>
     </div>
+    
+    <!-- Tab Actions (on right) -->
     <div class="tab-actions">
       <!-- Tab count indicator -->
       <span class="tab-count-indicator" v-if="codeItems.length > 0">
-        {{ codeItems.length }}/6
+        {{ codeItems.length }}/5
       </span>
     </div>
   </div>
@@ -31,15 +55,21 @@
 
 <script>
 import { getIconForFile } from 'vscode-icons-js';
+import { ChevronLeft, ChevronRight } from 'lucide-vue-next';
 
 export default {
   data() {
     return {
+      sidebarVisible: true
     };
   },
   mounted() {
   },
   methods: {
+    toggleSidebar() {
+      this.sidebarVisible = !this.sidebarVisible;
+      this.$emit('toggle-sidebar', this.sidebarVisible);
+    },
     getIconUrl(path) {
       return require(`@/assets/vscode-icons/${getIconForFile(path.substring(path.lastIndexOf('.') + 1))}`);
     },
@@ -78,6 +108,10 @@ export default {
     codeItems() {
       return this.ideInfo.codeItems;
     },
+    currentFileName() {
+      const selected = this.codeItems.find(item => item.path === this.pathSelected);
+      return selected ? selected.name : 'No file selected';
+    },
     pathSelected: {
       get() {
         return this.ideInfo.currProj.pathSelected;
@@ -90,6 +124,8 @@ export default {
     }
   },
   components: {
+    ChevronLeft,
+    ChevronRight
   },
 };
 </script>
@@ -101,10 +137,34 @@ export default {
   background: var(--bg-secondary, #2A2A2D);
   border-bottom: 1px solid var(--border-primary, #3c3c3c);
   display: flex;
-  justify-content: space-between;
   align-items: center;
   padding: 0 4px;
   user-select: none;
+  gap: 4px;
+}
+
+/* Sidebar Toggle Buttons */
+.sidebar__contract,
+.sidebar__expand {
+  background: transparent;
+  border: none;
+  padding: 6px 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  color: var(--text-secondary, #B5B5B5);
+  flex-shrink: 0;
+  border-right: 1px solid var(--border-color, #3c3c3c);
+  margin-right: 8px;
+  border-radius: 4px;
+}
+
+.sidebar__contract:hover,
+.sidebar__expand:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary, #FFFFFF);
 }
 
 /* Tab list container */
@@ -236,6 +296,7 @@ export default {
   gap: 4px;
   padding: 0 4px;
 }
+
 
 /* Light theme support */
 [data-theme="light"] .code-tabs-container {

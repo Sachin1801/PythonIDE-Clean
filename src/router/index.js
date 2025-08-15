@@ -11,6 +11,16 @@ const routes = [
     component: () => import('@/components/element/VmIde'),
     meta: { title: 'Vm Web IDE' },
   },
+  {
+    path: '/test-splitpanes',
+    component: () => import('@/components/element/TestSplitpanes'),
+    meta: { title: 'Test Splitpanes' },
+  },
+  {
+    path: '/editor-new',
+    component: () => import('@/components/element/VmIdeWithSplitpanes'),
+    meta: { title: 'Vm Web IDE - New' },
+  },
 ]
 
 export const router = createRouter({

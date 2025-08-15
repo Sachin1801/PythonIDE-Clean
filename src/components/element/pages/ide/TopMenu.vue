@@ -19,26 +19,19 @@
           <ul class="nav__dropdown" v-show="activeDropdown === 'file'" @click.stop>
             <li class="nav__dropdown-item">
               <button @click="newFile()">
-                New
-                <span class="nav__keyboard-shortcut">Ctrl+N</span>
+                New File
               </button>
             </li>
             <li class="nav__dropdown-item">
               <button @click="saveFile()">
                 Save
-                <span class="nav__keyboard-shortcut">Ctrl+S</span>
               </button>
             </li>
-            <li class="nav__dropdown-item nav__dropdown-item--disabled">
+            <!-- <li class="nav__dropdown-item nav__dropdown-item--disabled">
               <button disabled>Share</button>
-            </li>
+            </li> -->
             <li class="nav__dropdown-item">
               <button @click="downloadFile()">Download</button>
-            </li>
-            <li class="nav__dropdown-item">
-              <button @click="addFile()">
-                Add File
-              </button>
             </li>
             <li class="nav__dropdown-item">
               <button @click="addFolder()">
@@ -153,13 +146,13 @@ export default {
       this.closeDropdowns();
       if (!this.ideInfo.nodeSelected || (this.ideInfo.nodeSelected.type !== 'dir' && this.ideInfo.nodeSelected.type !== 'folder')) {
         // Select root folder if no folder is selected
-        const rootFolder = this.ideInfo.currProj?.fileTree?.[0];
+        const rootFolder = this.ideInfo.currProj?.data;
         if (rootFolder) {
           this.$store.commit('ide/setNodeSelected', rootFolder);
         }
       }
       this.$emit('set-text-dialog', {
-        type: 'file',
+        type: 'create-file',
         title: 'New File',
         tips: 'Enter file name:',
         text: 'untitled.py'
@@ -171,13 +164,13 @@ export default {
     addFolder() {
       this.closeDropdowns();
       if (!this.ideInfo.nodeSelected || (this.ideInfo.nodeSelected.type !== 'dir' && this.ideInfo.nodeSelected.type !== 'folder')) {
-        const rootFolder = this.ideInfo.currProj?.fileTree?.[0];
+        const rootFolder = this.ideInfo.currProj?.data;
         if (rootFolder) {
           this.$store.commit('ide/setNodeSelected', rootFolder);
         }
       }
       this.$emit('set-text-dialog', {
-        type: 'folder',
+        type: 'create-folder',
         title: 'New Folder',
         tips: 'Enter folder name:',
         text: 'new_folder'

@@ -1,7 +1,0 @@
-name = input();
-
-print(name)
-
-
-
-            

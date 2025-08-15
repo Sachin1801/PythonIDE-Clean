@@ -19,6 +19,12 @@ const ideInfo = {
   treeRef: null,
   nodeSelected: null,
   projList: [],
+  // Fullscreen preview state
+  fullscreenPreview: {
+    active: false,
+    file: null,
+    content: null
+  }
 }
 
 const state = {
@@ -149,10 +155,12 @@ const mutations = {
     }
   },
   handleDelFolder(state, {parentData, folderPath}) {
-    for (var i = 0; i < parentData.children.length; i++) {
-      if (parentData.children[i].path === folderPath) {
-        parentData.children.splice(i, 1);
-        break;
+    if (parentData && parentData.children) {
+      for (var i = 0; i < parentData.children.length; i++) {
+        if (parentData.children[i].path === folderPath) {
+          parentData.children.splice(i, 1);
+          break;
+        }
       }
     }
     const codeItems = [];
@@ -162,7 +170,7 @@ const mutations = {
       }
     }
     state.ideInfo.codeItems = codeItems;
-    if (state.ideInfo.currProj.pathSelected.indexOf(folderPath) === 0) {
+    if (state.ideInfo.currProj.pathSelected && state.ideInfo.currProj.pathSelected.indexOf(folderPath) === 0) {
       state.ideInfo.currProj.pathSelected = codeItems.length > 0 ? codeItems[0].path : '';
     }
     const expandedKeys = [];
@@ -176,12 +184,12 @@ const mutations = {
   handleGetFile(state, {filePath, data, save, isMedia, projectName}) {
     // Create unique identifier for cross-project files
     const currentProjectName = projectName || state.ideInfo.currProj?.data?.name || 'default';
-    const uniquePath = `${currentProjectName}:${filePath}`;
     
-    // Check if file is already open
+    // Check if file is already open - compare by path AND project name
     for (let i = 0; i < state.ideInfo.codeItems.length; i++) {
-      if (state.ideInfo.codeItems[i].uniquePath === uniquePath || 
-          (state.ideInfo.codeItems[i].path === filePath && !state.ideInfo.codeItems[i].uniquePath)) {
+      // Check if the same file from the same project is already open
+      if (state.ideInfo.codeItems[i].path === filePath && 
+          state.ideInfo.codeItems[i].projectName === currentProjectName) {
         state.ideInfo.currProj.pathSelected = filePath;
         state.ideInfo.codeSelected = state.ideInfo.codeItems[i];
         return;
@@ -210,7 +218,6 @@ const mutations = {
       name: path.basename(filePath),
       content: data,
       path: filePath,
-      uniquePath: uniquePath,
       projectName: currentProjectName,
       codemirror: null,
       isMedia: isMedia || false,
@@ -518,6 +525,17 @@ const mutations = {
   addConsoleItem(state, item) {
     state.ideInfo.consoleItems.push(item);
   },
+  resetConsoleItem(state, { consoleId, run, stop, resultList }) {
+    // Find the console item and reset its properties
+    for (let i = 0; i < state.ideInfo.consoleItems.length; i++) {
+      if (state.ideInfo.consoleItems[i].id === consoleId) {
+        if (run !== undefined) state.ideInfo.consoleItems[i].run = run;
+        if (stop !== undefined) state.ideInfo.consoleItems[i].stop = stop;
+        if (resultList !== undefined) state.ideInfo.consoleItems[i].resultList = resultList;
+        break;
+      }
+    }
+  },
   setConsoleItems(state, items) {
     state.ideInfo.consoleItems = items;
   },
@@ -536,6 +554,21 @@ const mutations = {
   },
   setCodeHeight(state, height) {
     state.ideInfo.codeHeight = height;
+  },
+  // Fullscreen preview mutations
+  setFullscreenPreview(state, { file, content }) {
+    state.ideInfo.fullscreenPreview = {
+      active: true,
+      file: file,
+      content: content
+    };
+  },
+  closeFullscreenPreview(state) {
+    state.ideInfo.fullscreenPreview = {
+      active: false,
+      file: null,
+      content: null
+    };
   }
 };
 

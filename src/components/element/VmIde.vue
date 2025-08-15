@@ -29,11 +29,15 @@
       <!-- Main Horizontal Splitpanes for Left/Center/Right -->
       <splitpanes class="default-theme main-splitpanes">
         <!-- Left Sidebar Pane - Always present in DOM -->
-        <pane :size="leftSidebarSize" :min-size="0" :max-size="40">
+        <pane :size="leftSidebarSize" :min-size="0.1" :max-size="40">
           <div id="left-sidebar" class="left-sidebar" v-show="leftSidebarVisible">
             <ProjTree 
               v-on:get-item="getFile"
+              @get-item-right-panel="getFileForRightPanel"
               @context-menu="showContextMenu"
+              @rename-item="handleRenameItem"
+              @delete-item="handleDeleteItem"
+              @download-item="handleDownloadItem"
             ></ProjTree>
           </div>
         </pane>
@@ -41,6 +45,10 @@
         <!-- Center Content Pane -->
         <pane :size="centerSize" :min-size="30">
           <div id="center-frame" class="center-frame">
+            <!-- Fullscreen Preview -->
+            <FullscreenPreview 
+              @open-in-right-panel="getFileForRightPanel" 
+            />
             <!-- Nested Horizontal Splitpanes for Editor/Console -->
             <splitpanes horizontal class="default-theme">
               <!-- Editor Pane -->
@@ -55,14 +63,14 @@
             </CodeTabs>
           </div>
           <div class="editor-content">
-            <template v-for="(item, index) in ideInfo.codeItems" :key="item.path + index">
+            <template v-for="(item, index) in ideInfo.codeItems" :key="`${item.projectName || 'default'}:${item.path}`">
               <IdeEditor 
                 :codeItem="item"
                 :codeItemIndex="index"
                 :consoleLimit="consoleLimit"
                 :wordWrap="wordWrap"
                 @run-item="runPathSelected"
-                v-if="ideInfo.codeSelected.path === item.path" 
+                v-if="isSelectedFile(item)" 
                 v-on:update-item="updateItem"></IdeEditor>
             </template>
           </div>
@@ -178,7 +186,7 @@
         </pane>
         
                  <!-- Right Sidebar Pane - Always present in DOM -->
-         <pane :size="rightSidebarSize" :min-size="0" :max-size="50">
+         <pane :size="rightSidebarSize" :min-size="0.1" :max-size="50">
            <div id="right-sidebar" class="right-sidebar">
             <!-- Hidden placeholder when sidebar is not visible -->
             <div v-show="!rightSidebarVisible || previewTabs.length === 0" class="right-sidebar-placeholder">
@@ -198,9 +206,6 @@
                   <span class="tab-close" @click.stop="closePreviewTab(tab.id)">×</span>
                 </button>
               </div>
-              <button class="preview-tab-add" @click="toggleRightSidebar" title="Hide Preview Panel">
-                ×
-              </button>
             </div>
             
             <!-- Preview Content Area -->
@@ -275,6 +280,7 @@
     <DialogDelete v-if="showDeleteDialog" :title="dialogTitle"
       @on-cancel="onCancelDelete" @on-delete="onDelete"></DialogDelete>
     <DialogUpload v-if="showUploadDialog" v-model="showUploadDialog" @refresh-tree="refreshProjectTree" @close="showUploadDialog = false"></DialogUpload>
+    <DialogNewFile v-if="showNewFileDialog" v-model="showNewFileDialog" @file-created="handleFileCreated"></DialogNewFile>
     
     <!-- REPL Modal -->
     <div v-if="showREPL" class="repl-modal">
@@ -308,8 +314,10 @@ import DialogProjs from './pages/ide/dialog/DialogProjs';
 import DialogText from './pages/ide/dialog/DialogText';
 import DialogDelete from './pages/ide/dialog/DialogDelete';
 import DialogUpload from './pages/ide/dialog/DialogUpload';
+import DialogNewFile from './pages/ide/dialog/DialogNewFile';
 import CsvViewer from './pages/ide/CsvViewer';
 import SettingsModal from './pages/ide/SettingsModal';
+import FullscreenPreview from './pages/ide/FullscreenPreview';
 import DualModeREPL from './DualModeREPL';
 const path = require('path');
 
@@ -320,6 +328,7 @@ export default {
       showFileDialog: false,
       showProjsDialog: false,
       showUploadDialog: false,
+      showNewFileDialog: false,
       showSettingsModal: false,
       showREPL: false,
       isReplMode: false,  // Toggle between normal console and REPL mode
@@ -353,6 +362,10 @@ export default {
       consoleMode: 'collapsed', // 'collapsed', 'normal', 'maximized'
       consolePreviousMode: 'normal', // For restoration from maximized
       wasConsoleOpenBeforeRightExpand: false, // Track console state before right panel expansion
+      
+      // Per-file console state management
+      fileConsoleStates: {}, // Map of filePath -> { mode, expanded, maximized, consoleId }
+      activeFilePath: null, // Currently active file path
       
       // Legacy properties (keep for compatibility)
       rightPanelState: 'normal',
@@ -406,7 +419,10 @@ export default {
       // REPL mode configuration (for dual-mode)
       replMode: 'auto', // 'backend', 'pyodide', or 'auto'
       pyodideNamespace: null,
-      pyodideInitialized: false
+      pyodideInitialized: false,
+      
+      // WebSocket handler reference (non-reactive)
+      wsMessageHandler: null
     }
   },
   mixins: [DualModeREPL],
@@ -424,8 +440,10 @@ export default {
     DialogText,
     DialogDelete,
     DialogUpload,
+    DialogNewFile,
     CsvViewer,
     SettingsModal,
+    FullscreenPreview,
     ChevronLeft,
     ChevronRight,
     ChevronUp,
@@ -453,13 +471,11 @@ export default {
       console.error('❌ [VmIde] Error initializing WebSocket:', error);
     }
 
-    // TEMPORARY: Add a test preview tab to show the right sidebar
-    // Remove this after testing
-    this.addPreviewTab('image', 'test_image.png', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==');
+    // Test image removed - right panel will only show when actual content is loaded
     
-    // Set initial state for testing
-    this.rightPanelMode = 'normal';
-    this.consoleMode = 'collapsed';
+    // Set initial state
+    this.rightPanelMode = 'closed';  // Start with right panel closed
+    this.consoleMode = 'collapsed';  // Start with console collapsed
     
     // Set up WebSocket message handler for REPL after a delay to ensure WebSocket is ready
     this.$nextTick(() => {
@@ -508,6 +524,12 @@ export default {
   beforeUnmount() {
     window.removeEventListener('resize', this.validateLayout);
     window.removeEventListener('resize', this.resize);
+    
+    // Clean up WebSocket handler
+    if (this.wsMessageHandler && this.wsInfo && this.wsInfo.rws) {
+      this.wsInfo.rws.removeEventListener('message', this.wsMessageHandler);
+      this.wsMessageHandler = null;
+    }
     
     // Clean up blob URLs when component is destroyed
     this.previewTabs.forEach(tab => {
@@ -558,26 +580,27 @@ export default {
     leftSidebarSize() {
       // Always return a size, even when hidden
       // This ensures splitpanes can properly manage the panes
-      return this.leftSidebarVisible ? 20 : 0;
+      // Use 0.1 instead of 0 to avoid null reference errors in splitpanes
+      return this.leftSidebarVisible ? 20 : 0.1;
     },
     rightSidebarSize() {
       // Handle different states based on new mode system
-      if (this.rightPanelMode === 'closed' || this.previewTabs.length === 0) {
-        return 0;
+      if (this.rightPanelMode === 'closed') {
+        return 0.1;  // Use 0.1 to avoid null reference errors
       }
       if (this.rightPanelMode === 'expanded') {
         // Take 70% of non-sidebar space when expanded
         const leftSize = this.leftSidebarVisible ? 20 : 0;
         return 100 - leftSize - 10; // Leave 10% for minimal editor
       }
-      // Normal state - 30%
+      // Normal state - 30% (show even if no tabs yet, since we're opening)
       return 30;
     },
     centerSize() {
       // Calculate center size based on what's visible
-      const leftSize = this.leftSidebarVisible ? 20 : 0;
+      const leftSize = this.leftSidebarVisible ? 20 : 0.1;
       const rightSize = this.rightSidebarSize;  // Access as property, not function
-      return 100 - leftSize - rightSize;
+      return Math.max(30, 100 - leftSize - rightSize); // Ensure minimum 30% for center
     },
     // New computed properties for console sizing
     editorPaneSize() {
@@ -594,6 +617,18 @@ export default {
     }
   },
   watch: {
+    // Watch for tab changes to save/restore console state
+    'ideInfo.codeSelected': function(newFile, oldFile) {
+      // Only handle console state changes when actually switching between different files
+      if (newFile && oldFile && newFile.path && oldFile.path && newFile.path !== oldFile.path) {
+        this.handleTabChange(newFile, oldFile);
+      } else if (newFile && !oldFile) {
+        // First file opened
+        this.activeFilePath = newFile.path;
+        this.loadFileConsoleState(newFile.path);
+      }
+    },
+    
     'ideInfo.consoleSelected.waitingForInput': function(newVal) {
       if (newVal) {
         // Focus on input field when waiting for input
@@ -783,7 +818,7 @@ export default {
     },
     
     setupWebSocketHandler() {
-      // Add a handler for WebSocket messages
+      // Add a handler for WebSocket messages using event listener
       try {
         if (!this.wsInfo || !this.wsInfo.rws) {
           console.log('WebSocket not ready, retrying...');
@@ -791,10 +826,13 @@ export default {
           return;
         }
         
-        // Store original onmessage if exists
-        const originalOnMessage = this.wsInfo.rws.onmessage;
+        // Remove any existing handler to avoid duplicates
+        if (this.wsMessageHandler) {
+          this.wsInfo.rws.removeEventListener('message', this.wsMessageHandler);
+        }
         
-        this.wsInfo.rws.onmessage = (event) => {
+        // Create a new message handler
+        this.wsMessageHandler = (event) => {
           // Handle REPL messages FIRST before the store consumes them
           try {
             const message = JSON.parse(event.data);
@@ -833,11 +871,10 @@ export default {
             // Not JSON or parsing error, ignore
           }
           
-          // THEN call original handler so store can process other messages
-          if (originalOnMessage) {
-            originalOnMessage(event);
-          }
         };
+        
+        // Add the event listener (doesn't mutate the WebSocket object)
+        this.wsInfo.rws.addEventListener('message', this.wsMessageHandler);
         
         console.log('WebSocket handler for REPL set up successfully');
       } catch (error) {
@@ -1077,6 +1114,112 @@ export default {
         this.updateEditorHeight();
       }
     },
+    
+    // Per-file console management
+    handleTabChange(newFile, oldFile) {
+      // Save current console state for the old file
+      if (oldFile && oldFile.path && this.activeFilePath) {
+        this.saveFileConsoleState(this.activeFilePath);
+      }
+      
+      // Load console state for the new file
+      if (newFile && newFile.path) {
+        this.activeFilePath = newFile.path;
+        this.loadFileConsoleState(newFile.path);
+      }
+    },
+    
+    saveFileConsoleState(filePath) {
+      // Only save if it's a Python file
+      if (!filePath || !filePath.endsWith('.py')) return;
+      
+      // Find the console item for this file
+      const fileConsole = this.ideInfo.consoleItems.find(
+        item => item.path === filePath
+      );
+      
+      // Save the current console state
+      this.fileConsoleStates[filePath] = {
+        mode: this.consoleMode,
+        expanded: this.consoleExpanded,
+        maximized: this.consoleMaximized,
+        consoleId: fileConsole ? fileConsole.id : null,
+        hasOutput: fileConsole && fileConsole.resultList && fileConsole.resultList.length > 0
+      };
+    },
+    
+    loadFileConsoleState(filePath) {
+      // Only handle Python files
+      if (!filePath || !filePath.endsWith('.py')) {
+        // For non-Python files, hide console
+        this.consoleMode = 'collapsed';
+        this.consoleExpanded = false;
+        this.consoleMaximized = false;
+        return;
+      }
+      
+      const savedState = this.fileConsoleStates[filePath];
+      
+      if (savedState) {
+        // Restore saved console state
+        this.consoleMode = savedState.mode || 'collapsed';
+        this.consoleExpanded = savedState.expanded || false;
+        this.consoleMaximized = savedState.maximized || false;
+        
+        // Find and select the console for this file if it exists
+        if (savedState.consoleId && this.ideInfo.consoleItems) {
+          const fileConsole = this.ideInfo.consoleItems.find(
+            item => item.id === savedState.consoleId
+          );
+          if (fileConsole) {
+            // Use nextTick to avoid interfering with tab switching
+            this.$nextTick(() => {
+              this.$store.commit('ide/setConsoleSelected', fileConsole);
+            });
+          }
+        }
+      } else {
+        // New file - start with collapsed console
+        this.consoleMode = 'collapsed';
+        this.consoleExpanded = false;
+        this.consoleMaximized = false;
+      }
+      
+      // Use nextTick to avoid blocking UI updates
+      this.$nextTick(() => {
+        this.updateEditorHeight();
+      });
+    },
+    
+    getOrCreateFileConsole(filePath) {
+      // Find existing console for this file
+      let fileConsole = this.ideInfo.consoleItems.find(
+        item => item.path === filePath
+      );
+      
+      if (!fileConsole) {
+        // Create new console item for this file
+        const fileName = filePath.split('/').pop();
+        const newConsoleItem = {
+          id: this.ideInfo.consoleId,
+          path: filePath,
+          name: fileName,
+          run: false,
+          resultList: [],
+          waitingForInput: false,
+          inputPrompt: ''
+        };
+        this.$store.commit('ide/addConsoleItem', newConsoleItem);
+        this.$store.commit('ide/setConsoleId', this.ideInfo.consoleId + 1);
+        
+        // Return the newly created item from the store
+        fileConsole = this.ideInfo.consoleItems.find(
+          item => item.id === newConsoleItem.id
+        );
+      }
+      
+      return fileConsole;
+    },
 
     expandConsole() {
       // Expand console to take most of the vertical space in the center frame
@@ -1123,9 +1266,10 @@ export default {
           this.selectedPreviewTab = this.previewTabs.length > 0 ? this.previewTabs[0].id : null;
         }
         
-        // Hide sidebar if no tabs left
+        // Hide sidebar and set to closed mode if no tabs left
         if (this.previewTabs.length === 0) {
           this.rightSidebarVisible = false;
+          this.rightPanelMode = 'closed';
         }
       }
     },
@@ -1154,9 +1298,18 @@ export default {
       }
       
       // Make sure right sidebar is visible and in normal mode
-      if (this.rightPanelMode === 'closed') {
+      // Force the panel to open if it was closed
+      if (this.rightPanelMode === 'closed' || !this.rightSidebarVisible) {
         this.rightPanelMode = 'normal';
         this.rightSidebarVisible = true;
+        
+        // Force Vue to update the view
+        this.$nextTick(() => {
+          // Ensure the panel is actually visible after the next render cycle
+          if (!this.rightSidebarVisible) {
+            this.rightSidebarVisible = true;
+          }
+        });
       }
     },
     
@@ -1174,6 +1327,13 @@ export default {
       console.log('Theme changed to:', theme);
     },
     downloadFile(fileInfo) {
+      // Ensure we have a valid fileName
+      if (!fileInfo || !fileInfo.fileName) {
+        console.error('[downloadFile] Invalid fileInfo:', fileInfo);
+        ElMessage.error('Cannot download: invalid file information');
+        return;
+      }
+      
       // Check if it's a binary file
       const binaryExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.pdf', '.zip', '.tar', '.gz'];
       const isBinary = binaryExtensions.some(ext => fileInfo.fileName.toLowerCase().endsWith(ext));
@@ -1183,11 +1343,47 @@ export default {
         filePath: fileInfo.filePath,
         binary: isBinary,
         callback: (dict) => {
+          console.log('[downloadFile] Response:', { code: dict.code, hasData: !!dict.data, dataKeys: dict.data ? Object.keys(dict.data) : [] });
+          
           if (dict.code == 0) {
-            // Create download link
-            const blob = isBinary 
-              ? new Blob([Uint8Array.from(atob(dict.data), c => c.charCodeAt(0))], { type: 'application/octet-stream' })
-              : new Blob([dict.data], { type: 'text/plain' });
+            // Get the actual content - it might be in dict.data.content or dict.data
+            let fileContent = dict.data?.content || dict.data;
+            
+            // For binary files, ensure we have valid base64 data
+            let blob;
+            if (isBinary) {
+              try {
+                // Check if fileContent is an object with content property
+                if (typeof fileContent === 'object' && fileContent.content) {
+                  fileContent = fileContent.content;
+                }
+                
+                // Validate base64 string
+                if (typeof fileContent !== 'string') {
+                  throw new Error('Binary content is not a string');
+                }
+                
+                // Remove any data URL prefix if present
+                if (fileContent.includes(',')) {
+                  fileContent = fileContent.split(',')[1];
+                }
+                
+                // Decode base64 to binary
+                const binaryString = atob(fileContent);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                  bytes[i] = binaryString.charCodeAt(i);
+                }
+                blob = new Blob([bytes], { type: 'application/octet-stream' });
+              } catch (e) {
+                console.error('[downloadFile] Error decoding binary data:', e);
+                ElMessage.error('Failed to decode file data: ' + e.message);
+                return;
+              }
+            } else {
+              // Text file
+              blob = new Blob([fileContent], { type: 'text/plain' });
+            }
             
             const url = window.URL.createObjectURL(blob);
             const link = document.createElement('a');
@@ -1212,6 +1408,18 @@ export default {
           }
         }
       });
+    },
+    handleFileCreated(data) {
+      // Handle file creation from new file dialog
+      console.log('[handleFileCreated] File created:', data);
+      
+      if (data && data.path && data.projectName) {
+        // Open the newly created file
+        this.getFile(data.path, true, data.projectName);
+      }
+      
+      // Refresh the project tree
+      this.refreshProjectTree();
     },
     refreshProjectTree() {
       // Refresh the project tree by re-fetching the project data
@@ -1253,38 +1461,76 @@ export default {
       }
       return exist;
     },
+    isSelectedFile(item) {
+      // Check if this file is the currently selected one
+      // Compare both path and projectName to ensure uniqueness
+      return this.ideInfo.codeSelected && 
+             this.ideInfo.codeSelected.path === item.path &&
+             this.ideInfo.codeSelected.projectName === item.projectName;
+    },
     getParentData(path) {
-      if (this.ideInfo.treeRef.currentNode && this.ideInfo.treeRef.currentNode.parent) {
+      // First try to use treeRef's current node
+      if (this.ideInfo.treeRef && this.ideInfo.treeRef.currentNode && this.ideInfo.treeRef.currentNode.parent) {
         return this.ideInfo.treeRef.currentNode.parent.data;
       }
-      else {
-        let data = this.ideInfo.currProj.data;
-        let alive = true;
-        while (alive) {
-          alive = false;
-          for (var i = 0; i < data.children.length; i++) {
-            if (data.children[i].path === this.ideInfo.nodeSelected.path) {
-              return data;
-            }
-            else if (path.indexOf(data.children[i].path) === 0) {
-              data = data.children[i];
-              alive = true;
-              break;
-            }
-          }
+      
+      // If we have multi-root data, search through all projects
+      if (this.ideInfo.multiRootData && this.ideInfo.multiRootData.children) {
+        for (let project of this.ideInfo.multiRootData.children) {
+          const parent = this.findParentInTree(project, path);
+          if (parent) return parent;
         }
       }
+      
+      // Fall back to current project data
+      if (this.ideInfo.currProj && this.ideInfo.currProj.data) {
+        return this.findParentInTree(this.ideInfo.currProj.data, path);
+      }
+      
+      return null;
+    },
+    
+    findParentInTree(node, targetPath) {
+      if (!node || !node.children) return null;
+      
+      // Check if this node is the parent
+      for (let child of node.children) {
+        if (child.path === targetPath) {
+          return node;
+        }
+      }
+      
+      // Recursively search children
+      for (let child of node.children) {
+        if (targetPath.startsWith(child.path + '/') || child.path === targetPath) {
+          const found = this.findParentInTree(child, targetPath);
+          if (found) return found;
+        }
+      }
+      
+      return null;
     },
     isFileExist(name, isCreate) {
       let exist = false;
+      
+      // Check if nodeSelected exists
+      if (!this.ideInfo.nodeSelected) {
+        return false;
+      }
+      
       if (isCreate) {
-        exist = this.ideInfo.nodeSelected.children.some(item => item.name === name);
+        // Check if children exists before using some
+        exist = this.ideInfo.nodeSelected.children && 
+                this.ideInfo.nodeSelected.children.some(item => item.name === name);
       }
       else {
+        // For rename, check siblings
         const parentData = this.getParentData(this.ideInfo.nodeSelected.path);
-        if (parentData && parentData.children)
+        if (parentData && parentData.children) {
           exist = parentData.children.some(item => item.name === name);
+        }
       }
+      
       if (exist) {
         this.dialogTips = 'File with the same name already exists';
       }
@@ -1327,7 +1573,7 @@ export default {
     loadAllDefaultProjects() {
       console.log('🚀 [loadAllDefaultProjects] Starting to load default projects');
       const self = this;
-      const defaultProjects = ['Local', 'Lecture Notes', 'Python'];
+      const defaultProjects = ['Local', 'Assignments', 'Lecture Notes', 'Testing'];
       const loadedProjects = [];
       let loadCount = 0;
       
@@ -1380,14 +1626,29 @@ export default {
         }
       });
     },
-    getFile(path, save) {
+    getFile(path, save, projectName, openInPanel = false) {
       const self = this;
+      
+      // Determine the project name - from parameter, current selection, or current project
+      const actualProjectName = projectName || 
+                               (this.ideInfo.nodeSelected && this.ideInfo.nodeSelected.projectName) ||
+                               this.ideInfo.currProj?.data?.name ||
+                               this.ideInfo.currProj?.config?.name;
+      
       // Check if it's a media or data file
       const mediaExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.webp', '.pdf'];
       const dataExtensions = ['.csv'];
       const isMediaFile = mediaExtensions.some(ext => path.toLowerCase().endsWith(ext));
       const isDataFile = dataExtensions.some(ext => path.toLowerCase().endsWith(ext));
       
+      // If it's a preview file and openInPanel is false, open in fullscreen
+      if ((isMediaFile || isDataFile) && !openInPanel) {
+        // Open preview files in fullscreen mode by default
+        this.openFullscreenPreview(path, actualProjectName);
+        return;
+      }
+      
+      // Otherwise, handle normally (open in panel if preview file and openInPanel is true)
       if (isMediaFile) {
         // For media files, fetch binary content and display in preview panel
         const fileName = path.split('/').pop();
@@ -1395,7 +1656,7 @@ export default {
         
         // Use the same approach as the working MediaViewer component
         this.$store.dispatch(`ide/${types.IDE_GET_FILE}`, {
-          projectName: this.ideInfo.currProj?.data?.name,
+          projectName: actualProjectName,
           filePath: path,
           binary: true,
           callback: (response) => {
@@ -1428,17 +1689,25 @@ export default {
                 };
                 const mimeType = mimeTypes[fileExt] || 'application/octet-stream';
                 
-                // Create data URL directly (like MediaViewer does)
-                previewContent = `data:${mimeType};base64,${base64Content}`;
-                previewType = fileExt === 'pdf' ? 'pdf' : 'image';
-                
-                // Add to preview tabs with file path for duplicate detection
-                self.addPreviewTab(previewType, fileName, previewContent, path);
-                
-                // Make sure right sidebar is visible
-                if (!self.rightSidebarVisible) {
-                  self.rightSidebarVisible = true;
+                // Create data URL for image
+                if (fileExt === 'pdf') {
+                  // For PDF, create blob URL
+                  const binaryString = atob(base64Content);
+                  const bytes = new Uint8Array(binaryString.length);
+                  for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                  }
+                  const blob = new Blob([bytes], { type: mimeType });
+                  previewContent = URL.createObjectURL(blob);
+                  previewType = 'pdf';
+                } else {
+                  // For images, create data URL
+                  previewContent = `data:${mimeType};base64,${base64Content}`;
+                  previewType = 'image';
                 }
+                
+                // Add to preview tabs
+                self.addPreviewTab(previewType, fileName, previewContent, path);
                 
                 // Still update the file tree selection
                 if (save !== false) {
@@ -1468,18 +1737,13 @@ export default {
         const fileName = path.split('/').pop();
         
         this.$store.dispatch(`ide/${types.IDE_GET_FILE}`, {
-          projectName: this.ideInfo.currProj?.data?.name,
+          projectName: actualProjectName,
           filePath: path,
           callback: (response) => {
             if (response.code === 0 && response.data) {
-              // Parse CSV content and add to preview panel
+              // Parse CSV content and add to preview tabs
               const csvContent = response.data.content || response.data;
               self.addPreviewTab('data', fileName, csvContent, path);
-              
-              // Make sure right sidebar is visible
-              if (!self.rightSidebarVisible) {
-                self.rightSidebarVisible = true;
-              }
               
               // Update file tree selection
               if (save !== false) {
@@ -1496,9 +1760,14 @@ export default {
           }
         });
       } else {
-        // For regular files, fetch content as before
+        // For regular files (like .py), close any fullscreen preview first
+        if (this.ideInfo.fullscreenPreview && this.ideInfo.fullscreenPreview.active) {
+          this.$store.commit('ide/closeFullscreenPreview');
+        }
+        
+        // Then fetch content as before
         this.$store.dispatch(`ide/${types.IDE_GET_FILE}`, {
-          projectName: this.ideInfo.currProj?.data?.name, // Ensure project name is passed
+          projectName: actualProjectName, // Ensure project name is passed
           filePath: path,
           callback: (dict) => {
             if (dict.code == 0) {
@@ -1518,13 +1787,179 @@ export default {
         });
       }
     },
+    getFileForRightPanel(path) {
+      // Open preview files specifically in the right panel
+      // This is called from context menu "Open in Right Panel" option
+      this.getFile(path, false, null, true); // openInPanel = true
+    },
+    
+    openFullscreenPreview(path, projectName) {
+      // Open preview files in fullscreen modal
+      const self = this;
+      const fileName = path.split('/').pop();
+      const fileExt = path.toLowerCase().split('.').pop();
+      const mediaExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.webp', '.pdf'];
+      const dataExtensions = ['.csv'];
+      const isMediaFile = mediaExtensions.some(ext => path.toLowerCase().endsWith(ext));
+      const isDataFile = dataExtensions.some(ext => path.toLowerCase().endsWith(ext));
+      
+      if (isMediaFile) {
+        // Fetch binary content for media files
+        this.$store.dispatch(`ide/${types.IDE_GET_FILE}`, {
+          projectName: projectName,
+          filePath: path,
+          binary: true,
+          callback: (response) => {
+            if (response.code === 0 && response.data) {
+              let base64Content = response.data.content || response.data;
+              
+              if (base64Content && base64Content.length > 0) {
+                const mimeTypes = {
+                  'png': 'image/png',
+                  'jpg': 'image/jpeg',
+                  'jpeg': 'image/jpeg',
+                  'gif': 'image/gif',
+                  'bmp': 'image/bmp',
+                  'svg': 'image/svg+xml',
+                  'webp': 'image/webp',
+                  'pdf': 'application/pdf'
+                };
+                const mimeType = mimeTypes[fileExt] || 'application/octet-stream';
+                
+                // Create data URL for images or blob URL for PDFs
+                let previewContent;
+                if (fileExt === 'pdf') {
+                  // For PDF, create blob URL
+                  const binaryString = atob(base64Content);
+                  const bytes = new Uint8Array(binaryString.length);
+                  for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                  }
+                  const blob = new Blob([bytes], { type: mimeType });
+                  previewContent = URL.createObjectURL(blob);
+                } else {
+                  // For images, use data URL
+                  previewContent = `data:${mimeType};base64,${base64Content}`;
+                }
+                
+                // Set fullscreen preview in store
+                const fileData = {
+                  name: fileName,
+                  path: path,
+                  projectName: projectName,
+                  content: previewContent,
+                  type: fileExt === 'pdf' ? 'pdf' : 'image'
+                };
+                
+                self.$store.commit('ide/setFullscreenPreview', { 
+                  file: fileData, 
+                  content: previewContent 
+                });
+              } else {
+                self.$message.error(`Failed to load ${fileName}: No content received`);
+              }
+            } else {
+              self.$message.error(`Failed to load ${fileName}`);
+            }
+          }
+        });
+      } else if (isDataFile) {
+        // Fetch CSV content for fullscreen preview
+        this.$store.dispatch(`ide/${types.IDE_GET_FILE}`, {
+          projectName: projectName,
+          filePath: path,
+          callback: (response) => {
+            if (response.code === 0 && response.data) {
+              const csvContent = response.data.content || response.data;
+              
+              // Set fullscreen preview in store for CSV
+              const fileData = {
+                name: fileName,
+                path: path,
+                projectName: projectName,
+                content: csvContent,
+                type: 'csv'
+              };
+              
+              self.$store.commit('ide/setFullscreenPreview', { 
+                file: fileData, 
+                content: csvContent 
+              });
+            } else {
+              self.$message.error(`Failed to load ${fileName}`);
+            }
+          }
+        });
+      }
+    },
     setTextDialog(data) {
+      // Check if this is for new file (use new dialog)
+      if (data.type === 'create-file' && data.title === 'New File') {
+        this.showNewFileDialog = true;
+        return;
+      }
+      
+      // Otherwise use the old dialog
       this.dialogType = data.type;
       this.dialogTitle = data.title;
       this.dialogText = data.text;
       this.dialogTips = data.tips;
       this.showFileDialog = true;
       this.showProjsDialog = false;
+    },
+    handleRenameItem(data) {
+      // Handle rename from project tree
+      console.log('[handleRenameItem] Received rename request:', data);
+      const { oldPath, newName, type, projectName } = data;
+      
+      // Get the project name - IMPORTANT: use the one from data first!
+      const actualProjectName = projectName || this.ideInfo.currProj?.config?.name || this.ideInfo.currProj?.data?.name;
+      
+      console.log('[handleRenameItem] Using project:', actualProjectName);
+      console.log('[handleRenameItem] Data projectName:', projectName);
+      console.log('[handleRenameItem] Current project:', this.ideInfo.currProj?.data?.name);
+      console.log('[handleRenameItem] Renaming:', { oldPath, newName, type, actualProjectName });
+      
+      // Directly call the rename method since the prompt was already shown in ProjTree
+      if (type === 'file') {
+        this.renameFile(newName, oldPath, actualProjectName);
+      } else if (type === 'dir' || type === 'folder') {
+        this.renameFolder(newName, oldPath, actualProjectName);
+      }
+    },
+    handleDeleteItem(data) {
+      // Handle delete from project tree
+      const { path, type, projectName } = data;
+      console.log('[handleDeleteItem] Deleting:', type, 'at path:', path, 'in project:', projectName);
+      
+      if (type === 'file') {
+        this.deleteFile(path, projectName);
+      } else if (type === 'dir' || type === 'folder') {
+        this.deleteFolder(path, projectName);
+      }
+    },
+    handleDownloadItem(data) {
+      // Handle download from project tree
+      console.log('[handleDownloadItem] Download request:', data);
+      
+      if (!data || !data.path) {
+        console.error('[handleDownloadItem] Invalid data:', data);
+        ElMessage.error('Cannot download: no file selected');
+        return;
+      }
+      
+      // Extract filename from path
+      const fileName = data.path.split('/').pop() || data.label || data.name || 'download';
+      
+      // Convert data structure to what downloadFile expects
+      const fileInfo = {
+        fileName: fileName,
+        filePath: data.path,
+        projectName: data.projectName || this.ideInfo.currProj?.data?.name || this.ideInfo.currProj?.config?.name
+      };
+      
+      console.log('[handleDownloadItem] Downloading:', fileInfo);
+      this.downloadFile(fileInfo);
     },
     setDelDialog(data) {
       this.dialogType = '';
@@ -1576,27 +2011,71 @@ export default {
     },
     deleteFile(filePath, projectName) {
       const self = this;
+      console.log('[deleteFile] Deleting file:', filePath, 'from project:', projectName || this.ideInfo.currProj.config.name);
+      
+      // Get the actual project name if in multi-root mode
+      const actualProjectName = projectName || this.ideInfo.currProj.config.name || this.ideInfo.currProj.data?.name;
+      
       this.$store.dispatch(`ide/${types.IDE_DEL_FILE}`, {
-        projectName: projectName === undefined ? this.ideInfo.currProj.config.name : projectName,
+        projectName: actualProjectName,
         filePath: filePath,
         callback: (dict) => {
+          console.log('[deleteFile] Response:', dict);
           if (dict.code == 0) {
             const parentData = self.getParentData(filePath);
-            self.$store.commit('ide/handleDelFile', {parentData, filePath});
+            if (parentData) {
+              self.$store.commit('ide/handleDelFile', {parentData, filePath});
+            }
+            
+            // Refresh the tree to show changes
+            self.refreshProjectTree();
+            
+            ElMessage({
+              type: 'success',
+              message: 'File deleted successfully',
+              duration: 2000
+            });
+          } else {
+            ElMessage({
+              type: 'error',
+              message: 'Failed to delete file',
+              duration: 3000
+            });
           }
         }
       });
     },
     deleteFolder(folderPath, projectName) {
       const self = this;
+      console.log('[deleteFolder] Deleting folder:', folderPath, 'from project:', projectName || this.ideInfo.currProj.config.name);
+      
+      // Get the actual project name if in multi-root mode
+      const actualProjectName = projectName || this.ideInfo.currProj.config.name || this.ideInfo.currProj.data?.name;
+      
       this.$store.dispatch(`ide/${types.IDE_DEL_FOLDER}`, {
-        projectName: projectName === undefined ? this.ideInfo.currProj.config.name : projectName,
+        projectName: actualProjectName,
         folderPath: folderPath,
         callback: (dict) => {
+          console.log('[deleteFolder] Response:', dict);
           if (dict.code == 0) {
             const parentData = self.getParentData(folderPath);
             if (parentData)
               self.$store.commit('ide/handleDelFolder', {parentData, folderPath});
+            
+            // Refresh the tree to show changes
+            self.refreshProjectTree();
+            
+            ElMessage({
+              type: 'success',
+              message: 'Folder deleted successfully',
+              duration: 2000
+            });
+          } else {
+            ElMessage({
+              type: 'error',
+              message: 'Failed to delete folder',
+              duration: 3000
+            });
           }
         }
       });
@@ -1665,28 +2144,150 @@ export default {
     },
     renameFile(newName, oldPath, projectName) {
       const self = this;
+      
+      // Determine the actual old path
+      let actualOldPath = oldPath;
+      if (actualOldPath === undefined) {
+        if (this.ideInfo.nodeSelected && this.ideInfo.nodeSelected.path) {
+          actualOldPath = this.ideInfo.nodeSelected.path;
+        } else {
+          console.error('Cannot rename: no path provided and nodeSelected is null');
+          ElMessage.error('Cannot rename: no file selected');
+          return;
+        }
+      }
+      
+      console.log('[renameFile] Starting rename:', { actualOldPath, newName, projectName });
+      
+      // Use the projectName passed in, not the current project
+      const actualProjectName = projectName || this.ideInfo.currProj?.config?.name || this.ideInfo.currProj?.data?.name;
+      console.log('[renameFile] Using project name:', actualProjectName);
+      
       this.$store.dispatch(`ide/${types.IDE_RENAME_FILE}`, {
-        projectName: projectName === undefined ? this.ideInfo.currProj.config.name : projectName,
-        oldPath: oldPath === undefined ? this.ideInfo.nodeSelected.path : oldPath,
+        projectName: actualProjectName,
+        oldPath: actualOldPath,
         fileName: newName,
         callback: (dict) => {
+          console.log('[renameFile] Backend response:', dict);
           if (dict.code == 0) {
-            self.$store.commit('ide/handleRename', newName);
-            self.$store.dispatch(`ide/${types.IDE_SAVE_PROJECT}`, {});
+            // After successful backend rename, we need to:
+            // 1. Update any open tabs with the new filename
+            // 2. Refresh the project tree
+            // 3. Update the selection
+            
+            // Calculate the new path
+            const newPath = actualOldPath.substring(0, actualOldPath.lastIndexOf('/') + 1) + newName;
+            console.log('[renameFile] New path will be:', newPath);
+            
+            // Update open tabs if the file is open
+            for (let i = 0; i < self.ideInfo.codeItems.length; i++) {
+              if (self.ideInfo.codeItems[i].path === actualOldPath) {
+                console.log('[renameFile] Updating open tab from', actualOldPath, 'to', newPath);
+                self.ideInfo.codeItems[i].path = newPath;
+                self.ideInfo.codeItems[i].name = newName;
+                break;
+              }
+            }
+            
+            // Refresh the project tree - use the actual project name
+            self.$store.dispatch(`ide/${types.IDE_GET_PROJECT}`, {
+              projectName: actualProjectName,
+              callback: (projectDict) => {
+                if (projectDict.code == 0) {
+                  self.$store.commit('ide/handleProject', projectDict.data);
+                  
+                  // Update path selection to the new path
+                  self.$store.commit('ide/setPathSelected', newPath);
+                  
+                  // If we're in multi-root mode, also refresh all projects
+                  if (self.ideInfo.multiRootData) {
+                    console.log('[renameFile] Refreshing all projects in multi-root mode');
+                    self.loadAllDefaultProjects();
+                  }
+                  
+                  ElMessage.success('File renamed successfully');
+                }
+              }
+            });
+          } else {
+            console.error('[renameFile] Rename failed:', dict);
+            const errorMsg = dict.data?.message || dict.message || 'Unknown error';
+            ElMessage.error('Failed to rename file: ' + errorMsg);
           }
         }
       });
     },
     renameFolder(newName, oldPath, projectName) {
       const self = this;
+      
+      // Determine the actual old path
+      let actualOldPath = oldPath;
+      if (actualOldPath === undefined) {
+        if (this.ideInfo.nodeSelected && this.ideInfo.nodeSelected.path) {
+          actualOldPath = this.ideInfo.nodeSelected.path;
+        } else {
+          console.error('Cannot rename folder: no path provided and nodeSelected is null');
+          ElMessage.error('Cannot rename folder: no folder selected');
+          return;
+        }
+      }
+      
+      console.log('[renameFolder] Starting rename:', { actualOldPath, newName, projectName });
+      
+      // Use the projectName passed in, not the current project
+      const actualProjectName = projectName || this.ideInfo.currProj?.config?.name || this.ideInfo.currProj?.data?.name;
+      console.log('[renameFolder] Using project name:', actualProjectName);
+      
       this.$store.dispatch(`ide/${types.IDE_RENAME_FOLDER}`, {
-        projectName: projectName === undefined ? this.ideInfo.currProj.config.name : projectName,
-        oldPath: oldPath === undefined ? this.ideInfo.nodeSelected.path : oldPath,
+        projectName: actualProjectName,
+        oldPath: actualOldPath,
         folderName: newName,
         callback: (dict) => {
+          console.log('[renameFolder] Backend response:', dict);
           if (dict.code == 0) {
-            self.$store.commit('ide/handleRename', newName);
-            self.$store.dispatch(`ide/${types.IDE_SAVE_PROJECT}`, {});
+            // After successful backend rename, we need to:
+            // 1. Update any open tabs with paths inside the renamed folder
+            // 2. Refresh the project tree
+            // 3. Update the selection
+            
+            // Calculate the new path
+            const newPath = actualOldPath.substring(0, actualOldPath.lastIndexOf('/') + 1) + newName;
+            console.log('[renameFolder] New path will be:', newPath);
+            
+            // Update open tabs if any files inside the folder are open
+            for (let i = 0; i < self.ideInfo.codeItems.length; i++) {
+              if (self.ideInfo.codeItems[i].path.startsWith(actualOldPath + '/')) {
+                const relativePath = self.ideInfo.codeItems[i].path.substring(actualOldPath.length);
+                const updatedPath = newPath + relativePath;
+                console.log('[renameFolder] Updating open tab from', self.ideInfo.codeItems[i].path, 'to', updatedPath);
+                self.ideInfo.codeItems[i].path = updatedPath;
+              }
+            }
+            
+            // Refresh the project tree - use the actual project name
+            self.$store.dispatch(`ide/${types.IDE_GET_PROJECT}`, {
+              projectName: actualProjectName,
+              callback: (projectDict) => {
+                if (projectDict.code == 0) {
+                  self.$store.commit('ide/handleProject', projectDict.data);
+                  
+                  // Update path selection to the new path
+                  self.$store.commit('ide/setPathSelected', newPath);
+                  
+                  // If we're in multi-root mode, also refresh all projects
+                  if (self.ideInfo.multiRootData) {
+                    console.log('[renameFolder] Refreshing all projects in multi-root mode');
+                    self.loadAllDefaultProjects();
+                  }
+                  
+                  ElMessage.success('Folder renamed successfully');
+                }
+              }
+            });
+          } else {
+            console.error('[renameFolder] Rename failed:', dict);
+            const errorMsg = dict.data?.message || dict.message || 'Unknown error';
+            ElMessage.error('Failed to rename folder: ' + errorMsg);
           }
         }
       });
@@ -1810,15 +2411,40 @@ export default {
       }
     },
     selectFile(item) {
+      // Update store first to ensure tab switches properly
       this.$store.commit('ide/setPathSelected', item.path);
       this.$store.commit('ide/setCodeSelected', item);
-      if (this.ideInfo.currProj.pathSelected) {
+      
+      // Then set the active file path for console management
+      this.activeFilePath = item.path;
+      
+      // Update tree selection if needed
+      if (this.ideInfo.currProj.pathSelected && this.ideInfo.treeRef) {
         this.ideInfo.treeRef.setCurrentKey(this.ideInfo.currProj.pathSelected);
+        this.$store.commit('ide/setNodeSelected', this.ideInfo.treeRef.getCurrentNode());
       }
-      this.$store.commit('ide/setNodeSelected', this.ideInfo.treeRef.getCurrentNode());
+      
+      // Save project state
       this.$store.dispatch(`ide/${types.IDE_SAVE_PROJECT}`, {});
     },
     closeFile(item) {
+      // Clean up console state for this file
+      if (item.path && item.path.endsWith('.py')) {
+        // Save the current state before closing
+        if (this.activeFilePath === item.path) {
+          this.saveFileConsoleState(item.path);
+        }
+        
+        // Remove the console item for this file
+        const consoleItems = this.ideInfo.consoleItems.filter(
+          consoleItem => consoleItem.path !== item.path
+        );
+        this.$store.commit('ide/setConsoleItems', consoleItems);
+        
+        // Clean up stored state if needed (optional - keep for session)
+        // delete this.fileConsoleStates[item.path];
+      }
+      
       const codeItems = []
       for (let i = 0; i < this.ideInfo.codeItems.length; i++) {
         if (item.path !== this.ideInfo.codeItems[i].path) {
@@ -1937,52 +2563,29 @@ export default {
       
       // Don't create output tab in right panel anymore - console is sufficient
       
-      let selected = false;
-      if (this.ideInfo.consoleSelected.run === false && this.ideInfo.consoleSelected.path === this.ideInfo.currProj.pathSelected) {
-        selected = true;
-        this.$store.commit('ide/assignConsoleSelected', {
-          stop: false,
-          resultList: []
-        });
-      }
-      else {
-        for (let i = 0; i < this.ideInfo.consoleItems.length; i++) {
-          if (this.ideInfo.consoleItems[i].run === false && this.ideInfo.consoleItems[i].path === this.ideInfo.currProj.pathSelected) {
-            this.$store.commit('ide/setConsoleSelected', this.ideInfo.consoleItems[i]);
-            selected = true;
-            this.$store.commit('ide/assignConsoleSelected', {
-              stop: false,
-              resultList: []
-            });
-            break;
-          }
-        }
-      }
-      if (selected === false) {
-        // Clean up all old console items to prevent duplicates
-        for (let i = this.ideInfo.consoleItems.length - 1; i >= 0; i--) {
-          if (this.ideInfo.consoleItems[i].run === false) {
-            this.$store.commit('ide/spliceConsoleItems', {start: i, count: 1});
-          }
-        }
-        const item = {
-          name: path.basename(this.ideInfo.currProj.pathSelected),
-          path: this.ideInfo.currProj.pathSelected,
-          resultList: [],
-          run: false,
-          stop: false,
-          id: this.ideInfo.consoleId,
-          waitingForInput: false,
-          inputPrompt: ''
-        }
-        this.$store.commit('ide/addConsoleItem', item);
-        this.$store.commit('ide/setConsoleSelected', item);
-      }
-      else {
-        this.$store.commit('ide/assignConsoleSelected', {
-          id: this.ideInfo.consoleId
-        });
-      }
+      const currentFilePath = this.ideInfo.currProj.pathSelected;
+      
+      // Get or create console for this specific file
+      const fileConsole = this.getOrCreateFileConsole(currentFilePath);
+      
+      // Clear previous results and mark as not running yet using a mutation
+      this.$store.commit('ide/resetConsoleItem', {
+        consoleId: fileConsole.id,
+        run: false,
+        stop: false,
+        resultList: []
+      });
+      
+      // Select this file's console
+      this.$store.commit('ide/setConsoleSelected', fileConsole);
+      
+      // Update the console ID
+      this.$store.commit('ide/assignConsoleSelected', {
+        id: this.ideInfo.consoleId
+      });
+      
+      // Save the console state for this file  
+      this.saveFileConsoleState(currentFilePath);
 
       // Open console at normal state (30%) when running program
       if (this.consoleMode === 'collapsed') {
@@ -1991,9 +2594,15 @@ export default {
         this.consoleMaximized = false;
       }
       
+      // Get the project name for the current file
+      const projectName = this.ideInfo.codeSelected?.projectName || 
+                         this.ideInfo.currProj?.data?.name ||
+                         this.ideInfo.currProj?.config?.name;
+      
       // Remove duplicate console item creation - this was causing multiple input fields
       this.$store.dispatch(`ide/${types.IDE_RUN_PYTHON_PROGRAM}`, {
         msgId: this.ideInfo.consoleId,
+        projectName: projectName,
         filePath: this.ideInfo.currProj.pathSelected,
         callback: {
           limits: -1,
@@ -2015,8 +2624,14 @@ export default {
         this.consoleMaximized = false;
       }
       
+      // Get the project name for the console's file
+      const projectName = this.ideInfo.consoleSelected?.projectName ||
+                         this.ideInfo.currProj?.data?.name ||
+                         this.ideInfo.currProj?.config?.name;
+      
       this.$store.dispatch(`ide/${types.IDE_RUN_PYTHON_PROGRAM}`, {
         msgId: this.ideInfo.consoleSelected.id,
+        projectName: projectName,
         filePath: this.ideInfo.consoleSelected.path,
         callback: {
           limits: -1,

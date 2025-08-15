@@ -16,7 +16,7 @@
           <div class="directory-nav">
             <div class="current-path" @click="toggleDirectoryTree">
               <FolderOpen :size="16" />
-              <span>{{ currentPath }}</span>
+              <span>{{ formatCurrentPath(currentPath) }}</span>
               <ChevronDown v-if="showDirectoryTree" :size="16" class="chevron" />
               <ChevronRight v-else :size="16" class="chevron" />
             </div>
@@ -30,14 +30,14 @@
                   'root-item': dir.isRoot 
                 }"
                 :style="{ paddingLeft: (dir.level * 20 + 12) + 'px' }"
-                @click="selectDirectory(dir.path)"
+                @click="selectDirectory(dir)"
               >
                 <Home v-if="dir.isRoot" :size="14" />
                 <template v-else>
                   <ChevronRight :size="14" />
                   <Folder :size="14" />
                 </template>
-                <span>{{ dir.isRoot ? 'Root (/)' : dir.name }}</span>
+                <span>{{ dir.displayName || dir.name }}</span>
               </div>
             </div>
           </div>
@@ -105,6 +105,7 @@ export default {
   data() {
     return {
       currentPath: '/',
+      currentProject: null,
       directories: [],
       selectedFile: null,
       uploading: false,
@@ -131,26 +132,40 @@ export default {
   },
   methods: {
     loadDirectoryStructure() {
-      // Get directory structure from the project tree
-      if (this.ideInfo.currProj && this.ideInfo.currProj.data) {
-        // Build hierarchical directory structure
-        this.directories = this.buildDirectoryTree(this.ideInfo.currProj.data);
-        // Set current path to selected node if it's a directory
-        if (this.ideInfo.nodeSelected && this.ideInfo.nodeSelected.type === 'dir') {
-          this.currentPath = this.ideInfo.nodeSelected.path;
-        }
+      // Get directory structure from all projects (multi-root mode)
+      if (this.ideInfo.multiRootData && this.ideInfo.multiRootData.children.length > 0) {
+        // Build directory tree from all projects
+        this.directories = [];
+        this.ideInfo.multiRootData.children.forEach(project => {
+          // Add each project and its subdirectories
+          const projectDirs = this.buildDirectoryTree(project, 0, project.label);
+          this.directories = this.directories.concat(projectDirs);
+        });
+      } else if (this.ideInfo.currProj && this.ideInfo.currProj.data) {
+        // Fallback to single project mode
+        this.directories = this.buildDirectoryTree(this.ideInfo.currProj.data, 0, this.ideInfo.currProj.data.label);
+      }
+      
+      // Set current path to selected node if it's a directory
+      if (this.ideInfo.nodeSelected && this.ideInfo.nodeSelected.type === 'dir') {
+        this.currentPath = this.ideInfo.nodeSelected.path;
+        // Also store project context
+        this.currentProject = this.ideInfo.nodeSelected.projectName || this.ideInfo.currProj?.data?.name;
       }
     },
-    buildDirectoryTree(node, level = 0) {
+    buildDirectoryTree(node, level = 0, projectName = null) {
       let dirs = [];
       
       // Add the root directory
-      if (level === 0 && node.path === '/') {
+      if (level === 0) {
         dirs.push({
-          name: '/',
-          path: '/',
+          name: projectName || node.label || '/',
+          displayName: projectName || node.label || '/',
+          path: node.path || '/',
           level: 0,
-          isRoot: true
+          isRoot: true,
+          projectName: projectName || node.label,
+          fullPath: projectName ? `${projectName}${node.path}` : node.path
         });
       }
       
@@ -160,13 +175,16 @@ export default {
           if (child.type === 'dir' || child.type === 'folder') {
             dirs.push({
               name: child.label,
+              displayName: child.label,
               path: child.path,
               level: level + 1,
-              isRoot: false
+              isRoot: false,
+              projectName: projectName || child.projectName,
+              fullPath: projectName ? `${projectName}${child.path}` : child.path
             });
             // Recursively add subdirectories
             if (child.children) {
-              dirs = dirs.concat(this.buildDirectoryTree(child, level + 1));
+              dirs = dirs.concat(this.buildDirectoryTree(child, level + 1, projectName));
             }
           }
         });
@@ -174,12 +192,29 @@ export default {
       
       return dirs;
     },
-    selectDirectory(path) {
-      this.currentPath = path;
+    selectDirectory(dir) {
+      this.currentPath = dir.path;
+      this.currentProject = dir.projectName;
       this.showDirectoryTree = false;
     },
     toggleDirectoryTree() {
       this.showDirectoryTree = !this.showDirectoryTree;
+    },
+    formatCurrentPath(path) {
+      if (this.currentProject) {
+        if (path === '/') {
+          return this.currentProject;
+        }
+        return this.currentProject + path;
+      }
+      // Fallback to current project if no specific project context
+      if (path === '/' && this.ideInfo.currProj) {
+        return this.ideInfo.currProj.label;
+      }
+      if (path.startsWith('/') && this.ideInfo.currProj) {
+        return this.ideInfo.currProj.label + path;
+      }
+      return path;
     },
     onFileSelect(event) {
       const file = event.target.files[0];

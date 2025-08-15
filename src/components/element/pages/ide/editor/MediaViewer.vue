@@ -145,8 +145,16 @@ export default {
       this.loading = true;
       this.fileUrl = '';
       
+      // Check if content is already preloaded
+      if (this.codeItem?.preloaded && this.codeItem?.content) {
+        this.loading = false;
+        this.fileUrl = this.codeItem.content;
+        console.log('Using preloaded content for media file');
+        return;
+      }
+      
       // Get file content from backend
-      const projectName = this.ideInfo.currProj?.data?.name;
+      const projectName = this.codeItem?.projectName || this.ideInfo.currProj?.data?.name;
       const filePath = this.codeItem?.path;
       
       if (!projectName || !filePath) {
@@ -164,9 +172,10 @@ export default {
         ideInfo: this.ideInfo
       });
       
-      // Add a small delay for the first attempt to allow file to be fully written
+      // Add a longer initial delay for images to ensure file is fully written
+      // This accounts for the time it takes for Python to complete plt.savefig()
       if (retryCount === 0 && this.isImage) {
-        await new Promise(resolve => setTimeout(resolve, 300));
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
       
       // Request file content as base64
@@ -191,20 +200,22 @@ export default {
               const mimeType = this.getMimeType();
               this.fileUrl = `data:${mimeType};base64,${response.data.content}`;
               console.log('File loaded successfully:', { mimeType, fileUrl: this.fileUrl.substring(0, 50) + '...' });
-            } else if (retryCount < 3) {
-              // File might not be fully written yet, retry with delay
-              console.log(`No content or empty content, retrying... (attempt ${retryCount + 1})`);
-              await new Promise(resolve => setTimeout(resolve, 500));
+            } else if (retryCount < 2) {
+              // File might not be fully written yet, retry with exponential backoff
+              const delay = 1000 * Math.pow(1.5, retryCount); // 1000ms, 1500ms
+              console.log(`No content or empty content, retrying in ${delay}ms... (attempt ${retryCount + 1})`);
+              await new Promise(resolve => setTimeout(resolve, delay));
               this.loadFile(retryCount + 1);
             } else {
               this.loading = false;
               console.error('No content in response data after retries');
               this.handleError();
             }
-          } else if (response.code === -22 && retryCount < 3) {
-            // File doesn't exist yet, retry with delay
-            console.log(`File not found, retrying... (attempt ${retryCount + 1})`);
-            await new Promise(resolve => setTimeout(resolve, 500));
+          } else if (response.code === -22 && retryCount < 2) {
+            // File doesn't exist yet, retry with exponential backoff
+            const delay = 1000 * Math.pow(1.5, retryCount); // 1000ms, 1500ms
+            console.log(`File not found, retrying in ${delay}ms... (attempt ${retryCount + 1})`);
+            await new Promise(resolve => setTimeout(resolve, delay));
             this.loadFile(retryCount + 1);
           } else {
             this.loading = false;

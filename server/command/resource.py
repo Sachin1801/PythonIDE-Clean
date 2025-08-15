@@ -122,12 +122,16 @@ def rename(old_path, new_path):
         return PATH_IS_NOT_EXIST, None
 
 
-def list_dir(path, result=None, prefix='', filter_config=True, list_type='simple'):
+def list_dir(path, result=None, prefix='', filter_config=True, list_type='simple', project_name=None):
     prefix = '' if prefix == '/' else prefix
     if os.path.exists(path):
         if result is None:
+            # Get project name from path if not provided
+            if project_name is None:
+                project_name = os.path.basename(path)
+            # Make uuid unique by including the project name for root
             result = {
-                'uuid': '/',
+                'uuid': f'{project_name}:/',  # Unique UUID for each project root
                 'name': os.path.basename(path),
                 'label': os.path.basename(path),
                 'type': 'dir',
@@ -143,8 +147,10 @@ def list_dir(path, result=None, prefix='', filter_config=True, list_type='simple
                 continue
             abs_p = os.path.join(path, p)
             if os.path.isdir(abs_p):
+                # Include project name in UUID for uniqueness
+                node_uuid = f'{project_name}:{prefix}/{p}' if project_name and prefix == '' else prefix + '/' + p
                 _result = {
-                    'uuid': prefix + '/' + p,
+                    'uuid': node_uuid,
                     'name': p,
                     'label': p,
                     'type': 'dir',
@@ -153,10 +159,12 @@ def list_dir(path, result=None, prefix='', filter_config=True, list_type='simple
                 }
                 result['children'].append(_result)
                 if list_type == 'detail':
-                    list_dir(abs_p, _result, prefix=prefix + '/' + p, filter_config=False, list_type=list_type)
+                    list_dir(abs_p, _result, prefix=prefix + '/' + p, filter_config=False, list_type=list_type, project_name=project_name)
             else:
+                # Include project name in UUID for uniqueness
+                node_uuid = f'{project_name}:{prefix}/{p}' if project_name and prefix == '' else prefix + '/' + p
                 result['children'].append({
-                    'uuid': prefix + '/' + p,
+                    'uuid': node_uuid,
                     'name': p,
                     'label': p,
                     'type': 'file',
@@ -202,7 +210,8 @@ def list_projects(path):
 
 def get_project(path):
     if os.path.exists(path):
-        project = list_dir(path, list_type='detail')
+        project_name = os.path.basename(path)
+        project = list_dir(path, list_type='detail', project_name=project_name)
         _config_path = os.path.join(path, '.config')
         _code, config_data = read(_config_path, is_json=True)
         if _code != 0:

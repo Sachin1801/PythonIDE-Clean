@@ -1,5 +1,0 @@
-
-
-import math 
-
-help(math)

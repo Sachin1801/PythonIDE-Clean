@@ -2,6 +2,9 @@
   <div class="proj-tree-container">
     <div class="tree-header">
       <span class="tree-title">Project Files</span>
+      <button class="refresh-btn" @click="refreshTree" title="Refresh">
+        <RefreshCw :size="16" />
+      </button>
     </div>
     <el-tree
       id="tree-root"
@@ -36,18 +39,22 @@
     <div v-if="contextMenu.visible" 
          class="context-menu" 
          :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }">
-      <div class="menu-item" @click="handleMenuAction('open', contextMenu.data)" v-if="contextMenu.data.type === 'file'">
-        <span>Open</span>
+      <div class="menu-item" @click="handleMenuAction('openInRightPanel', contextMenu.data)" v-if="contextMenu.data.type === 'file' && isPreviewFile(contextMenu.data)">
+        <span>Open in Right Panel</span>
       </div>
-      <div class="menu-divider" v-if="contextMenu.data.type === 'file'"></div>
-      <div class="menu-item" @click="handleMenuAction('rename', contextMenu.data)">
+      <div class="menu-divider" v-if="contextMenu.data.type === 'file' && isPreviewFile(contextMenu.data)"></div>
+      <div class="menu-item" 
+           @click="handleMenuAction('rename', contextMenu.data)"
+           v-if="!isProtectedFolder(contextMenu.data)">
         <span>Rename</span>
       </div>
       <div class="menu-divider"></div>
       <div class="menu-item" @click="handleMenuAction('download', contextMenu.data)" v-if="contextMenu.data.type === 'file'">
         <span>Download</span>
       </div>
-      <div class="menu-item danger" @click="handleMenuAction('delete', contextMenu.data)">
+      <div class="menu-item danger" 
+           @click="handleMenuAction('delete', contextMenu.data)"
+           v-if="!isProtectedFolder(contextMenu.data)">
         <span>Delete</span>
       </div>
     </div>
@@ -56,18 +63,22 @@
     <div v-if="dropdown.visible" 
          class="dropdown-menu" 
          :style="{ left: dropdown.x + 'px', top: dropdown.y + 'px' }">
-      <div class="menu-item" @click="handleMenuAction('open', dropdown.data)" v-if="dropdown.data.type === 'file'">
-        <span>Open</span>
+      <div class="menu-item" @click="handleMenuAction('openInRightPanel', dropdown.data)" v-if="dropdown.data.type === 'file' && isPreviewFile(dropdown.data)">
+        <span>Open in Right Panel</span>
       </div>
-      <div class="menu-divider" v-if="dropdown.data.type === 'file'"></div>
-      <div class="menu-item" @click="handleMenuAction('rename', dropdown.data)">
+      <div class="menu-divider" v-if="dropdown.data.type === 'file' && isPreviewFile(dropdown.data)"></div>
+      <div class="menu-item" 
+           @click="handleMenuAction('rename', dropdown.data)"
+           v-if="!isProtectedFolder(dropdown.data)">
         <span>Rename</span>
       </div>
       <div class="menu-divider"></div>
       <div class="menu-item" @click="handleMenuAction('download', dropdown.data)" v-if="dropdown.data.type === 'file'">
         <span>Download</span>
       </div>
-      <div class="menu-item danger" @click="handleMenuAction('delete', dropdown.data)">
+      <div class="menu-item danger" 
+           @click="handleMenuAction('delete', dropdown.data)"
+           v-if="!isProtectedFolder(dropdown.data)">
         <span>Delete</span>
       </div>
     </div>
@@ -110,6 +121,12 @@ export default {
     }
   },
   methods: {
+    isPreviewFile(data) {
+      if (!data || data.type !== 'file') return false;
+      const path = data.path || '';
+      const previewExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.webp', '.pdf', '.csv'];
+      return previewExtensions.some(ext => path.toLowerCase().endsWith(ext));
+    },
     refreshTree() {
       // Refresh all projects if in multi-root mode
       const self = this;
@@ -207,9 +224,9 @@ export default {
     },
     
     handleDoubleClick(data) {
-      // Double click to rename
-      if (data.type === 'file' || data.type === 'dir' || data.type === 'folder') {
-        this.startRename(data);
+      // Double click to open file (no longer triggers rename)
+      if (data.type === 'file') {
+        this.$emit('get-item', data.path);
       }
     },
     
@@ -277,8 +294,24 @@ export default {
       document.removeEventListener('click', this.closeAllMenus);
     },
     
+    isProtectedFolder(data) {
+      // Check if this is a protected project folder (root level)
+      const protectedFolders = ['Assignments', 'Lecture Notes'];
+      const name = data.label || data.name;
+      // Protected folders can't be renamed or deleted
+      return data.path === '/' && protectedFolders.includes(name);
+    },
+    
     startRename(data) {
       const name = data.label || data.name;
+      
+      // Check if this is a protected project folder (root level)
+      const protectedFolders = ['Assignments', 'Lecture Notes'];
+      if (data.path === '/' && protectedFolders.includes(name)) {
+        ElMessage.warning(`The "${name}" folder cannot be renamed as it is protected.`);
+        return;
+      }
+      
       ElMessageBox.prompt('Enter new name:', 'Rename', {
         confirmButtonText: 'OK',
         cancelButtonText: 'Cancel',
@@ -293,11 +326,15 @@ export default {
     },
     
     doRename(data, newName) {
-      // Emit rename event to parent
+      // Emit rename event to parent with the correct project name
+      console.log('[ProjTree] doRename - data:', data);
+      console.log('[ProjTree] doRename - projectName from data:', data.projectName);
+      
       this.$emit('rename-item', {
         oldPath: data.path,
         newName: newName,
-        type: data.type
+        type: data.type,
+        projectName: data.projectName || this.ideInfo.currProj?.data?.name
       });
     },
     
@@ -310,10 +347,21 @@ export default {
             this.$emit('get-item', data.path);
           }
           break;
+        case 'openInRightPanel':
+          if (data.type === 'file') {
+            this.$emit('get-item-right-panel', data.path); // Special event for right panel
+          }
+          break;
         case 'rename':
           this.startRename(data);
           break;
         case 'delete':
+          // Check if it's a protected folder
+          if (this.isProtectedFolder(data)) {
+            ElMessage.warning(`The "${data.label}" folder cannot be deleted as it is protected.`);
+            return;
+          }
+          
           ElMessageBox.confirm(
             `Are you sure you want to delete "${data.label}"?`,
             'Confirm Delete',
@@ -323,9 +371,11 @@ export default {
               type: 'warning',
             }
           ).then(() => {
+            console.log('[ProjTree] Emitting delete for:', data);
             this.$emit('delete-item', {
               path: data.path,
-              type: data.type
+              type: data.type,
+              projectName: data.projectName || this.ideInfo.currProj?.data?.name
             });
           }).catch(() => {
             // User cancelled
@@ -499,6 +549,28 @@ export default {
   font-size: 14px;
   font-weight: 500;
   color: #CCCCCC;
+}
+
+.refresh-btn {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.refresh-btn:hover {
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.refresh-btn:active {
+  transform: scale(0.95);
 }
 
 .refresh-btn {

@@ -25,8 +25,8 @@
     <div class="code-tab-list">
       <button
         v-for="item in codeItems"
-        :key="item.path"
-        :class="['code-tab', { 'active': pathSelected === item.path }]"
+        :key="`${item.projectName || 'default'}:${item.path}`"
+        :class="['code-tab', { 'active': isActiveTab(item) }]"
         @click="selectTab(item)"
       >
         <img :src="getIconUrl(item.path)" alt="" class="tab-file-icon" />
@@ -69,6 +69,13 @@ export default {
     toggleSidebar() {
       this.sidebarVisible = !this.sidebarVisible;
       this.$emit('toggle-sidebar', this.sidebarVisible);
+    },
+    isActiveTab(item) {
+      // Check if this tab is currently selected
+      // Compare both path and projectName to ensure uniqueness
+      return this.ideInfo.codeSelected && 
+             this.ideInfo.codeSelected.path === item.path &&
+             this.ideInfo.codeSelected.projectName === item.projectName;
     },
     getIconUrl(path) {
       return require(`@/assets/vscode-icons/${getIconForFile(path.substring(path.lastIndexOf('.') + 1))}`);

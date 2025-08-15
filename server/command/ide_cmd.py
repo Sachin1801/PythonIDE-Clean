@@ -37,7 +37,7 @@ if not os.path.exists(os.path.join(Config.PROJECTS, 'ide')):
     os.makedirs(os.path.join(Config.PROJECTS, 'ide'))
 
 # Ensure default folders exist
-default_folders = ['Local', 'Lecture Notes']
+default_folders = ['Local', 'Assignments', 'Lecture Notes', 'Testing']
 for folder_name in default_folders:
     folder_path = os.path.join(Config.PROJECTS, 'ide', folder_name)
     if not os.path.exists(folder_path):
@@ -49,7 +49,8 @@ for folder_name in default_folders:
             'expendKeys': [],
             'openList': [],
             'selectFilePath': '',
-            'lastAccessTime': time.time()
+            'lastAccessTime': time.time(),
+            'protected': folder_name in ['Assignments', 'Lecture Notes']  # Mark as protected
         }
         with open(config_path, 'w') as f:
             json.dump(config_data, f, indent=4)
@@ -195,6 +196,13 @@ print("="*50)
 
     async def ide_rename_project(self, client, cmd_id, data):
         old_name = data.get('oldName')
+        
+        # Check if project is protected
+        protected_projects = ['Assignments', 'Lecture Notes']
+        if old_name in protected_projects:
+            await response(client, cmd_id, -1, {'error': f'Cannot rename protected folder: {old_name}'})
+            return
+            
         old_path = os.path.join(Config.PROJECTS, 'ide', old_name)
         new_name = data.get('newName')
         new_path = os.path.join(Config.PROJECTS, 'ide', new_name)
@@ -268,11 +276,31 @@ print("="*50)
     async def ide_rename_file(self, client, cmd_id, data):
         prj_name = data.get('projectName')
         prj_path = os.path.join(Config.PROJECTS, 'ide', prj_name)
-        old_path = os.path.join(prj_path, convert_path(data.get('oldPath')))
+        old_path_input = data.get('oldPath')
         new_name = data.get('newName')
+        
+        # Debug logging
+        print(f'[RENAME_FILE] Project: {prj_name}')
+        print(f'[RENAME_FILE] Old path input: {old_path_input}')
+        print(f'[RENAME_FILE] New name: {new_name}')
+        
+        old_path = os.path.join(prj_path, convert_path(old_path_input))
         new_path = os.path.join(os.path.dirname(old_path), new_name)
-        code, _ = rename_project_file(prj_path, old_path, new_path)
-        await response(client, cmd_id, code, _)
+        
+        print(f'[RENAME_FILE] Full old path: {old_path}')
+        print(f'[RENAME_FILE] Full new path: {new_path}')
+        print(f'[RENAME_FILE] Old path exists: {os.path.exists(old_path)}')
+        print(f'[RENAME_FILE] New path exists: {os.path.exists(new_path)}')
+        
+        code, error_msg = rename_project_file(prj_path, old_path, new_path)
+        
+        print(f'[RENAME_FILE] Result code: {code}, error: {error_msg}')
+        
+        if code != 0:
+            # Send error message with details
+            await response(client, cmd_id, code, {'message': f'Failed to rename: {error_msg or "Unknown error"}'})
+        else:
+            await response(client, cmd_id, code, error_msg)
 
     async def ide_create_folder(self, client, cmd_id, data):
         prj_name = data.get('projectName')

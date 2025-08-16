@@ -1,26 +1,37 @@
 <template>
   <div class="main-wrapper ide-wrapper ide-container">
-    <TopMenu class="top-menu"
+    <TwoHeaderMenu class="two-header-menu"
       :consoleLimit="consoleLimit"
       :hasRunProgram="hasRunProgram"
-      :wordWrap="wordWrap"
       @set-text-dialog="setTextDialog"
       @set-del-dialog="setDelDialog"
       @set-projs-dialog="setProjsDialog"
       v-on:run-item="runPathSelected"
       @stop-item="stop"
-      @theme-changed="handleThemeChange"
-      @toggle-word-wrap="toggleWordWrap"
+      @clear-console="clearConsole"
+      @share-project="shareProject"
+      @sign-in="handleSignIn"
       @open-upload-dialog="showUploadDialog = true"
       @download-file="downloadFile"
-      @open-repl="openREPL"
       @open-settings="showSettingsModal = true"
       @open-file-browser="openFileBrowser"
       @duplicate-file="duplicateFile"
       @save-as-file="saveAsFile"
       @open-move-dialog="openMoveDialog"
       @delete-file="deleteFileFromMenu"
-    ></TopMenu>
+      @share-file="shareFile"
+      @undo="handleUndo"
+      @redo="handleRedo"
+      @cut="handleCut"
+      @copy="handleCopy"
+      @paste="handlePaste"
+      @find="handleFind"
+      @replace="handleReplace"
+      @comment="handleComment"
+      @toggle-console="toggleConsole"
+      @toggle-preview-panel="togglePreviewPanel"
+      @show-keyboard-shortcuts="showKeyboardShortcutsModal = true"
+    ></TwoHeaderMenu>
     
     <!-- Settings Modal -->
     <SettingsModal 
@@ -29,6 +40,11 @@
       @update-word-wrap="updateWordWrap"
       @update-auto-save="updateAutoSave"
       @update-auto-save-interval="updateAutoSaveInterval"
+    />
+    
+    <!-- Keyboard Shortcuts Modal -->
+    <KeyboardShortcutsModal 
+      v-model="showKeyboardShortcutsModal"
     />
     <div id="total-frame" class="total-frame">
       <!-- Main Horizontal Splitpanes for Left/Center/Right -->
@@ -327,7 +343,7 @@ import 'splitpanes/dist/splitpanes.css';
 import * as types from '../../store/mutation-types';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Minimize2 } from 'lucide-vue-next';
-import TopMenu from './pages/ide/TopMenu';
+import TwoHeaderMenu from './pages/ide/TwoHeaderMenu';
 import CodeTabs from './pages/ide/CodeTabs';
 import UnifiedConsole from './pages/ide/UnifiedConsole';
 import ConsoleTabs from './pages/ide/ConsoleTabs';
@@ -343,6 +359,7 @@ import DialogFileBrowser from './pages/ide/dialog/DialogFileBrowser';
 import CsvViewer from './pages/ide/CsvViewer';
 import MediaViewer from './pages/ide/editor/MediaViewer';
 import SettingsModal from './pages/ide/SettingsModal';
+import KeyboardShortcutsModal from './pages/ide/KeyboardShortcutsModal';
 import FullscreenPreview from './pages/ide/FullscreenPreview';
 import DualModeREPL from './DualModeREPL';
 const path = require('path');
@@ -359,6 +376,7 @@ export default {
       fileBrowserMode: 'open',
       fileToMove: null,
       showSettingsModal: false,
+      showKeyboardShortcutsModal: false,
       showREPL: false,
       isReplMode: false,  // Toggle between normal console and REPL mode
       replSessionId: null,  // Track active REPL session
@@ -459,7 +477,7 @@ export default {
   components: {
     Splitpanes,
     Pane,
-    TopMenu,
+    TwoHeaderMenu,
     CodeTabs,
     UnifiedConsole,
     ConsoleTabs,
@@ -475,6 +493,7 @@ export default {
     CsvViewer,
     MediaViewer,
     SettingsModal,
+    KeyboardShortcutsModal,
     FullscreenPreview,
     ChevronLeft,
     ChevronRight,
@@ -2047,6 +2066,73 @@ export default {
       this.fileToMove = null;
       this.showFileBrowserDialog = true;
     },
+    shareProject() {
+      // Handle share project functionality
+      this.$message.info('Share project feature coming soon!');
+    },
+    handleSignIn() {
+      // Handle sign in functionality
+      this.$message.info('Sign in feature coming soon!');
+    },
+    shareFile() {
+      // Handle share file functionality
+      this.$message.info('Share file feature coming soon!');
+    },
+    // Edit menu handlers
+    handleUndo() {
+      // Trigger undo in the active editor
+      this.$message.info('Undo feature coming soon!');
+    },
+    handleRedo() {
+      // Trigger redo in the active editor
+      this.$message.info('Redo feature coming soon!');
+    },
+    handleCut() {
+      // Trigger cut in the active editor
+      document.execCommand('cut');
+    },
+    handleCopy() {
+      // Trigger copy in the active editor
+      document.execCommand('copy');
+    },
+    handlePaste() {
+      // Trigger paste in the active editor
+      document.execCommand('paste');
+    },
+    handleFind() {
+      // Open find dialog
+      this.$message.info('Find feature coming soon!');
+    },
+    handleReplace() {
+      // Open replace dialog
+      this.$message.info('Replace feature coming soon!');
+    },
+    handleComment() {
+      // Toggle comment in the active editor
+      this.$message.info('Comment feature coming soon!');
+    },
+    // View menu handlers
+    toggleConsole(visible) {
+      // Toggle console visibility
+      if (visible) {
+        this.consoleMode = 'normal';
+        this.consolePaneSize = 30;
+      } else {
+        this.consoleMode = 'collapsed';
+        this.consolePaneSize = 5;
+      }
+    },
+    togglePreviewPanel(visible) {
+      // Toggle preview panel visibility
+      if (visible && this.previewTabs.length === 0) {
+        // Add a default preview tab if none exists
+        this.$message.info('No files to preview. Open an image, PDF, or CSV file.');
+      } else if (!visible) {
+        this.rightPanelMode = 'closed';
+      } else {
+        this.rightPanelMode = 'normal';
+      }
+    },
     handleOpenFile(filePath) {
       // Open the selected file from the file browser
       this.getFile(filePath);
@@ -3573,8 +3659,8 @@ Advanced packages (install with micropip):
 .total-frame {
   position: fixed;
   width: 100%;
-  height: calc(100% - 50px);
-  top: 50px;
+  height: calc(100% - 80px);
+  top: 80px;
   left: 0;
   display: flex;
   flex-direction: row;
@@ -4616,15 +4702,12 @@ body {
   scrollbar-track-color: #3C3F41;
 }
 
-.top-menu {
+.two-header-menu {
   position: fixed;
   width: 100%;
-  height: 50px;
+  height: 80px;
   top: 0;
   left: 0;
-  background: #313131;
-  display: flex;
-  align-items: center;
   z-index: 9999;
 }
 /* Scrollbar styles */
@@ -4815,9 +4898,6 @@ body {
 
 /* Very small mobile screens */
 @media (max-width: 480px) {
-  .top-menu {
-    padding: 8px;
-  }
   
   .console-header {
     height: 36px;

@@ -605,18 +605,7 @@ export default {
   color: #409eff;
 }
 
-.refresh-btn:hover svg {
-  animation: spin 1s linear infinite;
-}
 
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
 
 .ide-project-list {
   background: #282828;

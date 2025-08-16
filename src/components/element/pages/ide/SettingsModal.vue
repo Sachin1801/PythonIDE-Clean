@@ -15,6 +15,42 @@
           <el-option label="High Contrast" value="contrast" />
         </el-select>
       </div>
+      
+      <div class="setting-item">
+        <label>Font Size</label>
+        <el-select v-model="localSettings.fontSize" @change="updateFontSize">
+          <el-option label="Small (12px)" value="12" />
+          <el-option label="Medium (14px)" value="14" />
+          <el-option label="Large (16px)" value="16" />
+          <el-option label="Extra Large (18px)" value="18" />
+        </el-select>
+      </div>
+      
+      <div class="setting-item">
+        <label>Show Line Numbers</label>
+        <el-switch 
+          v-model="localSettings.showLineNumbers" 
+          @change="updateLineNumbers"
+        />
+      </div>
+      
+      <div class="setting-item">
+        <label>Auto-save</label>
+        <el-switch 
+          v-model="localSettings.autoSave" 
+          @change="updateAutoSave"
+        />
+      </div>
+      
+      <div class="setting-item" v-if="localSettings.autoSave">
+        <label>Auto-save Interval</label>
+        <el-select v-model="localSettings.autoSaveInterval" @change="updateAutoSaveInterval">
+          <el-option label="30 seconds" value="30" />
+          <el-option label="1 minute" value="60" />
+          <el-option label="2 minutes" value="120" />
+          <el-option label="5 minutes" value="300" />
+        </el-select>
+      </div>
     </div>
 
     <template #footer>
@@ -37,7 +73,11 @@ export default {
   data() {
     return {
       localSettings: {
-        theme: 'dark'
+        theme: 'dark',
+        fontSize: '14',
+        showLineNumbers: true,
+        autoSave: false,
+        autoSaveInterval: '60'
       }
     }
   },
@@ -56,16 +96,58 @@ export default {
   },
   methods: {
     loadSettings() {
+      // Load theme
       const savedTheme = localStorage.getItem('theme')
       if (savedTheme) {
         this.localSettings.theme = savedTheme
       }
+      
+      // Load font size
+      const savedFontSize = localStorage.getItem('fontSize')
+      if (savedFontSize) {
+        this.localSettings.fontSize = savedFontSize
+      }
+      
+      // Load line numbers preference
+      const savedLineNumbers = localStorage.getItem('showLineNumbers')
+      if (savedLineNumbers !== null) {
+        this.localSettings.showLineNumbers = savedLineNumbers === 'true'
+      }
+      
+      // Load auto-save preference
+      const savedAutoSave = localStorage.getItem('autoSave')
+      if (savedAutoSave !== null) {
+        this.localSettings.autoSave = savedAutoSave === 'true'
+      }
+      
+      // Load auto-save interval
+      const savedAutoSaveInterval = localStorage.getItem('autoSaveInterval')
+      if (savedAutoSaveInterval) {
+        this.localSettings.autoSaveInterval = savedAutoSaveInterval
+      }
+      
       // Apply the saved theme
       document.documentElement.setAttribute('data-theme', this.localSettings.theme)
     },
     updateTheme(value) {
       document.documentElement.setAttribute('data-theme', value)
       localStorage.setItem('theme', value)
+    },
+    updateFontSize(value) {
+      localStorage.setItem('fontSize', value)
+      this.$emit('update-font-size', value)
+    },
+    updateLineNumbers(value) {
+      localStorage.setItem('showLineNumbers', value)
+      this.$emit('update-line-numbers', value)
+    },
+    updateAutoSave(value) {
+      localStorage.setItem('autoSave', value)
+      this.$emit('update-auto-save', value)
+    },
+    updateAutoSaveInterval(value) {
+      localStorage.setItem('autoSaveInterval', value)
+      this.$emit('update-auto-save-interval', value)
     },
     handleClose() {
       this.visible = false

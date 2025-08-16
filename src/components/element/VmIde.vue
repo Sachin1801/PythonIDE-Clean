@@ -19,6 +19,7 @@
       @save-as-file="saveAsFile"
       @open-move-dialog="openMoveDialog"
       @delete-file="deleteFileFromMenu"
+      @delete-selected-file="deleteSelectedFile"
       @share-file="shareFile"
       @undo="handleUndo"
       @redo="handleRedo"
@@ -59,6 +60,7 @@
               @rename-item="handleRenameItem"
               @delete-item="handleDeleteItem"
               @download-item="handleDownloadItem"
+              @new-file="handleNewFileFromTree"
             ></ProjTree>
           </div>
         </pane>
@@ -633,10 +635,21 @@ export default {
       if (this.windowWidth <= 900) {
         return 0;  // Return 0 for mobile to completely hide
       }
-      // Always return a size, even when hidden
-      // This ensures splitpanes can properly manage the panes
+      
+      // Calculate appropriate size based on window width
+      let sidebarSize = 20; // Default 20%
+      
+      // Adjust for medium screens to prevent gaps
+      if (this.windowWidth <= 1400 && this.windowWidth > 1200) {
+        // Calculate exact percentage to fill the pane properly
+        const pixelWidth = Math.min(250, this.windowWidth * 0.2);
+        sidebarSize = (pixelWidth / this.windowWidth) * 100;
+      } else if (this.windowWidth <= 1200) {
+        sidebarSize = (180 / this.windowWidth) * 100;
+      }
+      
       // Use 0.1 instead of 0 to avoid null reference errors in splitpanes
-      return this.leftSidebarVisible ? 20 : 0.1;
+      return this.leftSidebarVisible ? sidebarSize : 0.1;
     },
     leftSidebarMinSize() {
       // On mobile, set min size to 0 to allow complete hiding
@@ -644,7 +657,13 @@ export default {
     },
     leftSidebarMaxSize() {
       // On mobile, set max size to 0 to prevent any expansion
-      return this.windowWidth <= 900 ? 0 : 40;
+      if (this.windowWidth <= 900) return 0;
+      
+      // Adjust max size based on window width to prevent gaps
+      if (this.windowWidth <= 1400 && this.windowWidth > 1200) {
+        return 30; // Limit to 30% at medium screens
+      }
+      return 40;
     },
     rightSidebarSize() {
       // Check if we're on a small screen
@@ -652,14 +671,19 @@ export default {
         return 0;  // Return 0 for mobile to completely hide
       }
       
-      // If no preview tabs, always return minimal size regardless of mode
+      // For screens between 900-1200px, hide right sidebar completely
+      if (this.windowWidth <= 1200) {
+        return 0;  // Return 0 to completely hide and give space to center
+      }
+      
+      // If no preview tabs, return 0 to not take any space
       if (this.previewTabs.length === 0) {
-        return 0.1;  // Minimal size to avoid null reference errors
+        return 0;  // Return 0 when no content to show
       }
       
       // Handle different states based on new mode system
       if (this.rightPanelMode === 'closed') {
-        return 0.1;  // Use 0.1 to avoid null reference errors
+        return 0;  // Return 0 when closed to not take space
       }
       if (this.rightPanelMode === 'expanded') {
         // Take 70% of non-sidebar space when expanded
@@ -670,12 +694,14 @@ export default {
       return 30;
     },
     rightSidebarMinSize() {
-      // On mobile, set min size to 0 to allow complete hiding
-      return this.windowWidth <= 900 ? 0 : 0.1;
+      // Allow complete hiding on screens up to 1200px
+      return this.windowWidth <= 1200 ? 0 : 0.1;
     },
     rightSidebarMaxSize() {
-      // On mobile, set max size to 0 to prevent any expansion
-      return this.windowWidth <= 900 ? 0 : 50;
+      // Prevent expansion on smaller screens
+      if (this.windowWidth <= 900) return 0;
+      if (this.windowWidth <= 1200) return 0; // Also prevent expansion on medium screens
+      return 50;
     },
     centerSize() {
       // On small screens, center takes full width
@@ -683,9 +709,22 @@ export default {
         return 100;
       }
       
+      // For screens between 900-1200px, account for left sidebar only
+      if (this.windowWidth <= 1200) {
+        const leftSize = this.leftSidebarVisible ? 
+          (this.windowWidth <= 1200 ? (180 / this.windowWidth) * 100 : 20) : 0;
+        return 100 - leftSize; // Center takes all remaining space
+      }
+      
       // Calculate center size based on what's visible
-      const leftSize = this.leftSidebarVisible ? 20 : 0.1;
+      const leftSize = this.leftSidebarVisible ? this.leftSidebarSize : 0;
       const rightSize = this.rightSidebarSize;  // Access as property, not function
+      
+      // If right sidebar has no content or is 0, give that space to center
+      if (rightSize === 0) {
+        return 100 - leftSize;
+      }
+      
       return Math.max(30, 100 - leftSize - rightSize); // Ensure minimum 30% for center
     },
     // New computed properties for console sizing
@@ -2074,6 +2113,25 @@ export default {
       // Handle sign in functionality
       this.$message.info('Sign in feature coming soon!');
     },
+    handleNewFileFromTree() {
+      // Open new file dialog - same functionality as File > New File
+      const nodeSelected = this.ideInfo.nodeSelected;
+      if (!nodeSelected || (nodeSelected.type !== 'dir' && nodeSelected.type !== 'folder')) {
+        // Select the root folder if no folder is selected
+        const rootFolder = this.ideInfo.currProj?.data;
+        if (rootFolder) {
+          this.$store.commit('ide/setNodeSelected', rootFolder);
+        }
+      }
+      
+      // Open the text dialog for creating a new file
+      this.setTextDialog({
+        type: 'create-file',
+        title: 'New File',
+        tips: 'Enter file name:',
+        text: 'untitled.py'
+      });
+    },
     shareFile() {
       // Handle share file functionality
       this.$message.info('Share file feature coming soon!');
@@ -2267,6 +2325,10 @@ export default {
     },
     deleteFileFromMenu(data) {
       // Delete file from File menu
+      this.handleDeleteItem(data);
+    },
+    deleteSelectedFile(data) {
+      // Delete the selected file (called from the trash button in second header)
       this.handleDeleteItem(data);
     },
     setDelDialog(data) {
@@ -3671,10 +3733,12 @@ Advanced packages (install with micropip):
   background: var(--bg-sidebar, #282828);
   color: var(--text-primary, #CCCCCC);
   height: 100%;
+  width: 100%; /* Ensure sidebar fills its pane container */
   overflow: auto;
   flex-shrink: 0;
   /* Use normal flow inside Splitpanes */
   position: relative;
+  box-sizing: border-box;
 }
 
 /* Center Frame */
@@ -4055,18 +4119,17 @@ Advanced packages (install with micropip):
   flex-direction: column;
   border-left: 1px solid var(--border-primary, #3c3c3c);
   z-index: 20; /* Higher z-index to stay above console section */
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 /* Right sidebar placeholder when hidden */
 .right-sidebar-placeholder {
-  width: 100%;
+  width: 0;
   height: 100%;
   background: var(--bg-sidebar, #252526);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-secondary, #858585);
-  font-size: 14px;
+  display: none; /* Don't show placeholder to avoid taking space */
+  overflow: hidden;
 }
 
 /* Preview Tabs */
@@ -4764,7 +4827,8 @@ body {
 /* Responsive Design */
 @media (max-width: 1400px) {
   .left-sidebar {
-    max-width: 200px;
+    max-width: 250px;
+    width: 100%; /* Fill pane container */
   }
   
   .right-sidebar {
@@ -4774,15 +4838,54 @@ body {
   .console-height {
     max-height: 250px;
   }
+  
+  /* Ensure no gaps in splitpanes at this breakpoint */
+  .main-splitpanes.splitpanes--vertical > .splitpanes__pane {
+    flex-shrink: 0;
+  }
+  
+  /* Ensure splitpane panes fill their containers */
+  .main-splitpanes > .splitpanes__pane:first-child {
+    overflow: hidden;
+  }
 }
 
 @media (max-width: 1200px) {
   .left-sidebar {
-    width: 180px !important;
+    width: 100% !important; /* Fill pane, actual size controlled by splitpanes */
+    max-width: 180px;
   }
   
+  /* Hide right sidebar completely on medium screens */
   .right-sidebar {
-    width: 300px !important;
+    display: none !important;
+    width: 0 !important;
+  }
+  
+  /* Force right pane to have no width */
+  .main-splitpanes > .splitpanes__pane:last-child {
+    width: 0 !important;
+    max-width: 0 !important;
+    min-width: 0 !important;
+    flex: 0 0 0 !important;
+    display: none !important;
+  }
+  
+  /* Hide the right splitter on medium screens */
+  .main-splitpanes.splitpanes--vertical > .splitpanes__splitter:last-of-type {
+    display: none !important;
+    width: 0 !important;
+  }
+  
+  /* Ensure center pane takes remaining space */
+  .main-splitpanes > .splitpanes__pane:nth-child(2) {
+    flex: 1 1 auto !important;
+    width: auto !important;
+  }
+  
+  /* Ensure center frame fills its container */
+  .center-frame {
+    width: 100% !important;
   }
 }
 
@@ -5025,6 +5128,7 @@ body {
 .main-splitpanes {
   height: 100%;
   width: 100%;
+  background: var(--bg-primary, #1E1E1E) !important;
 }
 
 /* Hide old resizers since splitpanes handles them */
@@ -5042,11 +5146,39 @@ body {
 /* Fix white background on all splitpanes panes */
 .splitpanes__pane {
   background: transparent !important;
+  transition: none; /* Prevent transition gaps */
 }
 
 /* Ensure main splitpanes have proper background */
 .main-splitpanes > .splitpanes__pane {
   background: var(--bg-primary, #1E1E1E) !important;
+  overflow: hidden; /* Prevent content overflow during resize */
+}
+
+/* Specific fix for left sidebar pane to prevent gaps */
+.main-splitpanes > .splitpanes__pane:first-child {
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+/* Fix for right sidebar pane to prevent gaps */
+.main-splitpanes > .splitpanes__pane:last-child {
+  min-width: 0;
+  transition: none;
+}
+
+/* Special rule for 1100-1200px range to prevent right sidebar gaps */
+@media (min-width: 1100px) and (max-width: 1200px) {
+  .main-splitpanes > .splitpanes__pane:last-child {
+    width: 0 !important;
+    max-width: 0 !important;
+    display: none !important;
+  }
+  
+  .main-splitpanes > .splitpanes__pane:nth-child(2) {
+    flex: 1 1 auto !important;
+    width: calc(100% - var(--left-sidebar-width, 180px)) !important;
+  }
 }
 
 /* Style vertical splitters (between sidebars and center) */

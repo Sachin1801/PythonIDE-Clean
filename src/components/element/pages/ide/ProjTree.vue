@@ -2,9 +2,14 @@
   <div class="proj-tree-container">
     <div class="tree-header">
       <span class="tree-title">Project Files</span>
-      <button class="refresh-btn" @click="refreshTree" title="Refresh">
-        <RefreshCw :size="16" />
-      </button>
+      <div class="tree-header-actions">
+        <button class="action-btn new-file-btn" @click="handleNewFile" title="New File">
+          <FilePlus :size="16" />
+        </button>
+        <button class="action-btn refresh-btn" @click="refreshTree" title="Refresh">
+          <RefreshCw :size="16" />
+        </button>
+      </div>
     </div>
     <el-tree
       id="tree-root"
@@ -88,13 +93,14 @@
 <script>
 import * as types from '../../../../store/mutation-types';
 import { getIconForFile, getIconForFolder, getIconForOpenFolder } from 'vscode-icons-js';
-import { RefreshCw, MoreVertical } from 'lucide-vue-next';
+import { RefreshCw, MoreVertical, FilePlus } from 'lucide-vue-next';
 import { ElMessage, ElMessageBox } from 'element-plus';
 
 export default {
   components: {
     RefreshCw,
     MoreVertical,
+    FilePlus,
   },
   data() {
     return {
@@ -126,6 +132,20 @@ export default {
       const path = data.path || '';
       const previewExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.webp', '.pdf', '.csv'];
       return previewExtensions.some(ext => path.toLowerCase().endsWith(ext));
+    },
+    handleNewFile() {
+      // Check if a folder is selected, if not select the root folder
+      const nodeSelected = this.ideInfo.nodeSelected;
+      if (!nodeSelected || (nodeSelected.type !== 'dir' && nodeSelected.type !== 'folder')) {
+        // Select the root folder
+        const rootFolder = this.ideInfo.currProj?.data;
+        if (rootFolder) {
+          this.$store.commit('ide/setNodeSelected', rootFolder);
+        }
+      }
+      
+      // Emit event to open new file dialog
+      this.$emit('new-file');
     },
     refreshTree() {
       // Refresh all projects if in multi-root mode
@@ -567,7 +587,13 @@ export default {
   color: #CCCCCC;
 }
 
-.refresh-btn {
+.tree-header-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.action-btn {
   background: transparent;
   border: none;
   color: rgba(255, 255, 255, 0.6);
@@ -580,28 +606,20 @@ export default {
   transition: all 0.2s ease;
 }
 
-.refresh-btn:hover {
+.action-btn:hover {
   color: rgba(255, 255, 255, 0.9);
   background: rgba(255, 255, 255, 0.1);
 }
 
-.refresh-btn:active {
+.action-btn:active {
   transform: scale(0.95);
 }
 
-.refresh-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 4px;
-  cursor: pointer;
-  border-radius: 4px;
-  transition: all 0.2s;
-  color: #CCCCCC;
+.new-file-btn:hover {
+  color: #67c23a;
 }
 
 .refresh-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
   color: #409eff;
 }
 
@@ -765,6 +783,32 @@ export default {
 /* Theme Support for Project Tree File Selection */
 
 /* Light Theme - Project Tree */
+[data-theme="light"] .tree-header {
+  background: rgba(0, 0, 0, 0.03);
+  border-bottom-color: #e0e0e0;
+}
+
+[data-theme="light"] .tree-title {
+  color: #333333;
+}
+
+[data-theme="light"] .action-btn {
+  color: rgba(0, 0, 0, 0.6);
+}
+
+[data-theme="light"] .action-btn:hover {
+  color: rgba(0, 0, 0, 0.9);
+  background: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .new-file-btn:hover {
+  color: #52c41a;
+}
+
+[data-theme="light"] .refresh-btn:hover {
+  color: #1890ff;
+}
+
 [data-theme="light"] .ide-project-list {
   background: #f8f8f8;
   color: #333333;

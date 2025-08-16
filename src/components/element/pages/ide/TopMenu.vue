@@ -23,19 +23,36 @@
               </button>
             </li>
             <li class="nav__dropdown-item">
+              <button @click="openFile()">
+                Open File
+              </button>
+            </li>
+            <li class="nav__dropdown-item">
+              <button @click="duplicateFile()" :disabled="!hasSelectedFile">
+                Duplicate
+              </button>
+            </li>
+            <li class="nav__dropdown-item">
               <button @click="saveFile()">
                 Save
               </button>
             </li>
-            <!-- <li class="nav__dropdown-item nav__dropdown-item--disabled">
-              <button disabled>Share</button>
-            </li> -->
+            <li class="nav__dropdown-item">
+              <button @click="saveAsFile()">
+                Save As
+              </button>
+            </li>
+            <li class="nav__dropdown-item">
+              <button @click="moveFile()" :disabled="!hasSelectedFile">
+                Move
+              </button>
+            </li>
             <li class="nav__dropdown-item">
               <button @click="downloadFile()">Download</button>
             </li>
             <li class="nav__dropdown-item">
-              <button @click="addFolder()">
-                Add Folder
+              <button @click="deleteFile()" :disabled="!hasSelectedFile" class="delete-option">
+                Delete File
               </button>
             </li>
           </ul>
@@ -89,6 +106,9 @@ export default {
              this.ideInfo.codeItems && 
              this.ideInfo.codeItems.length > 0 && 
              this.ideInfo.currProj.pathSelected.endsWith('.py');
+    },
+    hasSelectedFile() {
+      return this.ideInfo.nodeSelected && this.ideInfo.nodeSelected.type === 'file';
     },
   },
   components: {
@@ -218,6 +238,69 @@ export default {
     openSettings() {
       this.$emit('open-settings');
     },
+    openFile() {
+      this.closeDropdowns();
+      this.$emit('open-file-browser');
+    },
+    duplicateFile() {
+      this.closeDropdowns();
+      if (!this.hasSelectedFile) {
+        this.$message.warning('Please select a file to duplicate');
+        return;
+      }
+      const selectedFile = this.ideInfo.nodeSelected;
+      const fileName = selectedFile.label || selectedFile.name;
+      const extension = fileName.includes('.') ? fileName.substring(fileName.lastIndexOf('.')) : '';
+      const baseName = fileName.includes('.') ? fileName.substring(0, fileName.lastIndexOf('.')) : fileName;
+      const newName = `${baseName}_copy${extension}`;
+      
+      this.$emit('duplicate-file', {
+        originalPath: selectedFile.path,
+        newName: newName,
+        projectName: selectedFile.projectName || this.ideInfo.currProj?.data?.name
+      });
+    },
+    saveAsFile() {
+      this.closeDropdowns();
+      if (!this.ideInfo.codeSelected) {
+        this.$message.warning('Please open a file first');
+        return;
+      }
+      // Trigger browser's save dialog
+      this.$emit('save-as-file', this.ideInfo.codeSelected);
+    },
+    moveFile() {
+      this.closeDropdowns();
+      if (!this.hasSelectedFile) {
+        this.$message.warning('Please select a file to move');
+        return;
+      }
+      this.$emit('open-move-dialog', this.ideInfo.nodeSelected);
+    },
+    deleteFile() {
+      this.closeDropdowns();
+      if (!this.hasSelectedFile) {
+        this.$message.warning('Please select a file to delete');
+        return;
+      }
+      
+      const selectedFile = this.ideInfo.nodeSelected;
+      const fileName = selectedFile.label || selectedFile.name;
+      
+      this.$confirm(`Are you sure you want to delete "${fileName}"?`, 'Confirm Delete', {
+        confirmButtonText: 'Delete',
+        cancelButtonText: 'Cancel',
+        type: 'warning',
+      }).then(() => {
+        this.$emit('delete-file', {
+          path: selectedFile.path,
+          type: selectedFile.type,
+          projectName: selectedFile.projectName || this.ideInfo.currProj?.data?.name
+        });
+      }).catch(() => {
+        // User cancelled
+      });
+    },
   },
 };
 </script>
@@ -333,6 +416,24 @@ export default {
 
 .nav__dropdown-item--disabled button:hover {
   background: transparent;
+}
+
+.nav__dropdown-item button:disabled {
+  color: var(--text-tertiary, #666);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.nav__dropdown-item button:disabled:hover {
+  background: transparent;
+}
+
+.nav__dropdown-item .delete-option {
+  color: #F44747;
+}
+
+.nav__dropdown-item .delete-option:hover:not(:disabled) {
+  background: rgba(244, 71, 71, 0.2);
 }
 
 .nav__keyboard-shortcut {

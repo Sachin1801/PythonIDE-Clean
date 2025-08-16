@@ -250,8 +250,12 @@
           <Square :size="20" />
         </div>
 
-        <!-- Clear Button -->
-        <div class="icon-btn" @click="clearConsole()" title="Clear Console">
+        <!-- Delete Button -->
+        <div 
+          class="icon-btn delete-btn" 
+          @click="deleteSelectedFile()" 
+          :class="{ 'disabled': !canDeleteFile }"
+          :title="deleteButtonTitle">
           <Trash2 :size="20" />
         </div>
 
@@ -273,6 +277,7 @@
 
 <script>
 import { Upload, Play, Square, Settings, Share2, Trash2, UserCircle } from 'lucide-vue-next';
+import { ElMessageBox, ElMessage } from 'element-plus';
 
 export default {
   props: {
@@ -300,6 +305,20 @@ export default {
     },
     hasSelectedFile() {
       return this.ideInfo.nodeSelected && this.ideInfo.nodeSelected.type === 'file';
+    },
+    canDeleteFile() {
+      // Check if a file is selected and it's not a protected item
+      const selected = this.ideInfo.nodeSelected;
+      return selected && selected.type === 'file';
+    },
+    deleteButtonTitle() {
+      if (!this.ideInfo.nodeSelected) {
+        return 'Select a file to delete';
+      }
+      if (this.ideInfo.nodeSelected.type !== 'file') {
+        return 'Can only delete files';
+      }
+      return `Delete ${this.ideInfo.nodeSelected.label || this.ideInfo.nodeSelected.name}`;
     },
   },
   components: {
@@ -375,7 +394,7 @@ export default {
       this.closeDropdowns();
       if (this.ideInfo.codeSelected) {
         this.$store.dispatch('ide/saveFile', this.ideInfo.codeSelected);
-        this.$message.success('File saved');
+        ElMessage.success('File saved');
       }
     },
     downloadFile() {
@@ -384,7 +403,7 @@ export default {
         if (this.ideInfo.codeSelected) {
           this.$emit('download-file', this.ideInfo.codeSelected);
         } else {
-          this.$message.warning('Please select a file to download');
+          ElMessage.warning('Please select a file to download');
         }
       } else {
         this.$emit('download-file');
@@ -406,6 +425,36 @@ export default {
     clearConsole() {
       this.$emit('clear-console');
     },
+    deleteSelectedFile() {
+      // Check if we can delete
+      if (!this.canDeleteFile) {
+        ElMessage.warning('Please select a file to delete');
+        return;
+      }
+      
+      const selected = this.ideInfo.nodeSelected;
+      const fileName = selected.label || selected.name;
+      
+      // Show confirmation dialog
+      ElMessageBox.confirm(
+        `Are you sure you want to delete "${fileName}"?`,
+        'Confirm Delete',
+        {
+          confirmButtonText: 'Delete',
+          cancelButtonText: 'Cancel',
+          type: 'warning',
+        }
+      ).then(() => {
+        // Emit delete event
+        this.$emit('delete-selected-file', {
+          path: selected.path,
+          type: selected.type,
+          projectName: selected.projectName || this.ideInfo.currProj?.data?.name
+        });
+      }).catch(() => {
+        // User cancelled - do nothing
+      });
+    },
     shareProject() {
       this.$emit('share-project');
     },
@@ -422,7 +471,7 @@ export default {
     duplicateFile() {
       this.closeDropdowns();
       if (!this.hasSelectedFile) {
-        this.$message.warning('Please select a file to duplicate');
+        ElMessage.warning('Please select a file to duplicate');
         return;
       }
       const selectedFile = this.ideInfo.nodeSelected;
@@ -440,7 +489,7 @@ export default {
     saveAsFile() {
       this.closeDropdowns();
       if (!this.ideInfo.codeSelected) {
-        this.$message.warning('Please open a file first');
+        ElMessage.warning('Please open a file first');
         return;
       }
       // Trigger browser's save dialog
@@ -449,7 +498,7 @@ export default {
     moveFile() {
       this.closeDropdowns();
       if (!this.hasSelectedFile) {
-        this.$message.warning('Please select a file to move');
+        ElMessage.warning('Please select a file to move');
         return;
       }
       this.$emit('open-move-dialog', this.ideInfo.nodeSelected);
@@ -457,18 +506,22 @@ export default {
     deleteFile() {
       this.closeDropdowns();
       if (!this.hasSelectedFile) {
-        this.$message.warning('Please select a file to delete');
+        ElMessage.warning('Please select a file to delete');
         return;
       }
       
       const selectedFile = this.ideInfo.nodeSelected;
       const fileName = selectedFile.label || selectedFile.name;
       
-      this.$confirm(`Are you sure you want to delete "${fileName}"?`, 'Confirm Delete', {
-        confirmButtonText: 'Delete',
-        cancelButtonText: 'Cancel',
-        type: 'warning',
-      }).then(() => {
+      ElMessageBox.confirm(
+        `Are you sure you want to delete "${fileName}"?`,
+        'Confirm Delete',
+        {
+          confirmButtonText: 'Delete',
+          cancelButtonText: 'Cancel',
+          type: 'warning',
+        }
+      ).then(() => {
         this.$emit('delete-file', {
           path: selectedFile.path,
           type: selectedFile.type,
@@ -754,6 +807,17 @@ export default {
   transition: all 0.2s ease;
   border-radius: 6px;
   color: var(--text-primary, #ccc);
+}
+
+.delete-btn.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.delete-btn:not(.disabled):hover {
+  background: rgba(245, 108, 108, 0.2);
+  color: #f56c6c;
 }
 
 .settings-btn {

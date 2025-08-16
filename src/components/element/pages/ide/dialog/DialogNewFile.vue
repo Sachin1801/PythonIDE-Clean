@@ -67,44 +67,7 @@
           </div>
         </div>
 
-        <!-- File Type Templates (Optional) -->
-        <div class="template-section">
-          <label>Quick Templates:</label>
-          <div class="template-buttons">
-            <button 
-              class="template-btn" 
-              @click="applyTemplate('python')"
-              :class="{ active: templateType === 'python' }"
-            >
-              <FileCode :size="16" />
-              Python (.py)
-            </button>
-            <button 
-              class="template-btn" 
-              @click="applyTemplate('text')"
-              :class="{ active: templateType === 'text' }"
-            >
-              <FileText :size="16" />
-              Text (.txt)
-            </button>
-            <button 
-              class="template-btn" 
-              @click="applyTemplate('csv')"
-              :class="{ active: templateType === 'csv' }"
-            >
-              <Table :size="16" />
-              CSV (.csv)
-            </button>
-            <button 
-              class="template-btn" 
-              @click="applyTemplate('json')"
-              :class="{ active: templateType === 'json' }"
-            >
-              <Braces :size="16" />
-              JSON (.json)
-            </button>
-          </div>
-        </div>
+
 
         <!-- Preview Section -->
         <div v-if="fileName && !fileNameError" class="preview-section">
@@ -136,7 +99,7 @@
 </template>
 
 <script>
-import { X, FolderOpen, Folder, ChevronRight, ChevronDown, FileText, Home, FileCode, Table, Braces } from 'lucide-vue-next';
+import { X, FolderOpen, Folder, ChevronRight, ChevronDown, FileText, Home } from 'lucide-vue-next';
 import * as types from '../../../../../store/mutation-types';
 import { ElMessage } from 'element-plus';
 
@@ -153,38 +116,7 @@ export default {
       fileNameError: '',
       creating: false,
       showDirectoryTree: false,
-      templateType: null,
-      fileTemplates: {
-        python: {
-          extension: '.py',
-          content: `#!/usr/bin/env python3
-"""
-Description: 
-Author: 
-Date: ${new Date().toLocaleDateString()}
-"""
 
-def main():
-    """Main function"""
-    print("Hello, World!")
-    
-if __name__ == "__main__":
-    main()
-`
-        },
-        text: {
-          extension: '.txt',
-          content: ''
-        },
-        csv: {
-          extension: '.csv',
-          content: 'Column1,Column2,Column3\nValue1,Value2,Value3\n'
-        },
-        json: {
-          extension: '.json',
-          content: '{\n  "name": "",\n  "version": "1.0.0",\n  "description": ""\n}'
-        }
-      }
     }
   },
   computed: {
@@ -204,10 +136,7 @@ if __name__ == "__main__":
     ChevronRight,
     ChevronDown,
     FileText,
-    Home,
-    FileCode,
-    Table,
-    Braces
+    Home
   },
   mounted() {
     this.loadDirectoryStructure();
@@ -345,18 +274,7 @@ if __name__ == "__main__":
         this.fileNameError = 'Consider adding a file extension (e.g., .py, .txt)';
       }
     },
-    applyTemplate(type) {
-      this.templateType = type;
-      const template = this.fileTemplates[type];
-      
-      // Update filename with appropriate extension if needed
-      if (template.extension) {
-        const baseName = this.fileName.replace(/\.[^/.]+$/, ''); // Remove existing extension
-        this.fileName = baseName ? baseName + template.extension : 'new_file' + template.extension;
-      }
-      
-      this.validateFileName();
-    },
+
     getFullFilePath() {
       const fileName = this.fileName || 'new_file';
       const path = this.currentPath === '/' 
@@ -400,20 +318,13 @@ if __name__ == "__main__":
           projectName
         });
         
-        // Get initial content based on template
+        // Default content based on extension
         let initialContent = '';
-        if (this.templateType && this.fileTemplates[this.templateType]) {
-          initialContent = this.fileTemplates[this.templateType].content;
-        } else {
-          // Default content based on extension
-          const ext = this.fileExtension.toLowerCase();
-          if (ext === '.py') {
-            initialContent = '#!/usr/bin/env python3\n\n';
-          } else if (ext === '.json') {
-            initialContent = '{}';
-          } else if (ext === '.csv') {
-            initialContent = '';
-          }
+        const ext = this.fileExtension.toLowerCase();
+        if (ext === '.py') {
+          initialContent = '#!/usr/bin/env python3\n\n';
+        } else if (ext === '.json') {
+          initialContent = '{}';
         }
         
         // Create the file using the IDE store action
@@ -557,14 +468,12 @@ if __name__ == "__main__":
 
 .directory-section,
 .filename-section,
-.template-section,
 .preview-section {
   margin-bottom: 20px;
 }
 
 .directory-section label,
 .filename-section label,
-.template-section label,
 .preview-section label {
   display: block;
   margin-bottom: 8px;
@@ -681,40 +590,7 @@ if __name__ == "__main__":
   color: var(--error-color, #f44747);
 }
 
-.template-section {
-  margin-bottom: 16px;
-}
 
-.template-buttons {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.template-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  background: var(--button-bg, #2d2d30);
-  border: 1px solid var(--border-color, #464647);
-  border-radius: 4px;
-  color: var(--text-primary, #cccccc);
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.template-btn:hover {
-  background: var(--hover-bg, #383838);
-  border-color: var(--accent-color, #007acc);
-}
-
-.template-btn.active {
-  background: var(--accent-color, #007acc);
-  border-color: var(--accent-color, #007acc);
-  color: white;
-}
 
 .file-preview {
   padding: 12px;

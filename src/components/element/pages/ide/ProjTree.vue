@@ -26,7 +26,7 @@
         <span class="node-wrapper" @dblclick.stop="handleDoubleClick(data)">
           <img :src="getIconUrl(data)" alt="" class="node-icon" />
           <span class="node-label">{{ node.label }}</span>
-          <span class="node-actions" v-if="data.type === 'file' || (data.type === 'dir' || data.type === 'folder')">
+          <span class="node-actions" v-if="data.type === 'file'">
             <button class="dropdown-btn" @click.stop="showDropdown($event, data)" title="Actions">
               <MoreVertical :size="14" />
             </button>
@@ -207,6 +207,14 @@ export default {
       // Close any open menus
       this.closeAllMenus();
       
+      console.log('[ProjTree] handleNodeClick:', {
+        path: data.path,
+        name: data.name,
+        type: data.type,
+        projectName: data.projectName,
+        fullData: data
+      });
+      
       this.$store.commit('ide/setNodeSelected', data);
       
       // In multi-root mode, we need to set the correct project as current
@@ -214,25 +222,31 @@ export default {
         // Find and set the project that contains this file
         const project = this.ideInfo.allProjects.find(p => p.name === data.projectName);
         if (project) {
+          console.log('[ProjTree] Setting project as current:', project.name);
           this.$store.commit('ide/handleProject', project);
         }
       }
       
       // Single click opens file
-      if (data.type === 'file')
-        this.$emit('get-item', data.path);
+      if (data.type === 'file') {
+        console.log('[ProjTree] Emitting get-item with:', data.path, false, data.projectName);
+        this.$emit('get-item', data.path, false, data.projectName); // path, save, projectName
+      }
     },
     
     handleDoubleClick(data) {
       // Double click to open file (no longer triggers rename)
       if (data.type === 'file') {
-        this.$emit('get-item', data.path);
+        this.$emit('get-item', data.path, false, data.projectName); // path, save, projectName
       }
     },
     
     handleContextMenu(event, data, node) {
       event.preventDefault();
-      this.showContextMenu(event, data);
+      // Only show context menu for files, not folders
+      if (data.type === 'file') {
+        this.showContextMenu(event, data);
+      }
     },
     
     showContextMenu(event, data) {
@@ -303,14 +317,13 @@ export default {
     },
     
     startRename(data) {
-      const name = data.label || data.name;
-      
-      // Check if this is a protected project folder (root level)
-      const protectedFolders = ['Assignments', 'Lecture Notes'];
-      if (data.path === '/' && protectedFolders.includes(name)) {
-        ElMessage.warning(`The "${name}" folder cannot be renamed as it is protected.`);
+      // Prevent renaming of all folders
+      if (data.type === 'dir' || data.type === 'folder') {
+        ElMessage.warning('Folders cannot be renamed.');
         return;
       }
+      
+      const name = data.label || data.name;
       
       ElMessageBox.prompt('Enter new name:', 'Rename', {
         confirmButtonText: 'OK',
@@ -344,12 +357,12 @@ export default {
       switch(action) {
         case 'open':
           if (data.type === 'file') {
-            this.$emit('get-item', data.path);
+            this.$emit('get-item', data.path, false, data.projectName); // path, save, projectName
           }
           break;
         case 'openInRightPanel':
           if (data.type === 'file') {
-            this.$emit('get-item-right-panel', data.path); // Special event for right panel
+            this.$emit('get-item-right-panel', data.path, data.projectName); // Special event for right panel
           }
           break;
         case 'rename':
@@ -428,8 +441,11 @@ export default {
     treeData() {
       // Use multi-root data if available, otherwise fall back to single project
       if (this.ideInfo.multiRootData && this.ideInfo.multiRootData.children.length > 0) {
+        console.log('[ProjTree] Using multiRootData with projects:', 
+          this.ideInfo.multiRootData.children.map(p => p.name));
         return this.ideInfo.multiRootData.children;
       }
+      console.log('[ProjTree] Using single project mode:', this.ideInfo.currProj?.data?.name);
       return this.ideInfo.currProj.data ? [this.ideInfo.currProj.data] : [];
     },
     expandedKeys() {

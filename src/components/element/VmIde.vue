@@ -15,6 +15,11 @@
       @download-file="downloadFile"
       @open-repl="openREPL"
       @open-settings="showSettingsModal = true"
+      @open-file-browser="openFileBrowser"
+      @duplicate-file="duplicateFile"
+      @save-as-file="saveAsFile"
+      @open-move-dialog="openMoveDialog"
+      @delete-file="deleteFileFromMenu"
     ></TopMenu>
     
     <!-- Settings Modal -->
@@ -27,7 +32,7 @@
     />
     <div id="total-frame" class="total-frame">
       <!-- Main Horizontal Splitpanes for Left/Center/Right -->
-      <splitpanes class="default-theme main-splitpanes">
+      <splitpanes :class="['default-theme', 'main-splitpanes', { 'has-right-content': previewTabs.length > 0 }]">
         <!-- Left Sidebar Pane - Always present in DOM -->
         <pane :size="leftSidebarSize" :min-size="0.1" :max-size="40">
           <div id="left-sidebar" class="left-sidebar" v-show="leftSidebarVisible">
@@ -52,7 +57,7 @@
             <!-- Nested Horizontal Splitpanes for Editor/Console -->
             <splitpanes horizontal class="default-theme">
               <!-- Editor Pane -->
-              <pane :size="editorPaneSize" :min-size="5">
+              <pane :size="editorPaneSize" :min-size="5" :max-size="95">
                 <div class="editor-section">
           <div class="editor-tab-bar">
             <CodeTabs
@@ -86,12 +91,29 @@
               <span class="console-title">{{ isReplMode ? 'Python REPL' : 'Console' }}</span>
             </div>
             <div class="console-header-center">
+              <!-- Collapsed state: Only up arrow -->
+              <button class="console-expand-arrow" 
+                      @click="handleConsoleUpArrow" 
+                      title="Open console"
+                      v-if="consoleMode === 'collapsed'">
+                <ChevronUp :size="16" />
+              </button>
+              
+              <!-- Normal state: Both up arrow (maximize) and down arrow (collapse) -->
               <button class="console-expand-arrow" 
                       @click="handleConsoleUpArrow" 
                       title="Maximize console"
-                      v-if="consoleMode !== 'maximized'">
+                      v-if="consoleMode === 'normal'">
                 <ChevronUp :size="16" />
               </button>
+              <button class="console-expand-arrow" 
+                      @click="handleConsoleDownArrow" 
+                      title="Collapse console"
+                      v-if="consoleMode === 'normal'">
+                <ChevronDown :size="16" />
+              </button>
+              
+              <!-- Maximized state: Restore button and down arrow -->
               <button class="console-expand-arrow" 
                       @click="handleConsoleRestore" 
                       title="Restore console"
@@ -100,8 +122,8 @@
               </button>
               <button class="console-expand-arrow" 
                       @click="handleConsoleDownArrow" 
-                      title="Minimize console"
-                      v-if="consoleMode === 'normal'">
+                      title="Collapse console"
+                      v-if="consoleMode === 'maximized'">
                 <ChevronDown :size="16" />
               </button>
             </div>
@@ -186,7 +208,7 @@
         </pane>
         
                  <!-- Right Sidebar Pane - Always present in DOM -->
-         <pane :size="rightSidebarSize" :min-size="0.1" :max-size="50">
+         <pane :size="rightSidebarSize" :min-size="0.1" :max-size="50" :push-other-panes="false">
            <div id="right-sidebar" class="right-sidebar">
             <!-- Hidden placeholder when sidebar is not visible -->
             <div v-show="!rightSidebarVisible || previewTabs.length === 0" class="right-sidebar-placeholder">
@@ -222,14 +244,9 @@
                     </div>
                   </div>
                   
-                  <!-- Image Preview Panel -->
-                  <div v-else-if="tab.type === 'image'" class="image-preview-panel">
-                    <img :src="tab.content" :alt="tab.title" />
-                  </div>
-                  
-                  <!-- PDF Preview Panel -->
-                  <div v-else-if="tab.type === 'pdf'" class="pdf-preview-panel">
-                    <iframe :src="tab.content" frameborder="0"></iframe>
+                  <!-- Media Preview Panel (Images and PDFs) -->
+                  <div v-else-if="tab.type === 'image' || tab.type === 'pdf'" class="media-preview-panel">
+                    <MediaViewer :codeItem="getMediaCodeItem(tab)" :codeItemIndex="0" />
                   </div>
                   
                   <!-- CSV/Data Preview Panel -->
@@ -281,6 +298,13 @@
       @on-cancel="onCancelDelete" @on-delete="onDelete"></DialogDelete>
     <DialogUpload v-if="showUploadDialog" v-model="showUploadDialog" @refresh-tree="refreshProjectTree" @close="showUploadDialog = false"></DialogUpload>
     <DialogNewFile v-if="showNewFileDialog" v-model="showNewFileDialog" @file-created="handleFileCreated"></DialogNewFile>
+    <DialogFileBrowser 
+      v-model="showFileBrowserDialog" 
+      :mode="fileBrowserMode"
+      :fileToMove="fileToMove"
+      @open-file="handleOpenFile"
+      @move-file="handleMoveFile"
+    />
     
     <!-- REPL Modal -->
     <div v-if="showREPL" class="repl-modal">
@@ -315,7 +339,9 @@ import DialogText from './pages/ide/dialog/DialogText';
 import DialogDelete from './pages/ide/dialog/DialogDelete';
 import DialogUpload from './pages/ide/dialog/DialogUpload';
 import DialogNewFile from './pages/ide/dialog/DialogNewFile';
+import DialogFileBrowser from './pages/ide/dialog/DialogFileBrowser';
 import CsvViewer from './pages/ide/CsvViewer';
+import MediaViewer from './pages/ide/editor/MediaViewer';
 import SettingsModal from './pages/ide/SettingsModal';
 import FullscreenPreview from './pages/ide/FullscreenPreview';
 import DualModeREPL from './DualModeREPL';
@@ -329,6 +355,9 @@ export default {
       showProjsDialog: false,
       showUploadDialog: false,
       showNewFileDialog: false,
+      showFileBrowserDialog: false,
+      fileBrowserMode: 'open',
+      fileToMove: null,
       showSettingsModal: false,
       showREPL: false,
       isReplMode: false,  // Toggle between normal console and REPL mode
@@ -337,6 +366,7 @@ export default {
       showContextMenu: false,
       contextMenuPosition: { x: 0, y: 0 },
       contextMenuTarget: null,
+      windowWidth: window.innerWidth,  // Track window width for responsive behavior
       leftSidebarVisible: true,
       
       dialogType: '',
@@ -441,7 +471,9 @@ export default {
     DialogDelete,
     DialogUpload,
     DialogNewFile,
+    DialogFileBrowser,
     CsvViewer,
+    MediaViewer,
     SettingsModal,
     FullscreenPreview,
     ChevronLeft,
@@ -578,12 +610,26 @@ export default {
     },
     // Computed properties for splitpanes sizes (in percentages)
     leftSidebarSize() {
+      // Check if we're on a small screen
+      if (this.windowWidth <= 900) {
+        return 0;  // Return 0 for mobile to completely hide
+      }
       // Always return a size, even when hidden
       // This ensures splitpanes can properly manage the panes
       // Use 0.1 instead of 0 to avoid null reference errors in splitpanes
       return this.leftSidebarVisible ? 20 : 0.1;
     },
     rightSidebarSize() {
+      // Check if we're on a small screen
+      if (this.windowWidth <= 900) {
+        return 0;  // Return 0 for mobile to completely hide
+      }
+      
+      // If no preview tabs, always return minimal size regardless of mode
+      if (this.previewTabs.length === 0) {
+        return 0.1;  // Minimal size to avoid null reference errors
+      }
+      
       // Handle different states based on new mode system
       if (this.rightPanelMode === 'closed') {
         return 0.1;  // Use 0.1 to avoid null reference errors
@@ -593,10 +639,15 @@ export default {
         const leftSize = this.leftSidebarVisible ? 20 : 0;
         return 100 - leftSize - 10; // Leave 10% for minimal editor
       }
-      // Normal state - 30% (show even if no tabs yet, since we're opening)
+      // Normal state - 30%
       return 30;
     },
     centerSize() {
+      // On small screens, center takes full width
+      if (this.windowWidth <= 900) {
+        return 100;
+      }
+      
       // Calculate center size based on what's visible
       const leftSize = this.leftSidebarVisible ? 20 : 0.1;
       const rightSize = this.rightSidebarSize;  // Access as property, not function
@@ -617,6 +668,15 @@ export default {
     }
   },
   watch: {
+    // Watch for preview tabs changes to manage right panel state
+    'previewTabs.length': function(newLength, oldLength) {
+      // When all tabs are closed, ensure right panel is properly closed
+      if (newLength === 0 && oldLength > 0) {
+        this.rightPanelMode = 'closed';
+        this.rightSidebarVisible = false;
+      }
+    },
+    
     // Watch for tab changes to save/restore console state
     'ideInfo.codeSelected': function(newFile, oldFile) {
       // Only handle console state changes when actually switching between different files
@@ -1087,8 +1147,15 @@ export default {
     
     // Console control methods
     handleConsoleUpArrow() {
-      if (this.consoleMode === 'collapsed' || this.consoleMode === 'normal') {
-        this.consolePreviousMode = this.consoleMode;
+      if (this.consoleMode === 'collapsed') {
+        // From collapsed, go to normal (30%)
+        this.consoleMode = 'normal';
+        this.consoleExpanded = true;
+        this.consoleMaximized = false;
+        this.updateEditorHeight();
+      } else if (this.consoleMode === 'normal') {
+        // From normal, go to maximized
+        this.consolePreviousMode = 'normal';
         this.consoleMode = 'maximized';
         this.consoleMaximized = true;
         this.consoleExpanded = true;
@@ -1097,13 +1164,13 @@ export default {
     },
     
     handleConsoleDownArrow() {
-      if (this.consoleMode === 'normal') {
+      // From either normal or maximized, go to collapsed
+      if (this.consoleMode === 'normal' || this.consoleMode === 'maximized') {
         this.consoleMode = 'collapsed';
         this.consoleExpanded = false;
         this.consoleMaximized = false;
         this.updateEditorHeight();
       }
-      // Do nothing if maximized or already collapsed
     },
     
     handleConsoleRestore() {
@@ -1274,9 +1341,17 @@ export default {
       }
     },
     
-    addPreviewTab(type, title, content, filePath) {
+    addPreviewTab(type, title, content, filePath, projectName) {
+      console.log('[addPreviewTab] Adding tab:', {
+        type: type,
+        title: title,
+        filePath: filePath,
+        projectName: projectName,
+        hasContent: !!content
+      });
+      
       // Check if tab already exists for this file
-      const existingTab = this.previewTabs.find(tab => tab.filePath === filePath);
+      const existingTab = this.previewTabs.find(tab => tab.filePath === filePath && tab.projectName === projectName);
       
       if (existingTab) {
         // Tab already exists, just switch to it
@@ -1285,15 +1360,15 @@ export default {
         // Update content if it has changed
         if (existingTab.content !== content) {
           // Clean up old blob URL if it exists
-          if (existingTab.type === 'pdf' && existingTab.content.startsWith('blob:')) {
+          if (existingTab.type === 'pdf' && existingTab.content && existingTab.content.startsWith('blob:')) {
             URL.revokeObjectURL(existingTab.content);
           }
           existingTab.content = content;
         }
       } else {
-        // Create new tab
+        // Create new tab with projectName
         const id = `${type}-${++this.previewTabCounter}`;
-        this.previewTabs.push({ id, type, title, content, filePath });
+        this.previewTabs.push({ id, type, title, content, filePath, projectName });
         this.selectedPreviewTab = id;
       }
       
@@ -1620,7 +1695,7 @@ export default {
           if (dict.code == 0) {
             self.$store.commit('ide/handleProject', dict.data);
             for (var i = 0; i < self.ideInfo.currProj.config.openList.length; i++) {
-              self.getFile(self.ideInfo.currProj.config.openList[i], false);
+              self.getFile(self.ideInfo.currProj.config.openList[i], false, self.ideInfo.currProj.data.name);
             }
           }
         }
@@ -1628,6 +1703,13 @@ export default {
     },
     getFile(path, save, projectName, openInPanel = false) {
       const self = this;
+      
+      console.log('[getFile] Called with:', {
+        path: path,
+        save: save,
+        projectName: projectName,
+        openInPanel: openInPanel
+      });
       
       // Determine the project name - from parameter, current selection, or current project
       const actualProjectName = projectName || 
@@ -1650,88 +1732,26 @@ export default {
       
       // Otherwise, handle normally (open in panel if preview file and openInPanel is true)
       if (isMediaFile) {
-        // For media files, fetch binary content and display in preview panel
+        // For media files, add tab without preloading content
+        // MediaViewer component will handle loading with retry logic
         const fileName = path.split('/').pop();
         const fileExt = path.toLowerCase().split('.').pop();
+        const previewType = fileExt === 'pdf' ? 'pdf' : 'image';
         
-        // Use the same approach as the working MediaViewer component
-        this.$store.dispatch(`ide/${types.IDE_GET_FILE}`, {
-          projectName: actualProjectName,
-          filePath: path,
-          binary: true,
-          callback: (response) => {
-            console.log('Media file response:', {
-              code: response.code,
-              hasData: !!response.data,
-              dataContent: response.data?.content ? 'present' : 'missing',
-              contentLength: response.data?.content ? response.data.content.length : 0
-            });
-            
-            if (response.code === 0 && response.data) {
-              // Handle binary data - following MediaViewer's approach
-              let base64Content = response.data.content || response.data;
-              
-              // Check if we have content
-              if (base64Content && base64Content.length > 0) {
-                let previewContent;
-                let previewType;
-                
-                // Get MIME type
-                const mimeTypes = {
-                  'png': 'image/png',
-                  'jpg': 'image/jpeg',
-                  'jpeg': 'image/jpeg',
-                  'gif': 'image/gif',
-                  'bmp': 'image/bmp',
-                  'svg': 'image/svg+xml',
-                  'webp': 'image/webp',
-                  'pdf': 'application/pdf'
-                };
-                const mimeType = mimeTypes[fileExt] || 'application/octet-stream';
-                
-                // Create data URL for image
-                if (fileExt === 'pdf') {
-                  // For PDF, create blob URL
-                  const binaryString = atob(base64Content);
-                  const bytes = new Uint8Array(binaryString.length);
-                  for (let i = 0; i < binaryString.length; i++) {
-                    bytes[i] = binaryString.charCodeAt(i);
-                  }
-                  const blob = new Blob([bytes], { type: mimeType });
-                  previewContent = URL.createObjectURL(blob);
-                  previewType = 'pdf';
-                } else {
-                  // For images, create data URL
-                  previewContent = `data:${mimeType};base64,${base64Content}`;
-                  previewType = 'image';
-                }
-                
-                // Add to preview tabs
-                self.addPreviewTab(previewType, fileName, previewContent, path);
-                
-                // Still update the file tree selection
-                if (save !== false) {
-                  self.$store.dispatch(`ide/${types.IDE_SAVE_PROJECT}`, {});
-                }
-              } else {
-                // No content received
-                console.error('No content in response data');
-                ElMessage({
-                  type: 'error',
-                  message: `Failed to load ${fileName}: No content received`,
-                  duration: 3000
-                });
-              }
-            } else {
-              console.error('Failed to get media file:', path, response);
-              ElMessage({
-                type: 'error',
-                message: `Failed to load ${fileName}`,
-                duration: 3000
-              });
-            }
-          }
+        console.log('[getFile] Adding media file tab:', {
+          originalPath: path,
+          fileName: fileName,
+          fileExt: fileExt,
+          actualProjectName: actualProjectName
         });
+        
+        // Add to preview tabs without content - MediaViewer will load it
+        self.addPreviewTab(previewType, fileName, null, path, actualProjectName);
+        
+        // Still update the file tree selection
+        if (save !== false) {
+          self.$store.dispatch(`ide/${types.IDE_SAVE_PROJECT}`, {});
+        }
       } else if (isDataFile) {
         // For CSV files, fetch content and display in preview panel
         const fileName = path.split('/').pop();
@@ -1743,7 +1763,7 @@ export default {
             if (response.code === 0 && response.data) {
               // Parse CSV content and add to preview tabs
               const csvContent = response.data.content || response.data;
-              self.addPreviewTab('data', fileName, csvContent, path);
+              self.addPreviewTab('data', fileName, csvContent, path, actualProjectName);
               
               // Update file tree selection
               if (save !== false) {
@@ -1787,10 +1807,55 @@ export default {
         });
       }
     },
-    getFileForRightPanel(path) {
+    getFileForRightPanel(path, projectName) {
       // Open preview files specifically in the right panel
       // This is called from context menu "Open in Right Panel" option
-      this.getFile(path, false, null, true); // openInPanel = true
+      this.getFile(path, false, projectName, true); // openInPanel = true
+    },
+    
+    getMediaCodeItem(tab) {
+      // Create a codeItem object that MediaViewer expects
+      // Use the tab's projectName if available, otherwise fall back to current project
+      const projectName = tab.projectName || 
+                          this.ideInfo.currProj?.data?.name ||
+                          this.ideInfo.currProj?.config?.name;
+      
+      console.log('[getMediaCodeItem] Creating media code item:', {
+        tabTitle: tab.title,
+        tabFilePath: tab.filePath,
+        tabProjectName: tab.projectName,
+        actualProjectName: projectName,
+        hasContent: !!tab.content,
+        contentType: tab.content ? (tab.content.startsWith('data:') ? 'data-url' : tab.content.startsWith('blob:') ? 'blob-url' : 'other') : 'none'
+      });
+      
+      // If content is already loaded (from fullscreen), mark as preloaded
+      if (tab.content && tab.content.startsWith('data:')) {
+        return {
+          name: tab.title,
+          path: tab.filePath,
+          projectName: projectName,
+          content: tab.content,
+          preloaded: true
+        };
+      } else if (tab.content && tab.content.startsWith('blob:')) {
+        // For PDF blob URLs
+        return {
+          name: tab.title,
+          path: tab.filePath,
+          projectName: projectName,
+          content: tab.content,
+          preloaded: true
+        };
+      }
+      
+      // Otherwise, let MediaViewer load it
+      return {
+        name: tab.title,
+        path: tab.filePath,
+        projectName: projectName,
+        preloaded: false
+      };
     },
     
     openFullscreenPreview(path, projectName) {
@@ -1960,6 +2025,147 @@ export default {
       
       console.log('[handleDownloadItem] Downloading:', fileInfo);
       this.downloadFile(fileInfo);
+    },
+    openFileBrowser() {
+      this.fileBrowserMode = 'open';
+      this.fileToMove = null;
+      this.showFileBrowserDialog = true;
+    },
+    handleOpenFile(filePath) {
+      // Open the selected file from the file browser
+      this.getFile(filePath);
+      this.showFileBrowserDialog = false;
+    },
+    duplicateFile(data) {
+      const { originalPath, newName, projectName } = data;
+      const self = this;
+      
+      // Get the parent directory
+      const lastSlash = originalPath.lastIndexOf('/');
+      const parentPath = lastSlash > 0 ? originalPath.substring(0, lastSlash) : '/';
+      const newPath = parentPath + '/' + newName;
+      
+      // First, get the original file content
+      this.$store.dispatch(`ide/${types.IDE_GET_FILE}`, {
+        projectName: projectName,
+        filePath: originalPath,
+        callback: (dict) => {
+          if (dict.code == 0) {
+            const content = dict.data.content || dict.data;
+            
+            // Create the duplicate file
+            self.$store.dispatch(`ide/${types.IDE_CREATE_FILE}`, {
+              projectName: projectName,
+              filePath: newPath,
+              content: content,
+              callback: (createDict) => {
+                if (createDict.code == 0) {
+                  ElMessage.success(`File duplicated as ${newName}`);
+                  self.refreshProjectTree();
+                } else {
+                  ElMessage.error('Failed to duplicate file');
+                }
+              }
+            });
+          } else {
+            ElMessage.error('Failed to read original file');
+          }
+        }
+      });
+    },
+    saveAsFile(fileInfo) {
+      // Save As - triggers browser download with ability to rename
+      if (!fileInfo || !fileInfo.fileName) {
+        ElMessage.error('No file selected to save');
+        return;
+      }
+      
+      // Get current file content from editor
+      const codeItem = this.ideInfo.codeItems.find(item => 
+        item.filePath === fileInfo.filePath && 
+        (item.projectName === fileInfo.projectName || (!item.projectName && !fileInfo.projectName))
+      );
+      
+      if (!codeItem) {
+        ElMessage.error('File not found in editor');
+        return;
+      }
+      
+      // Create a blob and trigger download
+      const blob = new Blob([codeItem.content], { type: 'text/plain' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileInfo.fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      ElMessage.success('File downloaded successfully');
+    },
+    openMoveDialog(fileData) {
+      this.fileBrowserMode = 'move';
+      this.fileToMove = fileData;
+      this.showFileBrowserDialog = true;
+    },
+    handleMoveFile(data) {
+      const { oldPath, newPath, projectName } = data;
+      const self = this;
+      
+      // First get the file content
+      this.$store.dispatch(`ide/${types.IDE_GET_FILE}`, {
+        projectName: projectName,
+        filePath: oldPath,
+        callback: (dict) => {
+          if (dict.code == 0) {
+            const content = dict.data.content || dict.data;
+            
+            // Create file at new location
+            self.$store.dispatch(`ide/${types.IDE_CREATE_FILE}`, {
+              projectName: projectName,
+              filePath: newPath,
+              content: content,
+              callback: (createDict) => {
+                if (createDict.code == 0) {
+                  // Delete the original file
+                  self.$store.dispatch(`ide/${types.IDE_DEL_FILE}`, {
+                    projectName: projectName,
+                    filePath: oldPath,
+                    callback: (delDict) => {
+                      if (delDict.code == 0) {
+                        ElMessage.success('File moved successfully');
+                        self.refreshProjectTree();
+                        
+                        // If the moved file was open, update its path
+                        const openFile = self.ideInfo.codeItems.find(item => 
+                          item.filePath === oldPath && item.projectName === projectName
+                        );
+                        if (openFile) {
+                          openFile.filePath = newPath;
+                          openFile.fileName = newPath.substring(newPath.lastIndexOf('/') + 1);
+                        }
+                      } else {
+                        ElMessage.error('Failed to delete original file after move');
+                      }
+                    }
+                  });
+                } else {
+                  ElMessage.error('Failed to create file at new location');
+                }
+              }
+            });
+          } else {
+            ElMessage.error('Failed to read file for moving');
+          }
+        }
+      });
+      
+      this.showFileBrowserDialog = false;
+    },
+    deleteFileFromMenu(data) {
+      // Delete file from File menu
+      this.handleDeleteItem(data);
     },
     setDelDialog(data) {
       this.dialogType = '';
@@ -2411,12 +2617,76 @@ export default {
       }
     },
     selectFile(item) {
+      // Check if we're switching from a different file
+      const previousFile = this.ideInfo.codeSelected;
+      const isFileSwitch = previousFile && previousFile.path !== item.path;
+      
+      // If switching files and previous file is a Python file
+      if (isFileSwitch && previousFile.path && previousFile.path.endsWith('.py')) {
+        // Find the console for the previous file
+        const prevFileConsole = this.ideInfo.consoleItems.find(
+          consoleItem => consoleItem.path === previousFile.path
+        );
+        
+        // Stop the program if it's running (but not REPL)
+        if (prevFileConsole && prevFileConsole.run && !this.isReplMode) {
+          this.stop(prevFileConsole.id);
+          
+          // Clear any input prompts
+          if (prevFileConsole.waitingForInput) {
+            this.$store.commit('ide/updateConsoleItem', {
+              id: prevFileConsole.id,
+              waitingForInput: false,
+              inputPrompt: ''
+            });
+          }
+        }
+        
+        // Save the console state for the previous file (preserves output)
+        this.saveFileConsoleState(previousFile.path);
+      }
+      
       // Update store first to ensure tab switches properly
       this.$store.commit('ide/setPathSelected', item.path);
       this.$store.commit('ide/setCodeSelected', item);
       
       // Then set the active file path for console management
       this.activeFilePath = item.path;
+      
+      // If switching to a Python file, reset console to collapsed but load its content
+      if (isFileSwitch && item.path && item.path.endsWith('.py')) {
+        // Find or create console for this file
+        let fileConsole = this.ideInfo.consoleItems.find(
+          consoleItem => consoleItem.path === item.path
+        );
+        
+        if (!fileConsole) {
+          // Create a new console for this file if it doesn't exist
+          fileConsole = {
+            id: this.$store.state.ide.consoleId,
+            name: item.name,
+            path: item.path,
+            resultList: [],
+            run: false,
+            stop: false,
+            waitingForInput: false,
+            inputPrompt: ''
+          };
+          this.$store.commit('ide/pushConsoleItem', fileConsole);
+        }
+        
+        // Select this file's console (preserves its output)
+        this.$store.commit('ide/setConsoleSelected', fileConsole);
+        
+        // Always reset to collapsed state when switching files
+        this.consoleMode = 'collapsed';
+        this.consoleExpanded = false;
+        this.consoleMaximized = false;
+        
+        this.$nextTick(() => {
+          this.updateEditorHeight();
+        });
+      }
       
       // Update tree selection if needed
       if (this.ideInfo.currProj.pathSelected && this.ideInfo.treeRef) {
@@ -2551,8 +2821,11 @@ export default {
       return 400;
     },
     resize() {
-      // No longer needed - editors now use flexbox and fill available space automatically
-      // Layout is handled by CSS flexbox instead of calculated heights
+      // Update window width for responsive behavior
+      this.windowWidth = window.innerWidth;
+      
+      // Force Vue to update computed properties
+      this.$forceUpdate();
     },
     runPathSelected() {
       // Ensure console is expanded when running
@@ -3818,28 +4091,12 @@ Advanced packages (install with micropip):
   word-wrap: break-word;
 }
 
-.image-preview-panel {
+.media-preview-panel {
   height: 100%;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
+  flex-direction: column;
+  overflow: hidden;
   background: var(--bg-pattern, #1A1A1A);
-}
-
-.image-preview-panel img {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-}
-
-.pdf-preview-panel {
-  height: 100%;
-}
-
-.pdf-preview-panel iframe {
-  width: 100%;
-  height: 100%;
 }
 
 .data-preview-panel {
@@ -4430,11 +4687,63 @@ body {
   }
 }
 
+/* Tablet view */
+@media (max-width: 1024px) {
+  .left-sidebar {
+    max-width: 180px;
+  }
+  
+  .right-sidebar {
+    max-width: 300px;
+  }
+}
+
+/* Mobile and small tablet view */
 @media (max-width: 900px) {
   /* Hide sidebars on small screens */
   .left-sidebar {
     width: 0 !important;
     display: none;
+  }
+  
+  /* Force splitpanes to single pane layout */
+  .main-splitpanes.splitpanes--vertical {
+    display: flex !important;
+  }
+  
+  /* Hide the splitpane container for left sidebar - more specific selectors */
+  .main-splitpanes.splitpanes--vertical > .splitpanes__pane:first-child {
+    display: none !important;
+    width: 0 !important;
+    max-width: 0 !important;
+    min-width: 0 !important;
+    flex: 0 0 0 !important;
+    overflow: hidden !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    background: transparent !important;
+  }
+  
+  /* Hide ALL splitter handles */
+  .main-splitpanes.splitpanes--vertical > .splitpanes__splitter {
+    display: none !important;
+    width: 0 !important;
+  }
+  
+  /* Make center pane take full width - more specific */
+  .main-splitpanes.splitpanes--vertical > .splitpanes__pane:nth-child(2),
+  .main-splitpanes.splitpanes--vertical > .splitpanes__pane:nth-child(3) {
+    width: 100% !important;
+    max-width: 100% !important;
+    flex: 1 1 100% !important;
+  }
+  
+  /* Specifically target the center frame to ensure full width */
+  #center-frame {
+    width: 100% !important;
+    left: 0 !important;
+    right: 0 !important;
   }
   
   .sidebar-resizer.left {
@@ -4444,14 +4753,58 @@ body {
   .center-frame {
     left: 0 !important;
     right: 0 !important;
+    width: 100% !important;
   }
   
   .right-sidebar {
-    display: none;
+    display: none !important;
+  }
+  
+  /* Hide the splitpane container for right sidebar - more specific */
+  .main-splitpanes.splitpanes--vertical > .splitpanes__pane:last-child {
+    display: none !important;
+    width: 0 !important;
+    max-width: 0 !important;
+    min-width: 0 !important;
+    flex: 0 0 0 !important;
+    overflow: hidden !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    background: transparent !important;
   }
   
   .sidebar-resizer.right {
     display: none;
+  }
+  
+  /* Adjust console for mobile */
+  .console-header {
+    height: 40px;
+  }
+  
+  .console-title {
+    font-size: 14px;
+  }
+}
+
+/* Very small mobile screens */
+@media (max-width: 480px) {
+  .top-menu {
+    padding: 8px;
+  }
+  
+  .console-header {
+    height: 36px;
+  }
+  
+  .console-action-btn {
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+  
+  .editor-tab-bar {
+    font-size: 12px;
   }
 }
 
@@ -4591,6 +4944,20 @@ body {
   justify-content: center;
 }
 
+/* Disable right splitter when right panel is empty */
+.main-splitpanes.splitpanes--vertical > .splitpanes__splitter:last-of-type {
+  pointer-events: none;
+  cursor: default;
+  opacity: 0.3;
+}
+
+/* Enable right splitter only when right panel has content */
+.main-splitpanes.splitpanes--vertical.has-right-content > .splitpanes__splitter:last-of-type {
+  pointer-events: auto;
+  cursor: col-resize;
+  opacity: 1;
+}
+
 .main-splitpanes.splitpanes--vertical > .splitpanes__splitter:hover {
   background-color: var(--accent-color, #007ACC);
 }
@@ -4681,17 +5048,13 @@ body {
   background: var(--bg-primary, #ffffff);
 }
 
-[data-theme="light"] .image-preview-panel {
+[data-theme="light"] .media-preview-panel {
   background: var(--bg-pattern, #f8f8f8);
 }
 
 [data-theme="light"] .output-panel {
   background: var(--bg-primary, #ffffff);
   color: var(--text-primary, #333333);
-}
-
-[data-theme="light"] .pdf-preview-panel {
-  background: var(--bg-primary, #ffffff);
 }
 
 /* High Contrast Theme */
@@ -4741,17 +5104,13 @@ body {
   background: var(--bg-primary, #000000);
 }
 
-[data-theme="high-contrast"] .image-preview-panel {
+[data-theme="high-contrast"] .media-preview-panel {
   background: var(--bg-pattern, #0f0f0f);
 }
 
 [data-theme="high-contrast"] .output-panel {
   background: var(--bg-primary, #000000);
   color: var(--text-primary, #ffffff);
-}
-
-[data-theme="high-contrast"] .pdf-preview-panel {
-  background: var(--bg-primary, #000000);
 }
 
 /* Fix layout */

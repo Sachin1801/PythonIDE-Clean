@@ -36,6 +36,7 @@
       </div>
       <div class="image-wrapper" @wheel="handleWheel">
         <img 
+          v-if="fileUrl"
           :src="fileUrl" 
           :alt="fileName"
           :style="{ transform: `scale(${zoomLevel})` }"
@@ -54,6 +55,7 @@
       </div>
       <div class="pdf-wrapper">
         <iframe 
+          v-if="pdfViewerUrl"
           :src="pdfViewerUrl" 
           class="pdf-iframe"
           frameborder="0"
@@ -155,7 +157,7 @@ export default {
       
       // Get file content from backend
       const projectName = this.codeItem?.projectName || this.ideInfo.currProj?.data?.name;
-      const filePath = this.codeItem?.path;
+      let filePath = this.codeItem?.path;
       
       if (!projectName || !filePath) {
         this.loading = false;
@@ -163,13 +165,32 @@ export default {
         return;
       }
       
+      // The backend's convert_path function removes leading slashes
+      // But we need to ensure we have the correct full path
+      
+      // First, try to use the selected node's path if available and matching
+      const nodeSelected = this.ideInfo.nodeSelected;
+      if (nodeSelected && nodeSelected.path && nodeSelected.name === this.fileName) {
+        // Use the node's path as it's more reliable
+        filePath = nodeSelected.path;
+        console.log('Using nodeSelected path:', filePath);
+      }
+      
+      // Remove leading slash as backend strips it
+      if (filePath && filePath.startsWith('/')) {
+        filePath = filePath.substring(1);
+      }
+      
       console.log('Loading media file:', { 
         projectName, 
         filePath, 
+        originalPath: this.codeItem?.path,
+        nodeSelectedPath: nodeSelected?.path,
+        nodeSelectedName: nodeSelected?.name,
+        fileName: this.fileName,
         binary: true,
         retryCount,
-        codeItem: this.codeItem,
-        ideInfo: this.ideInfo
+        codeItem: this.codeItem
       });
       
       // Add a longer initial delay for images to ensure file is fully written
@@ -264,10 +285,14 @@ export default {
       link.click();
     },
     handleError() {
-      this.error = true;
-      this.loading = false;
-      console.error('MediaViewer error:', { fileName: this.fileName, filePath: this.codeItem?.path });
-      ElMessage.error(`Failed to load file: ${this.fileName}`);
+      // Only show error if we actually have a URL that failed to load
+      // Ignore errors from empty/initial src values
+      if (this.fileUrl && this.fileUrl.length > 0) {
+        this.error = true;
+        this.loading = false;
+        console.error('MediaViewer error:', { fileName: this.fileName, filePath: this.codeItem?.path, fileUrl: this.fileUrl });
+        ElMessage.error(`Failed to load file: ${this.fileName}`);
+      }
     }
   }
 };

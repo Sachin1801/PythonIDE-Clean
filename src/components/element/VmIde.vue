@@ -34,8 +34,8 @@
       <!-- Main Horizontal Splitpanes for Left/Center/Right -->
       <splitpanes :class="['default-theme', 'main-splitpanes', { 'has-right-content': previewTabs.length > 0 }]">
         <!-- Left Sidebar Pane - Always present in DOM -->
-        <pane :size="leftSidebarSize" :min-size="0.1" :max-size="40">
-          <div id="left-sidebar" class="left-sidebar" v-show="leftSidebarVisible">
+        <pane :size="leftSidebarSize" :min-size="leftSidebarMinSize" :max-size="leftSidebarMaxSize">
+          <div id="left-sidebar" class="left-sidebar" v-show="leftSidebarVisible && windowWidth > 900">
             <ProjTree 
               v-on:get-item="getFile"
               @get-item-right-panel="getFileForRightPanel"
@@ -208,7 +208,7 @@
         </pane>
         
                  <!-- Right Sidebar Pane - Always present in DOM -->
-         <pane :size="rightSidebarSize" :min-size="0.1" :max-size="50" :push-other-panes="false">
+         <pane :size="rightSidebarSize" :min-size="rightSidebarMinSize" :max-size="rightSidebarMaxSize" :push-other-panes="false">
            <div id="right-sidebar" class="right-sidebar">
             <!-- Hidden placeholder when sidebar is not visible -->
             <div v-show="!rightSidebarVisible || previewTabs.length === 0" class="right-sidebar-placeholder">
@@ -619,6 +619,14 @@ export default {
       // Use 0.1 instead of 0 to avoid null reference errors in splitpanes
       return this.leftSidebarVisible ? 20 : 0.1;
     },
+    leftSidebarMinSize() {
+      // On mobile, set min size to 0 to allow complete hiding
+      return this.windowWidth <= 900 ? 0 : 0.1;
+    },
+    leftSidebarMaxSize() {
+      // On mobile, set max size to 0 to prevent any expansion
+      return this.windowWidth <= 900 ? 0 : 40;
+    },
     rightSidebarSize() {
       // Check if we're on a small screen
       if (this.windowWidth <= 900) {
@@ -641,6 +649,14 @@ export default {
       }
       // Normal state - 30%
       return 30;
+    },
+    rightSidebarMinSize() {
+      // On mobile, set min size to 0 to allow complete hiding
+      return this.windowWidth <= 900 ? 0 : 0.1;
+    },
+    rightSidebarMaxSize() {
+      // On mobile, set max size to 0 to prevent any expansion
+      return this.windowWidth <= 900 ? 0 : 50;
     },
     centerSize() {
       // On small screens, center takes full width
@@ -4711,9 +4727,15 @@ body {
     display: flex !important;
   }
   
+  /* Force all panes to have dark background to prevent white gaps */
+  .splitpanes__pane {
+    background: var(--bg-primary, #1E1E1E) !important;
+  }
+  
   /* Hide the splitpane container for left sidebar - more specific selectors */
   .main-splitpanes.splitpanes--vertical > .splitpanes__pane:first-child {
     display: none !important;
+    visibility: hidden !important;
     width: 0 !important;
     max-width: 0 !important;
     min-width: 0 !important;
@@ -4722,7 +4744,8 @@ body {
     padding: 0 !important;
     margin: 0 !important;
     border: none !important;
-    background: transparent !important;
+    position: absolute !important;
+    left: -9999px !important;
   }
   
   /* Hide ALL splitter handles */
@@ -4763,6 +4786,7 @@ body {
   /* Hide the splitpane container for right sidebar - more specific */
   .main-splitpanes.splitpanes--vertical > .splitpanes__pane:last-child {
     display: none !important;
+    visibility: hidden !important;
     width: 0 !important;
     max-width: 0 !important;
     min-width: 0 !important;
@@ -4771,7 +4795,8 @@ body {
     padding: 0 !important;
     margin: 0 !important;
     border: none !important;
-    background: transparent !important;
+    position: absolute !important;
+    right: -9999px !important;
   }
   
   .sidebar-resizer.right {
@@ -4932,6 +4957,16 @@ body {
   background-color: var(--border-primary, #3c3c3c);
   position: relative;
   z-index: 20;
+}
+
+/* Fix white background on all splitpanes panes */
+.splitpanes__pane {
+  background: transparent !important;
+}
+
+/* Ensure main splitpanes have proper background */
+.main-splitpanes > .splitpanes__pane {
+  background: var(--bg-primary, #1E1E1E) !important;
 }
 
 /* Style vertical splitters (between sidebars and center) */

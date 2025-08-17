@@ -7,7 +7,9 @@ from tornado import web
 from tornado import httpserver
 from command.processor import RequestProcessor, ResponseProcessor
 from handlers.ws_handler import WebSocketHandler
+from handlers.authenticated_ws_handler import AuthenticatedWebSocketHandler
 from handlers.vue_handler import VueHandler
+from handlers.auth_handler import LoginHandler, LogoutHandler, ValidateSessionHandler, ChangePasswordHandler
 
 
 def main():
@@ -24,7 +26,12 @@ def main():
         'static_path': static_path,
     }
     handlers = [
-        (r'/ws', WebSocketHandler),
+        (r'/ws', AuthenticatedWebSocketHandler),  # Authenticated WebSocket
+        (r'/ws-legacy', WebSocketHandler),        # Keep old handler for migration
+        (r'/api/login', LoginHandler),
+        (r'/api/logout', LogoutHandler),
+        (r'/api/validate-session', ValidateSessionHandler),
+        (r'/api/change-password', ChangePasswordHandler),
         (r'^.*$', VueHandler),
     ]
 

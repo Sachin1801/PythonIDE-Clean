@@ -377,9 +377,20 @@ print("="*50)
     async def run_python_program(self, client, cmd_id, data):
         # Config.PYTHON
         prj_name = data.get('projectName')
+        file_path_input = data.get('filePath', '')
+        
+        # Handle case where filePath already includes the project name
+        if file_path_input.startswith(prj_name + '/'):
+            # Remove the duplicate project name from the path
+            file_path_input = file_path_input[len(prj_name)+1:]
+        
         prj_path = os.path.join(Config.PROJECTS, 'ide', prj_name)
-        file_path = os.path.join(prj_path, convert_path(data.get('filePath')))
-        # print(file_path)
+        file_path = os.path.join(prj_path, convert_path(file_path_input))
+        
+        print(f"[BACKEND-DEBUG] run_python_program: projectName={prj_name}, filePath={file_path_input}")
+        print(f"[BACKEND-DEBUG] Full path constructed: {file_path}")
+        print(f"[BACKEND-DEBUG] File exists: {os.path.exists(file_path)}, Is file: {os.path.isfile(file_path) if os.path.exists(file_path) else 'N/A'}")
+        
         if os.path.exists(file_path) and os.path.isfile(file_path) and file_path.endswith('.py'):
             cmd = [Config.PYTHON, '-u', file_path]
             # Use the working implementation with byte-by-byte reading

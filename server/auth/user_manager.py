@@ -3,31 +3,30 @@ import bcrypt
 import secrets
 from datetime import datetime, timedelta
 import os
+import sys
+
+# Add parent directory to path to import database module
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from common.database import db_manager
 
 class UserManager:
     def __init__(self, db_path='server/ide.db'):
-        # Adjust path based on where we're running from
-        if os.path.exists('ide.db'):
-            db_path = 'ide.db'
-        elif os.path.exists('server/ide.db'):
-            db_path = 'server/ide.db'
-        
-        self.db_path = db_path
-        # Use check_same_thread=False for multi-threaded access
-        self.get_connection()
+        # Use the global database manager which handles PostgreSQL/SQLite
+        self.db = db_manager
     
     def get_connection(self):
-        conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        return conn
+        # Return a connection from the database manager
+        return self.db.get_connection()
     
     def create_user(self, username, email, password, full_name, role='student'):
         """Create new user with hashed password"""
         password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
         
         try:
-            conn = self.get_connection()
-            conn.execute('''
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                if self.db.is_postgres:
+                    cursor.execute('''
                 INSERT INTO users (username, email, password_hash, full_name, role)
                 VALUES (?, ?, ?, ?, ?)
             ''', (username, email, password_hash.decode(), full_name, role))

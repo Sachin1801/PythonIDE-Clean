@@ -1,7 +1,7 @@
 <template>
   <div class="proj-tree-container">
     <div class="tree-header">
-      <span class="tree-title">Project Files</span>
+      <span class="tree-title">File Management</span>
       <div class="tree-header-actions">
         <button class="action-btn new-file-btn" @click="handleNewFile" title="New File">
           <FilePlus :size="16" />
@@ -484,10 +484,13 @@ export default {
       }
       
       // Also process existing expanded keys
-      if (this.expandedKeys !== undefined) {
+      if (this.expandedKeys !== undefined && Array.isArray(this.expandedKeys)) {
         for (let i = 0; i < this.expandedKeys.length; i++) {
+          // Skip null or undefined values
+          if (!this.expandedKeys[i]) continue;
+          
           let prefix = '';
-          const tmp = this.expandedKeys[i].split('/');
+          const tmp = String(this.expandedKeys[i]).split('/');
           let flag = true;
           for (let j = 0; j < tmp.length; j++) {
             if (tmp[j]) {

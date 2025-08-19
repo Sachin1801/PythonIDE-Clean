@@ -3,11 +3,14 @@ import ReconnectingWebSocket from 'reconnecting-websocket';
 const wsInfoMap = {
   default: {
     location: {
-      protocol: process.env.VUE_APP_WS_URL ? (process.env.VUE_APP_WS_URL.startsWith('wss') ? 'wss:' : 'ws:') : 'ws:',
-      host: process.env.VUE_APP_WS_URL ? process.env.VUE_APP_WS_URL.replace(/^wss?:\/\//, '') : window.location.hostname,
-      port: process.env.VUE_APP_WS_PORT || '10086',
-      pathname: process.env.VUE_APP_WS_PATH || '/ws',
-      search: '?v=1', // Request parameters
+      // Use the current page's protocol and host for WebSocket connection
+      // This ensures it works both locally and when deployed
+      protocol: window.location.protocol === 'https:' ? 'wss:' : 'ws:',
+      host: window.location.hostname,
+      port: window.location.port || (window.location.protocol === 'https:' ? '443' : '80'),
+      // For local development, use the proxy path; for production use /ws directly
+      pathname: window.location.hostname === 'localhost' ? '/ide-ws' : '/ws',
+      search: '', // Remove query params to avoid confusion
     },
     protocols: [],
     options: {
@@ -25,6 +28,7 @@ const wsInfoMap = {
     logger: console,
     rws: null, // WebSocket instance
     connected: false, // Connection status
+    authenticated: false, // Authentication status
     msgId: 1, // Message ID for sending, incremental
     jsonMsgCallbacks: {}, // Callbacks for received messages
     jsonMsgHandlers: [], // Message handler function list, function parameters are data processed by JSON.parse(event.data)
@@ -71,6 +75,11 @@ const mutations = {
     const wsInfo = state.wsInfoMap[wsKey || 'default'];
     if (!wsInfo) return -1;
     wsInfo.connected = connected;
+  },
+  setAuthenticated(state, { wsKey, authenticated }) {
+    const wsInfo = state.wsInfoMap[wsKey || 'default'];
+    if (!wsInfo) return -1;
+    wsInfo.authenticated = authenticated;
   },
   setMsgId(state, { wsKey, msgId }) {
     const wsInfo = state.wsInfoMap[wsKey || 'default'];
@@ -284,7 +293,13 @@ const actions = {
     if (!wsInfo) return -1;
     context.commit('setLocation', { wsKey: wsKey, location: location });
     context.commit('setOptions', { wsKey: wsKey, options: options });
-    const url = `${wsInfo.location.protocol}//${wsInfo.location.host}${wsInfo.location.port ? ':' + wsInfo.location.port : ''}${wsInfo.location.pathname}${wsInfo.location.search}`;
+    // Build WebSocket URL - don't include port if it's standard (80/443)
+    let url;
+    if (wsInfo.location.port && wsInfo.location.port !== '80' && wsInfo.location.port !== '443' && wsInfo.location.port !== '') {
+      url = `${wsInfo.location.protocol}//${wsInfo.location.host}:${wsInfo.location.port}${wsInfo.location.pathname}${wsInfo.location.search}`;
+    } else {
+      url = `${wsInfo.location.protocol}//${wsInfo.location.host}${wsInfo.location.pathname}${wsInfo.location.search}`;
+    }
     console.log('🔌 [WebSocket] Attempting connection to:', url);
     console.log('🔌 [WebSocket] Location config:', wsInfo.location);
     wsInfo.logger.log(`Websocket init: ${url}`);
@@ -298,6 +313,19 @@ const actions = {
       context.commit('setConnected', { wsKey: wsKey, connected: true });
       if (wsInfo.options.debug) {
         wsInfo.logger.log(`Websocket onopen event`);
+      }
+      
+      // Send authentication if session exists
+      const sessionId = localStorage.getItem('session_id');
+      if (sessionId) {
+        const authMsg = {
+          cmd: 'authenticate',
+          session_id: sessionId
+        };
+        rws.send(JSON.stringify(authMsg));
+        wsInfo.logger.log('Sent authentication with session:', sessionId.substring(0, 20) + '...');
+      } else {
+        wsInfo.logger.log('No session found, WebSocket connected without authentication');
       }
     };
     rws.onclose = function (evt) {
@@ -317,6 +345,40 @@ const actions = {
         wsInfo.logger.log(`Websocket onmessage: ${evt.data}`);
       }
       const dict = JSON.parse(evt.data) || {};
+      
+      // Handle authentication response
+      if (dict.type === 'auth_required') {
+        wsInfo.logger.log('Authentication required by server');
+        // Don't process other messages until authenticated
+        return;
+      } else if (dict.type === 'auth_success') {
+        wsInfo.logger.log('Authentication successful:', dict.username);
+        // Use mutation to set authenticated state
+        context.commit('setAuthenticated', { wsKey: wsKey, authenticated: true });
+        
+        // Load the user's initial project structure
+        const username = dict.username || localStorage.getItem('username');
+        const role = dict.role || localStorage.getItem('role');
+        
+        // For students, load their personal directory; for professors, load all
+        const projectName = role === 'student' ? `Local/${username}` : 'Local';
+        
+        // Request the project structure
+        const getProjectMsg = {
+          cmd: 'ide_get_project',
+          project: projectName
+        };
+        rws.send(JSON.stringify(getProjectMsg));
+        wsInfo.logger.log('Requested initial project:', projectName);
+        
+        // Now we can process queued commands
+      } else if (dict.type === 'error' && dict.message && dict.message.includes('Not authenticated')) {
+        wsInfo.logger.warn('Not authenticated, waiting for authentication...');
+        // Use mutation to set authenticated state
+        context.commit('setAuthenticated', { wsKey: wsKey, authenticated: false });
+        return;
+      }
+      
       // Message callback
       context.commit('callJsonMsgCallback', { wsKey: wsKey, dict: dict });
       // Message processing

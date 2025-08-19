@@ -12,12 +12,68 @@ from common.msg import req_put
 from .handler_info import HandlerInfo
 import sys
 import os
+from collections import defaultdict
+from time import time
 
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from auth.user_manager import UserManager
+from auth.user_manager_postgres import UserManager
 from command.secure_file_manager import SecureFileManager
+from command.file_sync import file_sync
+
+
+class RateLimiter:
+    """Rate limiting for user actions"""
+    
+    def __init__(self):
+        # Track different types of actions separately
+        self.executions = defaultdict(list)  # Code executions
+        self.file_ops = defaultdict(list)    # File operations
+        self.messages = defaultdict(list)    # General messages
+        
+    def check_execution_limit(self, username, limit=10, window=60):
+        """Check if user can execute code (10 per minute default)"""
+        return self._check_limit(self.executions, username, limit, window)
+    
+    def check_file_ops_limit(self, username, limit=100, window=60):
+        """Check if user can perform file operations (100 per minute default)"""
+        return self._check_limit(self.file_ops, username, limit, window)
+    
+    def check_message_limit(self, username, limit=300, window=60):
+        """Check general message rate limit (300 per minute default)"""
+        return self._check_limit(self.messages, username, limit, window)
+    
+    def _check_limit(self, tracker, username, limit, window):
+        """Generic rate limit check"""
+        now = time()
+        # Remove old entries outside the time window
+        tracker[username] = [
+            t for t in tracker[username] 
+            if now - t < window
+        ]
+        
+        # Check if limit exceeded
+        if len(tracker[username]) >= limit:
+            return False
+        
+        # Add current timestamp
+        tracker[username].append(now)
+        return True
+    
+    def get_wait_time(self, tracker, username, window=60):
+        """Get seconds until next action allowed"""
+        if not tracker[username]:
+            return 0
+        
+        now = time()
+        oldest = min(tracker[username])
+        wait = window - (now - oldest)
+        return max(0, wait)
+
+
+# Global rate limiter instance
+rate_limiter = RateLimiter()
 
 
 class AuthenticatedWebSocketHandler(websocket.WebSocketHandler):
@@ -107,13 +163,24 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler):
             password = data.get('password')
             
             if username and password:
-                result = self.user_manager.authenticate(username, password)
-                if result['success']:
+                result, error = self.user_manager.authenticate(username, password)
+                if result:
                     self.authenticated = True
                     self.username = result['username']
                     self.role = result['role']
-                    self.session_id = result['session_id']
+                    self.session_id = result['token']  # Store the token as session_id
                     self.full_name = result['full_name']
+                    
+                    # Sync user files with database
+                    try:
+                        file_count = file_sync.sync_user_files(result['user_id'], self.username)
+                        logger.info(f'Synced {file_count} files for {self.username}')
+                        
+                        # Create initial files if user directory is empty
+                        if file_count == 0:
+                            file_sync.create_initial_files(result['user_id'], self.username, self.role)
+                    except Exception as e:
+                        logger.error(f'Error syncing files for {self.username}: {e}')
                     
                     self.write_message(json.dumps({
                         'type': 'auth_success',
@@ -135,7 +202,18 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler):
             self.username = session['username']
             self.role = session['role']
             self.session_id = session_id
-            self.full_name = session['full_name']
+            self.full_name = session.get('full_name', session['username'])
+            
+            # Sync user files with database
+            try:
+                file_count = file_sync.sync_user_files(session['user_id'], self.username)
+                logger.info(f'Synced {file_count} files for {self.username}')
+                
+                # Create initial files if user directory is empty
+                if file_count == 0:
+                    file_sync.create_initial_files(session['user_id'], self.username, self.role)
+            except Exception as e:
+                logger.error(f'Error syncing files for {self.username}: {e}')
             
             self.write_message(json.dumps({
                 'type': 'auth_success',
@@ -150,6 +228,12 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler):
     def handle_command(self, cmd, data):
         """Route commands to appropriate handlers"""
         logger.info(f"Handling command: '{cmd}' (type: {type(cmd)}) from user: {self.username}")
+        
+        # Check general message rate limit first
+        if not rate_limiter.check_message_limit(self.username):
+            wait_time = rate_limiter.get_wait_time(rate_limiter.messages, self.username)
+            self.write_error(f"Rate limit exceeded. Please wait {int(wait_time)} seconds before sending more requests.")
+            return
         
         # Map legacy IDE commands to new secure operations
         ide_commands = {
@@ -172,6 +256,12 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler):
         }
         
         if cmd in ide_commands:
+            # Check file operations rate limit
+            if not rate_limiter.check_file_ops_limit(self.username):
+                wait_time = rate_limiter.get_wait_time(rate_limiter.file_ops, self.username)
+                self.write_error(f"File operation rate limit exceeded. Please wait {int(wait_time)} seconds.")
+                return
+            
             result = ide_commands[cmd](data)
             self.write_message(json.dumps(result))
             return
@@ -200,6 +290,13 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler):
         
         # Legacy command handling for code execution
         elif cmd in ['run', 'execute', 'stop', 'run_python_program', 'stop_python_program', 'send_program_input', 'start_python_repl', 'stop_python_repl']:
+            # Check execution rate limit for run commands
+            if cmd in ['run', 'execute', 'run_python_program', 'start_python_repl']:
+                if not rate_limiter.check_execution_limit(self.username):
+                    wait_time = rate_limiter.get_wait_time(rate_limiter.executions, self.username)
+                    self.write_error(f"Execution rate limit exceeded (max 10 per minute). Please wait {int(wait_time)} seconds.")
+                    return
+            
             # Get the actual data payload
             actual_data = data.get('data', {})
             
@@ -300,6 +397,8 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler):
         project_name = request_data.get('projectName', '')
         file_path = request_data.get('filePath', '')
         
+        logger.info(f"handle_get_file: projectName='{project_name}', filePath='{file_path}'")
+        
         # Construct full path from project name and file path
         if project_name and file_path:
             # If filePath already includes project name, use it as is
@@ -310,6 +409,8 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler):
         else:
             full_path = file_path or request_data.get('path', '')
         
+        logger.info(f"handle_get_file: constructed full_path='{full_path}'")
+        
         # Check if requesting binary file
         is_binary = request_data.get('binary', False)
         
@@ -317,6 +418,9 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler):
         result = self.file_manager.get_file(self.username, self.role, {'path': full_path})
         
         if result['success']:
+            # Log successful file retrieval
+            logger.info(f"File retrieved successfully: {full_path}, size: {len(result.get('content', ''))}")
+            
             # Handle binary files
             if is_binary and result.get('binary'):
                 return {
@@ -329,12 +433,15 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler):
                     'id': data.get('id', 1)
                 }
             else:
-                return {
+                response = {
                     'code': 0,
                     'data': result['content'],
                     'id': data.get('id', 1)
                 }
+                logger.info(f"Sending text file response for {full_path}")
+                return response
         else:
+            logger.warning(f"Failed to get file {full_path}: {result.get('error')}")
             return {
                 'code': -1,
                 'msg': result.get('error', 'Failed to get file'),
@@ -346,7 +453,8 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler):
         file_data = data.get('data', {})
         project_name = file_data.get('projectName', '')
         file_path = file_data.get('filePath', '')
-        content = file_data.get('content', '')
+        # Frontend sends 'fileData' not 'content'
+        content = file_data.get('fileData') or file_data.get('content', '')
         
         # Construct full path from project name and file path
         if project_name and file_path:
@@ -358,11 +466,16 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler):
         else:
             full_path = file_path or file_data.get('path', '')
         
+        # Log the save operation
+        logger.info(f"Saving file: {full_path}, content_length: {len(content)}")
+        
         # Use secure file manager to save file
         result = self.file_manager.save_file(self.username, self.role, {
             'path': full_path,
             'content': content
         })
+        
+        logger.info(f"Save result: {result}")
         
         return {
             'code': 0 if result['success'] else -1,
@@ -373,7 +486,25 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler):
     def handle_create_file(self, data):
         """Handle ide_create_file command"""
         file_data = data.get('data', {})
-        file_path = file_data.get('path', '')
+        
+        # Extract path from frontend format
+        parent_path = file_data.get('parentPath', '')
+        file_name = file_data.get('fileName', '')
+        
+        # Construct full path
+        if parent_path and file_name:
+            file_path = f"{parent_path}/{file_name}"
+        else:
+            file_path = file_data.get('path', '')  # Fallback to direct path
+        
+        if not file_path:
+            return {
+                'code': -1,
+                'msg': 'No file path specified',
+                'id': data.get('id', 1)
+            }
+        
+        logger.info(f"Creating file: {file_path} for user: {self.username}")
         
         # Create empty file
         result = self.file_manager.save_file(self.username, self.role, {

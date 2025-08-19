@@ -37,6 +37,10 @@ import 'codemirror/addon/selection/active-line';
 import 'codemirror/addon/comment/comment';
 // search
 import 'codemirror/addon/search/match-highlighter';
+import 'codemirror/addon/search/search';
+import 'codemirror/addon/search/searchcursor';
+import 'codemirror/addon/dialog/dialog';
+import 'codemirror/addon/dialog/dialog.css';
 // brackets
 import 'codemirror/addon/edit/matchbrackets';
 import 'codemirror/addon/edit/closebrackets';
@@ -198,6 +202,8 @@ export default {
     this.$nextTick(() => {
       if (this.$refs.codeEditor && this.$refs.codeEditor.cminstance) {
         this.$refs.codeEditor.cminstance.refresh();
+        // Apply saved settings after CodeMirror is ready
+        this.applySavedSettings();
         // Force a coordinate system recalculation
         setTimeout(() => {
           this.$refs.codeEditor.cminstance.refresh();
@@ -245,6 +251,13 @@ export default {
     cmOptions() {
       const baseOptions = {...this.codeBaseOptions};
       baseOptions.theme = this.currentTheme;
+      
+      // Apply saved line numbers setting
+      const savedLineNumbers = localStorage.getItem('showLineNumbers');
+      if (savedLineNumbers !== null) {
+        baseOptions.lineNumbers = savedLineNumbers === 'true';
+      }
+      
       return Object.assign(baseOptions, this.codeOtherOptions[this.codeItem.path.substring(this.codeItem.path.lastIndexOf('.') + 1)]);
     },
     ideInfo() {
@@ -281,6 +294,31 @@ export default {
     }
   },
   methods: {
+    applySavedSettings() {
+      // Apply saved font size
+      const savedFontSize = localStorage.getItem('fontSize') || localStorage.getItem('editorFontSize');
+      if (savedFontSize) {
+        const fontSize = parseInt(savedFontSize) + 'px';
+        const editor = this.$refs.codeEditor?.cminstance;
+        if (editor) {
+          const editorElement = editor.getWrapperElement();
+          if (editorElement) {
+            editorElement.style.fontSize = fontSize;
+            editor.refresh();
+          }
+        }
+      }
+      
+      // Apply saved line numbers setting
+      const savedLineNumbers = localStorage.getItem('showLineNumbers') || localStorage.getItem('editorLineNumbers');
+      if (savedLineNumbers !== null) {
+        const showLineNumbers = savedLineNumbers === 'true' || savedLineNumbers === true;
+        const editor = this.$refs.codeEditor?.cminstance;
+        if (editor) {
+          editor.setOption('lineNumbers', showLineNumbers);
+        }
+      }
+    },
     updateEditorTheme() {
       if (this.$refs.codeEditor && this.$refs.codeEditor.cminstance) {
         const theme = this.currentTheme;
@@ -427,6 +465,26 @@ export default {
 
 .code-editor-flex >>> .codemirror-container {
   height: 100%;
+}
+
+/* Fix line numbers to inherit font size from editor */
+.code-editor-flex >>> .CodeMirror-linenumber {
+  font-size: inherit !important;
+}
+
+/* Fix for 26px font size - adjust line height to prevent overflow */
+.code-editor-flex >>> .CodeMirror[style*="font-size: 26px"] {
+  line-height: 1.6 !important;
+}
+
+.code-editor-flex >>> .CodeMirror[style*="font-size: 26px"] .CodeMirror-line {
+  padding-top: 2px !important;
+  padding-bottom: 2px !important;
+}
+
+.code-editor-flex >>> .CodeMirror[style*="font-size: 26px"] .CodeMirror-linenumber {
+  line-height: 1.6 !important;
+  padding-top: 2px !important;
 }
 
 .file-path {

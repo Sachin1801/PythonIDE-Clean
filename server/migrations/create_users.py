@@ -3,7 +3,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from auth.user_manager import UserManager
+from auth.user_manager_postgres import UserManager
 
 def create_initial_users():
     manager = UserManager()
@@ -13,7 +13,7 @@ def create_initial_users():
         username='professor',
         email='professor@college.edu',
         password='ChangeMeASAP2024!',
-        full_name='Dr. Smith',
+        full_name='Susan Liao',
         role='professor'
     )
     if success:
@@ -23,7 +23,7 @@ def create_initial_users():
     
     # Create sample students (you can expand this list)
     students = [
-        ('sa9082', 'sa9082@college.edu', 'Sachin Adlakha'),
+        ('sa9082', 'sa9082@nyu.edu', 'Sachin Adlakha'),
         ('jd1234', 'jd1234@college.edu', 'John Doe'),
         ('ab5678', 'ab5678@college.edu', 'Alice Brown'),
         ('mk9012', 'mk9012@college.edu', 'Mary Kim'),

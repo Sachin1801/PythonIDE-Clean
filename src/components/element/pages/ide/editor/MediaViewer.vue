@@ -46,21 +46,13 @@
       </div>
     </div>
     
+    <!-- PDF Display with Simple PDF Viewer -->
     <div v-else-if="isPdf" class="pdf-container">
-      <div class="toolbar pdf-toolbar">
-        <span class="pdf-title">PDF Viewer</span>
-        <el-button @click="downloadFile" size="small">
-          <el-icon><download /></el-icon> Download
-        </el-button>
-      </div>
-      <div class="pdf-wrapper">
-        <iframe 
-          v-if="pdfViewerUrl"
-          :src="pdfViewerUrl" 
-          class="pdf-iframe"
-          frameborder="0"
-        ></iframe>
-      </div>
+      <simple-pdf-viewer 
+        v-if="fileUrl"
+        :pdf-data="getPdfData()"
+        :file-name="fileName"
+      />
     </div>
     
     <div v-else class="unsupported-file">
@@ -83,6 +75,7 @@ import {
 } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import * as types from '../../../../../store/mutation-types';
+import SimplePdfViewer from './SimplePdfViewer.vue';
 
 export default {
   name: 'MediaViewer',
@@ -91,7 +84,8 @@ export default {
     ZoomOut,
     Refresh,
     Download,
-    Document
+    Document,
+    SimplePdfViewer
   },
   props: {
     codeItem: Object,
@@ -293,6 +287,18 @@ export default {
         console.error('MediaViewer error:', { fileName: this.fileName, filePath: this.codeItem?.path, fileUrl: this.fileUrl });
         ElMessage.error(`Failed to load file: ${this.fileName}`);
       }
+    },
+    getPdfData() {
+      // For preloaded content, use the content directly
+      if (this.codeItem?.preloaded && this.codeItem?.content) {
+        return this.codeItem.content;
+      }
+      // Extract the base64 data from the data URL for PDF.js
+      if (this.fileUrl && this.fileUrl.startsWith('data:')) {
+        // Return the full data URL, PdfViewer component will handle it
+        return this.fileUrl;
+      }
+      return this.fileUrl;
     }
   }
 };

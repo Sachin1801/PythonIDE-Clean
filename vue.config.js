@@ -11,6 +11,31 @@ module.exports = defineConfig({
   indexPath: 'templates/index.html',
   assetsDir: 'static',
   productionSourceMap: false,
+  devServer: {
+    client: {
+      webSocketURL: {
+        hostname: 'localhost',
+        pathname: '/ws-dev',
+        port: 8080,
+        protocol: 'ws'
+      }
+    },
+    proxy: {
+      '/api': {
+        target: 'http://localhost:10086',
+        changeOrigin: true,
+        ws: false
+      },
+      '/ide-ws': {
+        target: 'ws://localhost:10086',
+        changeOrigin: true,
+        ws: true,
+        pathRewrite: {
+          '^/ide-ws': '/ws'
+        }
+      }
+    }
+  },
   chainWebpack: config => {
     config
       .plugin('html')
@@ -23,7 +48,7 @@ module.exports = defineConfig({
     extract: true,
     sourceMap: false
   },
-  transpileDependencies: true,
+  transpileDependencies: ['pdfjs-dist'],
   configureWebpack: {
     plugins: [
       AutoImport({

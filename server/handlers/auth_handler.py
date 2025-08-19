@@ -8,7 +8,7 @@ import os
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from auth.user_manager import UserManager
+from auth.user_manager_postgres import UserManager
 
 
 class LoginHandler(tornado.web.RequestHandler):
@@ -44,14 +44,25 @@ class LoginHandler(tornado.web.RequestHandler):
                 return
             
             # Authenticate user
-            result = self.user_manager.authenticate(username, password)
+            result, error = self.user_manager.authenticate(username, password)
             
-            if result['success']:
+            if result:
+                # Map token to session_id for frontend compatibility
+                response_data = {
+                    'success': True,
+                    'session_id': result['token'],  # Frontend expects session_id
+                    'username': result['username'],
+                    'role': result['role'],
+                    'full_name': result['full_name']
+                }
                 self.set_status(200)
-                self.write(json.dumps(result))
+                self.write(json.dumps(response_data))
             else:
                 self.set_status(401)
-                self.write(json.dumps(result))
+                self.write(json.dumps({
+                    'success': False,
+                    'error': error or 'Authentication failed'
+                }))
                 
         except Exception as e:
             self.set_status(500)
@@ -130,7 +141,7 @@ class ValidateSessionHandler(tornado.web.RequestHandler):
         """Validate session"""
         try:
             data = json.loads(self.request.body)
-            session_id = data.get('session_id')
+            session_id = data.get('session_id')  # This is actually the token
             
             if not session_id:
                 self.set_status(400)
@@ -140,7 +151,7 @@ class ValidateSessionHandler(tornado.web.RequestHandler):
                 }))
                 return
             
-            # Validate session
+            # Validate session (session_id is actually the token)
             session = self.user_manager.validate_session(session_id)
             
             if session:

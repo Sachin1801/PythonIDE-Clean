@@ -19,6 +19,7 @@ from .pty_interactive_thread import PTYInteractiveThread
 from .working_simple_thread import WorkingSimpleThread
 from .working_input_thread import WorkingInputThread
 from .repl_thread import PythonREPLThread
+from .hybrid_repl_thread import HybridREPLThread
 from .bug_report_handler import handle_bug_report
 from common.config import Config
 
@@ -378,6 +379,7 @@ print("="*50)
         # Config.PYTHON
         prj_name = data.get('projectName')
         file_path_input = data.get('filePath', '')
+        use_hybrid = data.get('hybrid', True)  # Default to hybrid mode
         
         # Handle case where filePath already includes the project name
         if file_path_input.startswith(prj_name + '/'):
@@ -387,16 +389,22 @@ print("="*50)
         prj_path = os.path.join(Config.PROJECTS, 'ide', prj_name)
         file_path = os.path.join(prj_path, convert_path(file_path_input))
         
-        print(f"[BACKEND-DEBUG] run_python_program: projectName={prj_name}, filePath={file_path_input}")
+        print(f"[BACKEND-DEBUG] run_python_program: projectName={prj_name}, filePath={file_path_input}, hybrid={use_hybrid}")
         print(f"[BACKEND-DEBUG] Full path constructed: {file_path}")
         print(f"[BACKEND-DEBUG] File exists: {os.path.exists(file_path)}, Is file: {os.path.isfile(file_path) if os.path.exists(file_path) else 'N/A'}")
         
         if os.path.exists(file_path) and os.path.isfile(file_path) and file_path.endswith('.py'):
-            cmd = [Config.PYTHON, '-u', file_path]
-            # Use the working implementation with byte-by-byte reading
-            print(f"[BACKEND-DEBUG] Using WorkingSimpleThread for Python execution")
-            thread = WorkingSimpleThread(cmd, cmd_id, client, asyncio.get_event_loop())
-            print(f"[BACKEND-DEBUG] Thread created for cmd_id: {cmd_id} with working I/O")
+            if use_hybrid:
+                # Use hybrid REPL thread for script + REPL mode
+                print(f"[BACKEND-DEBUG] Using HybridREPLThread for Python execution with REPL")
+                thread = HybridREPLThread(cmd_id, client, asyncio.get_event_loop(), script_path=file_path)
+            else:
+                # Use the working implementation with byte-by-byte reading
+                cmd = [Config.PYTHON, '-u', file_path]
+                print(f"[BACKEND-DEBUG] Using WorkingSimpleThread for Python execution")
+                thread = WorkingSimpleThread(cmd, cmd_id, client, asyncio.get_event_loop())
+            
+            print(f"[BACKEND-DEBUG] Thread created for cmd_id: {cmd_id}")
             client.handler_info.set_subprogram(cmd_id, thread)
             await response(client, cmd_id, 0, None)
             client.handler_info.start_subprogram(cmd_id)
@@ -437,18 +445,32 @@ print("="*50)
             })
     
     async def start_python_repl(self, client, cmd_id, data):
-        """Start a Python REPL session"""
+        """Start a Python REPL session (empty, no script)"""
         prj_name = data.get('projectName', 'repl')
-        print(f"[BACKEND-DEBUG] Starting Python REPL for project: {prj_name}")
+        print(f"[BACKEND-DEBUG] Starting empty Python REPL for project: {prj_name}")
         
-        # Create REPL thread
-        thread = PythonREPLThread(cmd_id, client, asyncio.get_event_loop())
-        print(f"[BACKEND-DEBUG] REPL thread created for cmd_id: {cmd_id}")
+        # Create Hybrid REPL thread without script (empty REPL)
+        thread = HybridREPLThread(cmd_id, client, asyncio.get_event_loop(), script_path=None)
+        print(f"[BACKEND-DEBUG] Empty REPL thread created for cmd_id: {cmd_id}")
         
         # Register the thread
         client.handler_info.set_subprogram(cmd_id, thread)
         await response(client, cmd_id, 0, {'type': 'repl_started'})
         client.handler_info.start_subprogram(cmd_id)
+    
+    async def stop_python_repl(self, client, cmd_id, data):
+        """Stop a Python REPL session"""
+        repl_id = data.get('repl_id', cmd_id)
+        print(f"[BACKEND-DEBUG] Stopping Python REPL with id: {repl_id}")
+        
+        # Get the REPL thread
+        subprogram = client.handler_info.get_subprogram(repl_id)
+        if subprogram:
+            subprogram.stop()
+            client.handler_info.del_subprogram(repl_id)
+            await response(client, cmd_id, 0, {'type': 'repl_stopped'})
+        else:
+            await response(client, cmd_id, 1, {'error': 'REPL not found'})
 
 
 class SubProgramThread(threading.Thread):

@@ -1,0 +1,524 @@
+#!/usr/bin/env python3
+"""
+Hybrid REPL Thread - Executes scripts then transitions to REPL mode
+Maintains variable state between script execution and interactive mode
+"""
+
+import subprocess
+import threading
+import time
+import os
+import sys
+import tempfile
+import asyncio
+from queue import Queue, Empty
+import json
+import traceback
+import signal
+import resource
+import psutil
+
+from common.config import Config
+from command.error_handler import EducationalErrorHandler
+from command.response import response
+
+
+class HybridREPLThread(threading.Thread):
+    """Thread for running Python scripts then transitioning to REPL mode"""
+    
+    def __init__(self, cmd_id, client, event_loop, script_path=None):
+        super().__init__()
+        self.cmd_id = cmd_id
+        self.client = client
+        self.event_loop = event_loop
+        self.script_path = script_path
+        self.alive = True
+        self.p = None
+        self.error_handler = EducationalErrorHandler()
+        self.input_queue = Queue()
+        self.repl_mode = False
+        self.script_executed = False
+        self.had_error = False
+        self.daemon = True
+        
+        # Resource limits (configurable via environment)
+        self.memory_limit_mb = int(os.environ.get('MEMORY_LIMIT_MB', '128'))
+        self.cpu_time_limit = int(os.environ.get('EXECUTION_TIMEOUT', '30'))
+        self.file_size_limit_mb = int(os.environ.get('FILE_SIZE_LIMIT_MB', '10'))
+        self.max_processes = int(os.environ.get('MAX_PROCESSES', '50'))
+        self.start_time = time.time()
+        
+    def kill(self):
+        """Kill the running subprocess"""
+        self.alive = False
+        if self.p:
+            try:
+                self.p.kill()
+            except:
+                pass
+    
+    def stop(self):
+        """Stop the subprocess gracefully"""
+        self.alive = False
+        if self.p:
+            try:
+                self.p.terminate()
+            except:
+                pass
+    
+    def send_input(self, user_input):
+        """Queue user input to be sent to the program or REPL"""
+        self.input_queue.put(user_input)
+        return True
+    
+    def set_resource_limits(self):
+        """Set resource limits for the subprocess (Linux/Unix only)"""
+        try:
+            # Memory limit (address space)
+            memory_bytes = self.memory_limit_mb * 1024 * 1024
+            resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
+            
+            # CPU time limit
+            resource.setrlimit(resource.RLIMIT_CPU, (self.cpu_time_limit, self.cpu_time_limit))
+            
+            # File size limit
+            file_size_bytes = self.file_size_limit_mb * 1024 * 1024
+            resource.setrlimit(resource.RLIMIT_FSIZE, (file_size_bytes, file_size_bytes))
+            
+            # Process limit
+            resource.setrlimit(resource.RLIMIT_NPROC, (self.max_processes, self.max_processes))
+            
+            # Core dump size (disable core dumps)
+            resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+            
+        except Exception as e:
+            # Resource limits may not work on all systems (e.g., Windows)
+            print(f"Warning: Could not set resource limits: {e}")
+    
+    def response_to_client(self, code, data):
+        """Send response to client via WebSocket"""
+        if data:
+            asyncio.run_coroutine_threadsafe(
+                response(self.client, self.cmd_id, code, data),
+                self.event_loop
+            )
+    
+    def create_hybrid_wrapper(self):
+        """Create a wrapper script that runs user code then starts REPL"""
+        wrapper_code = '''import sys
+import os
+import traceback
+import code
+import builtins
+import base64
+import io
+
+# Capture matplotlib if available
+try:
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    
+    _original_show = plt.show
+    
+    def _custom_show(*args, **kwargs):
+        """Custom show function that captures matplotlib figures"""
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', bbox_inches='tight', dpi=100)
+        buf.seek(0)
+        img_base64 = base64.b64encode(buf.read()).decode('utf-8')
+        print("__MATPLOTLIB_FIGURE_START__")
+        print(img_base64)
+        print("__MATPLOTLIB_FIGURE_END__")
+        sys.stdout.flush()
+        plt.clf()
+        plt.close('all')
+    
+    plt.show = _custom_show
+except ImportError:
+    pass
+
+# Store original input for REPL mode
+_original_input = builtins.input
+
+def _custom_input(prompt=""):
+    """Custom input function for script execution"""
+    sys.stdout.write(f"__INPUT_REQUEST_START__{prompt}__INPUT_REQUEST_END__")
+    sys.stdout.flush()
+    result = _original_input()
+    return result
+
+# Override input during script execution
+builtins.input = _custom_input
+
+# Dictionary to store script variables
+script_globals = {}
+
+'''
+        
+        if self.script_path:
+            # Add script execution code
+            wrapper_code += f'''
+# Execute the user script
+script_path = r"{self.script_path}"
+print(f"Running script: {{os.path.basename(script_path)}}")
+print("=" * 50)
+sys.stdout.flush()
+
+try:
+    with open(script_path, 'r') as f:
+        script_code = f.read()
+    
+    # Execute script and capture its namespace
+    exec(compile(script_code, script_path, 'exec'), script_globals)
+    
+    # Script completed successfully
+    print()
+    print("=" * 50)
+    print("Script execution completed")
+    print("=" * 50)
+    sys.stdout.flush()
+    
+except Exception as e:
+    # Print error with educational formatting
+    print()
+    print("=" * 50)
+    print("ERROR in script execution:")
+    print("=" * 50)
+    traceback.print_exc()
+    print("=" * 50)
+    sys.stdout.flush()
+    
+    # Signal error to parent process
+    print("__SCRIPT_ERROR__")
+    sys.stdout.flush()
+    sys.exit(1)
+
+# Update globals with script variables (excluding private ones)
+for key, value in script_globals.items():
+    if not key.startswith('__'):
+        globals()[key] = value
+
+# List available variables
+user_vars = [k for k in script_globals.keys() if not k.startswith('_')]
+if user_vars:
+    print(f"Available variables: {{', '.join(user_vars)}}")
+else:
+    print("No variables defined in script")
+print()
+sys.stdout.flush()
+
+'''
+        
+        # Add REPL startup code
+        wrapper_code += '''
+# Signal REPL mode starting
+print("__REPL_MODE_START__")
+sys.stdout.flush()
+
+# Restore original input for REPL
+builtins.input = _original_input
+
+# Start interactive REPL
+print("Python", sys.version)
+print('Type "help", "copyright", "credits" or "license" for more information.')
+
+# Custom REPL with better error handling
+import readline
+import rlcompleter
+readline.parse_and_bind("tab: complete")
+
+while True:
+    try:
+        # Multi-line input support
+        lines = []
+        prompt = ">>> "
+        
+        while True:
+            try:
+                line = input(prompt)
+                lines.append(line)
+                
+                # Check if we need more lines
+                code_str = '\\n'.join(lines)
+                compile(code_str, '<stdin>', 'single')
+                break  # Code is complete
+                
+            except SyntaxError as e:
+                if 'unexpected EOF' in str(e) or 'incomplete' in str(e):
+                    prompt = "... "  # Continue on next line
+                    continue
+                else:
+                    # Real syntax error
+                    raise
+            except EOFError:
+                print()
+                sys.exit(0)
+        
+        # Execute the complete code with script globals
+        code_str = '\\n'.join(lines)
+        if code_str.strip():
+            exec(compile(code_str, '<stdin>', 'single'), globals())
+            
+    except SystemExit:
+        break
+    except KeyboardInterrupt:
+        print("\\nKeyboardInterrupt")
+    except Exception:
+        traceback.print_exc()
+    
+    sys.stdout.flush()
+'''
+        
+        # Write wrapper to temp file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+            f.write(wrapper_code)
+            return f.name
+    
+    def run(self):
+        """Main thread execution"""
+        self.alive = True
+        wrapper_path = None
+        
+        try:
+            # Create wrapper script
+            wrapper_path = self.create_hybrid_wrapper()
+            
+            # Start Python subprocess without resource limits for now (debugging)
+            popen_kwargs = {
+                'stdin': subprocess.PIPE,
+                'stdout': subprocess.PIPE,
+                'stderr': subprocess.STDOUT,
+                'text': True,
+                'bufsize': 0,
+                'cwd': os.path.dirname(self.script_path) if self.script_path else Config.PROJECTS
+            }
+            
+            # Temporarily disable resource limits to debug the issue
+            # TODO: Re-enable after fixing output streaming
+            # is_unix = os.name == 'posix'
+            # if is_unix:
+            #     popen_kwargs['preexec_fn'] = self.set_resource_limits
+            
+            self.p = subprocess.Popen(
+                [Config.PYTHON, '-u', wrapper_path],
+                **popen_kwargs
+            )
+            
+            # Start output reader thread
+            output_thread = threading.Thread(target=self.read_output)
+            output_thread.daemon = True
+            output_thread.start()
+            
+            # Start input handler thread
+            input_thread = threading.Thread(target=self.handle_input)
+            input_thread.daemon = True
+            input_thread.start()
+            
+            # Start timeout monitor thread
+            timeout_thread = threading.Thread(target=self.monitor_timeout)
+            timeout_thread.daemon = True
+            timeout_thread.start()
+            
+            # Wait for process to complete or be killed
+            while self.alive and self.p.poll() is None:
+                time.sleep(0.1)
+            
+            # Process ended
+            if self.p.poll() is not None:
+                return_code = self.p.poll()
+                if return_code != 0 and not self.had_error:
+                    self.response_to_client(1, {'stdout': f'Process exited with code {return_code}'})
+            
+        except Exception as e:
+            print(f"Error in HybridREPLThread: {e}")
+            traceback.print_exc()
+            self.response_to_client(1, {'stdout': f'Error: {str(e)}'})
+        
+        finally:
+            # Cleanup
+            if wrapper_path and os.path.exists(wrapper_path):
+                try:
+                    os.unlink(wrapper_path)
+                except:
+                    pass
+            
+            # Ensure process is terminated
+            if self.p:
+                try:
+                    self.p.terminate()
+                    self.p.wait(timeout=2)
+                except:
+                    try:
+                        self.p.kill()
+                    except:
+                        pass
+    
+    def monitor_timeout(self):
+        """Monitor execution time and kill if exceeds limit"""
+        # Disable timeout monitoring for now - it's interfering with input()
+        # TODO: Implement smarter timeout that pauses during input wait
+        return
+        
+        # Only monitor during script execution, not REPL
+        while self.alive and self.p and not self.repl_mode:
+            elapsed = time.time() - self.start_time
+            
+            # Check if timeout exceeded (add grace period for REPL transition)
+            if elapsed > self.cpu_time_limit + 5:
+                print(f"[TIMEOUT] Process {self.cmd_id} exceeded time limit ({self.cpu_time_limit}s)")
+                self.response_to_client(1, {
+                    'stdout': f'\n[TIMEOUT] Execution time limit exceeded ({self.cpu_time_limit} seconds)\n'
+                })
+                self.kill()
+                break
+            
+            # Also monitor memory usage if psutil available
+            try:
+                if self.p and self.p.pid:
+                    process = psutil.Process(self.p.pid)
+                    memory_mb = process.memory_info().rss / (1024 * 1024)
+                    
+                    if memory_mb > self.memory_limit_mb:
+                        print(f"[MEMORY] Process {self.cmd_id} exceeded memory limit ({self.memory_limit_mb}MB)")
+                        self.response_to_client(1, {
+                            'stdout': f'\n[MEMORY LIMIT] Memory usage exceeded ({self.memory_limit_mb}MB)\n'
+                        })
+                        self.kill()
+                        break
+            except:
+                # psutil not available or process already dead
+                pass
+            
+            time.sleep(1)
+    
+    def read_output(self):
+        """Read output from subprocess"""
+        buffer = ""
+        
+        print(f"[HYBRID-REPL] Starting output reader for cmd_id: {self.cmd_id}")
+        
+        while self.alive and self.p and self.p.poll() is None:
+            try:
+                # Read character by character to handle input prompts without newlines
+                char = self.p.stdout.read(1)
+                if not char:
+                    time.sleep(0.01)
+                    continue
+                
+                buffer += char
+                
+                # Check for special markers first
+                if "__INPUT_REQUEST_START__" in buffer and "__INPUT_REQUEST_END__" in buffer:
+                    # Send any text before the marker
+                    pre_marker = buffer[:buffer.index("__INPUT_REQUEST_START__")]
+                    if pre_marker:
+                        for line in pre_marker.split('\n'):
+                            if line or line == "":
+                                self.response_to_client(0, {'stdout': line})
+                    
+                    # Extract prompt
+                    start = buffer.index("__INPUT_REQUEST_START__") + len("__INPUT_REQUEST_START__")
+                    end = buffer.index("__INPUT_REQUEST_END__")
+                    prompt = buffer[start:end]
+                    
+                    print(f"[HYBRID-REPL] Input request detected: {repr(prompt)}")
+                    
+                    # Send input request to client
+                    self.response_to_client(2000, {'prompt': prompt})
+                    
+                    # Clear the processed part from buffer
+                    buffer = buffer[end + len("__INPUT_REQUEST_END__"):]
+                
+                elif "__MATPLOTLIB_FIGURE_START__" in buffer:
+                    # Handle matplotlib figure
+                    if "__MATPLOTLIB_FIGURE_END__" in buffer:
+                        start = buffer.index("__MATPLOTLIB_FIGURE_START__") + len("__MATPLOTLIB_FIGURE_START__")
+                        end = buffer.index("__MATPLOTLIB_FIGURE_END__")
+                        figure_data = buffer[start:end].strip()
+                        
+                        # Send figure to client
+                        self.response_to_client(3000, {'figure': figure_data})
+                        
+                        # Clear the marker from buffer
+                        buffer = buffer[end + len("__MATPLOTLIB_FIGURE_END__"):]
+                
+                elif "__SCRIPT_ERROR__" in buffer:
+                    # Script had an error, don't start REPL
+                    self.had_error = True
+                    buffer = buffer.replace("__SCRIPT_ERROR__", "")
+                    # Send any remaining output
+                    if buffer.strip():
+                        self.response_to_client(0, {'stdout': buffer})
+                    # Signal script error to client
+                    self.response_to_client(4000, {'error': 'Script execution failed'})
+                    # Kill the process
+                    self.kill()
+                    break
+                
+                elif "__REPL_MODE_START__" in buffer:
+                    # Send any text before the marker
+                    pre_marker = buffer[:buffer.index("__REPL_MODE_START__")]
+                    if pre_marker:
+                        for line in pre_marker.split('\n')[:-1]:  # Skip last incomplete line
+                            self.response_to_client(0, {'stdout': line})
+                    
+                    # Entering REPL mode
+                    self.repl_mode = True
+                    buffer = buffer[buffer.index("__REPL_MODE_START__") + len("__REPL_MODE_START__"):]
+                    # Signal REPL mode to client
+                    self.response_to_client(5000, {'mode': 'repl'})
+                
+                # Send complete lines
+                elif '\n' in buffer:
+                    lines = buffer.split('\n')
+                    # Send all complete lines
+                    for line in lines[:-1]:
+                        print(f"[HYBRID-REPL] Sending line: {repr(line)}")
+                        self.response_to_client(0, {'stdout': line})
+                    # Keep the incomplete line in buffer
+                    buffer = lines[-1]
+                
+                # In REPL mode, check for prompt
+                elif self.repl_mode and buffer.endswith('>>> '):
+                    print(f"[HYBRID-REPL] REPL prompt detected: {repr(buffer)}")
+                    self.response_to_client(0, {'stdout': buffer})
+                    buffer = ""
+                
+            except Exception as e:
+                print(f"[HYBRID-REPL] Error reading output: {e}")
+                import traceback
+                traceback.print_exc()
+                break
+        
+        # Send any remaining buffer
+        if buffer and buffer.strip():
+            print(f"[HYBRID-REPL] Sending remaining buffer: {repr(buffer)}")
+            self.response_to_client(0, {'stdout': buffer})
+    
+    def handle_input(self):
+        """Handle input queue and send to subprocess"""
+        while self.alive and self.p and self.p.poll() is None:
+            try:
+                # Wait for input with timeout
+                user_input = self.input_queue.get(timeout=0.1)
+                
+                print(f"[HYBRID-REPL] Received input from queue: {user_input}")
+                print(f"[HYBRID-REPL] REPL mode: {self.repl_mode}, Process alive: {self.p.poll() is None}")
+                
+                if self.p and self.p.stdin:
+                    # Send input to subprocess
+                    self.p.stdin.write(user_input + '\n')
+                    self.p.stdin.flush()
+                    print(f"[HYBRID-REPL] Sent input to subprocess: {user_input}")
+                    
+                    # Echo input back to client in REPL mode
+                    if self.repl_mode:
+                        # Input echo is handled by the REPL itself
+                        pass
+                    
+            except Empty:
+                continue
+            except Exception as e:
+                print(f"Error handling input: {e}")
+                break

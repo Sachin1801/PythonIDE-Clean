@@ -56,6 +56,7 @@
               <li class="nav__dropdown-item">
                 <button @click="moveFile()" :disabled="!hasSelectedFile">
                   <span>Move</span>
+                  <span class="nav__keyboard-shortcut">Ctrl+Shift+M</span>
                 </button>
               </li>
               <li class="nav__dropdown-item">
@@ -191,14 +192,20 @@
             <ul class="nav__dropdown" v-show="activeDropdown === 'view'" @click.stop>
               <li class="nav__dropdown-item">
                 <button @click="toggleConsole()">
-                  <span>{{ consoleVisible ? 'Hide Console' : 'Show Console' }}</span>
+                  <span>{{ consoleVisible ? 'Hide REPL' : 'Show REPL' }}</span>
                   <span class="nav__keyboard-shortcut">Ctrl+`</span>
                 </button>
               </li>
               <li class="nav__dropdown-item">
                 <button @click="togglePreviewPanel()">
-                  <span>{{ previewPanelVisible ? 'Hide Preview Panel' : 'Show Preview Panel' }}</span>
-                  <span class="nav__keyboard-shortcut">Ctrl+P</span>
+                  <span>{{ previewPanelVisible ? 'Hide Right Panel' : 'Show Right Panel' }}</span>
+                  <span class="nav__keyboard-shortcut">Ctrl+Shift+P</span>
+                </button>
+              </li>
+              <li class="nav__dropdown-item">
+                <button @click="toggleSidebar()">
+                  <span>{{ sidebarVisible ? 'Hide Sidebar' : 'Show Sidebar' }}</span>
+                  <span class="nav__keyboard-shortcut">Ctrl+B</span>
                 </button>
               </li>
             </ul>
@@ -229,11 +236,24 @@
         </ul>
       </nav>
 
-      <!-- Right Section: Sign In Button -->
+      <!-- Right Section: Sign In / User Button -->
       <div class="header-right-section">
-        <button class="sign-in-btn" @click="handleSignIn">
+        <button 
+          v-if="!currentUser"
+          class="sign-in-btn" 
+          @click="handleSignIn"
+        >
           <UserCircle :size="18" />
           <span>Sign In</span>
+        </button>
+        
+        <button 
+          v-else
+          class="user-btn"
+          @click="showUserProfile = true"
+        >
+          <UserCircle :size="18" />
+          <span>{{ currentUser.username }}</span>
         </button>
       </div>
     </div>
@@ -272,17 +292,30 @@
         </div>
       </div>
     </div>
+    
+    <!-- User Profile Modal -->
+    <UserProfileModal 
+      v-model="showUserProfile"
+      :current-user="currentUser"
+      @logout="handleLogout"
+      @password-changed="handlePasswordChanged"
+    />
   </div>
 </template>
 
 <script>
 import { Upload, Play, Square, Settings, Share2, Trash2, UserCircle } from 'lucide-vue-next';
 import { ElMessageBox, ElMessage } from 'element-plus';
+import UserProfileModal from '../../UserProfileModal.vue';
 
 export default {
   props: {
     consoleLimit: Boolean,
     hasRunProgram: Boolean,
+    currentUser: {
+      type: Object,
+      default: null
+    }
   },
   data() {
     return {
@@ -290,6 +323,8 @@ export default {
       activeDropdown: null,
       consoleVisible: true,
       previewPanelVisible: false,
+      sidebarVisible: true,
+      showUserProfile: false,
     }
   },
   computed: {
@@ -329,6 +364,7 @@ export default {
     Share2,
     Trash2,
     UserCircle,
+    UserProfileModal,
   },
   mounted() {
     // Initialize theme on mount
@@ -353,25 +389,174 @@ export default {
       this.activeDropdown = null;
     },
     handleKeyboardShortcuts(e) {
+      // File Operations
       // Ctrl+S - Save
-      if (e.ctrlKey && e.key === 's') {
+      if (e.ctrlKey && !e.shiftKey && e.key === 's') {
         e.preventDefault();
+        e.stopPropagation();
         this.saveFile();
+        return;
+      }
+      // Ctrl+Shift+S - Save As
+      if (e.ctrlKey && e.shiftKey && e.key === 'S') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.saveAsFile();
+        return;
       }
       // Ctrl+N - New File
-      if (e.ctrlKey && e.key === 'n') {
+      if (e.ctrlKey && !e.shiftKey && e.key === 'n') {
         e.preventDefault();
+        e.stopPropagation();
         this.newFile();
+        return;
       }
-      // F5 - Run
-      if (e.key === 'F5' && !e.shiftKey && this.isPythonFile && !this.consoleLimit) {
+      // Ctrl+O - Open File
+      if (e.ctrlKey && !e.shiftKey && e.key === 'o') {
         e.preventDefault();
-        this.runScript();
+        e.stopPropagation();
+        this.openFile();
+        return;
+      }
+      // Ctrl+D - Download
+      if (e.ctrlKey && !e.shiftKey && e.key === 'd') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.downloadFile();
+        return;
+      }
+      // Ctrl+Shift+M - Move
+      if (e.ctrlKey && e.shiftKey && e.key === 'M') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (this.hasSelectedFile) {
+          this.moveFile();
+        }
+        return;
+      }
+      // Delete - Delete File
+      if (e.key === 'Delete' && this.hasSelectedFile) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.deleteFile();
+        return;
+      }
+      
+      // Edit Operations
+      // Ctrl+Z - Undo
+      if (e.ctrlKey && !e.shiftKey && e.key === 'z') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.undo();
+        return;
+      }
+      // Ctrl+Y - Redo
+      if (e.ctrlKey && !e.shiftKey && e.key === 'y') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.redo();
+        return;
+      }
+      // Ctrl+X - Cut
+      if (e.ctrlKey && !e.shiftKey && e.key === 'x') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.cut();
+        return;
+      }
+      // Ctrl+C - Copy
+      if (e.ctrlKey && !e.shiftKey && e.key === 'c') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.copy();
+        return;
+      }
+      // Ctrl+V - Paste
+      if (e.ctrlKey && !e.shiftKey && e.key === 'v') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.paste();
+        return;
+      }
+      // Ctrl+F - Find
+      if (e.ctrlKey && !e.shiftKey && e.key === 'f') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.find();
+        return;
+      }
+      // Ctrl+H - Replace
+      if (e.ctrlKey && !e.shiftKey && e.key === 'h') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.replace();
+        return;
+      }
+      // Ctrl+/ - Comment
+      if (e.ctrlKey && e.key === '/') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.comment();
+        return;
+      }
+      
+      // Run Operations
+      // F5 - Run
+      if (e.key === 'F5' && !e.shiftKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (this.isPythonFile && !this.consoleLimit) {
+          this.runScript();
+        }
+        return;
       }
       // Shift+F5 - Stop
-      if (e.shiftKey && e.key === 'F5' && this.hasRunProgram) {
+      if (e.shiftKey && e.key === 'F5') {
         e.preventDefault();
-        this.stopScript();
+        e.stopPropagation();
+        if (this.hasRunProgram) {
+          this.stopScript();
+        }
+        return;
+      }
+      
+      // View Operations
+      // Ctrl+` - Toggle Console
+      if (e.ctrlKey && e.key === '`') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.toggleConsole();
+        return;
+      }
+      // Ctrl+Shift+P - Toggle Preview Panel (not Ctrl+P to avoid print dialog)
+      if (e.ctrlKey && e.shiftKey && e.key === 'P') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.togglePreviewPanel();
+        return;
+      }
+      // Ctrl+B - Toggle Sidebar
+      if (e.ctrlKey && !e.shiftKey && e.key === 'b') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.toggleSidebar();
+        return;
+      }
+      
+      // General Operations
+      // F1 - Show Keyboard Shortcuts
+      if (e.key === 'F1') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.showKeyboardShortcuts();
+        return;
+      }
+      // Ctrl+, - Settings
+      if (e.ctrlKey && e.key === ',') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.openSettings();
+        return;
       }
     },
     newFile() {
@@ -579,10 +764,35 @@ export default {
       this.previewPanelVisible = !this.previewPanelVisible;
       this.$emit('toggle-preview-panel', this.previewPanelVisible);
     },
+    toggleSidebar() {
+      this.closeDropdowns();
+      this.sidebarVisible = !this.sidebarVisible;
+      this.$emit('toggle-sidebar', this.sidebarVisible);
+    },
     // Help menu methods
     showKeyboardShortcuts() {
       this.closeDropdowns();
       this.$emit('show-keyboard-shortcuts');
+    },
+    handleLogout() {
+      // Clear session data
+      localStorage.removeItem('session_id');
+      localStorage.removeItem('username');
+      localStorage.removeItem('role');
+      
+      // Emit logout event
+      this.$emit('logout');
+      
+      // Show success message
+      ElMessage.success('Logged out successfully');
+      
+      // Reload page to reset state
+      setTimeout(() => {
+        window.location.reload();
+      }, 1000);
+    },
+    handlePasswordChanged() {
+      ElMessage.success('Password changed successfully!');
     },
   },
 };
@@ -743,7 +953,7 @@ export default {
   background: rgba(244, 71, 71, 0.2);
 }
 
-/* Sign In Button */
+/* Sign In / User Button */
 .header-right-section {
   display: flex;
   align-items: center;
@@ -751,7 +961,8 @@ export default {
   padding-right: 8px;
 }
 
-.sign-in-btn {
+.sign-in-btn,
+.user-btn {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -768,12 +979,25 @@ export default {
   outline: none;
 }
 
-.sign-in-btn:hover {
+.sign-in-btn:hover,
+.user-btn:hover {
   background: rgba(255, 255, 255, 0.1);
 }
 
-.sign-in-btn:focus {
+.sign-in-btn:focus,
+.user-btn:focus {
   outline: none;
+}
+
+.user-btn {
+  background: rgba(64, 158, 255, 0.1);
+  color: var(--primary-color, #409eff);
+  border: 1px solid rgba(64, 158, 255, 0.3);
+}
+
+.user-btn:hover {
+  background: rgba(64, 158, 255, 0.2);
+  border-color: rgba(64, 158, 255, 0.5);
 }
 
 /* Second Header Sections */

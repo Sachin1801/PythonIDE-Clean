@@ -3,6 +3,7 @@
     <TwoHeaderMenu class="two-header-menu"
       :consoleLimit="consoleLimit"
       :hasRunProgram="hasRunProgram"
+      :currentUser="currentUser"
       @set-text-dialog="setTextDialog"
       @set-del-dialog="setDelDialog"
       @set-projs-dialog="setProjsDialog"
@@ -31,12 +32,14 @@
       @comment="handleComment"
       @toggle-console="toggleConsole"
       @toggle-preview-panel="togglePreviewPanel"
+      @toggle-sidebar="toggleLeftSidebar"
       @show-keyboard-shortcuts="showKeyboardShortcutsModal = true"
     ></TwoHeaderMenu>
     
     <!-- Settings Modal -->
     <SettingsModal 
       v-model="showSettingsModal"
+      @update-font-size="updateFontSize"
       @update-line-numbers="updateLineNumbers"
       @update-word-wrap="updateWordWrap"
       @update-auto-save="updateAutoSave"
@@ -47,6 +50,13 @@
     <KeyboardShortcutsModal 
       v-model="showKeyboardShortcutsModal"
     />
+    
+    <!-- Find/Replace Modal -->
+    <FindReplaceModal 
+      v-model="showFindReplaceModal"
+      :mode="findReplaceMode"
+    />
+    
     <div id="total-frame" class="total-frame">
       <!-- Main Horizontal Splitpanes for Left/Center/Right -->
       <splitpanes :class="['default-theme', 'main-splitpanes', { 'has-right-content': previewTabs.length > 0 }]">
@@ -178,6 +188,12 @@
                   <!-- System message -->
                   <pre v-else-if="result.type === 'system'" class="console-system">{{ result.text || result.content || result }}</pre>
                   
+                  <!-- REPL prompt -->
+                  <span v-else-if="result.type === 'repl-prompt'" class="console-repl-prompt">{{ result.text || '>>> ' }}</span>
+                  
+                  <!-- User input in REPL -->
+                  <pre v-else-if="result.type === 'user-input'" class="console-user-input">{{ result.text || result.content || result }}</pre>
+                  
                   <!-- Default fallback -->
                   <pre v-else class="console-text">{{ typeof result === 'object' ? (result.text || result.content || JSON.stringify(result)) : result }}</pre>
                 </div>
@@ -205,7 +221,7 @@
             </div>
             
             <!-- REPL Input Area (like p5.js) -->
-            <div v-if="isReplMode" class="repl-section">
+            <div v-if="isReplMode || (ideInfo.consoleSelected && ideInfo.consoleSelected.waitingForReplInput)" class="repl-section">
               <div class="repl-prompt">
                 <span class="prompt-symbol">{{ replPrompt || '>>> ' }}</span>
                 <textarea 
@@ -336,6 +352,13 @@
         </div>
       </div>
     </div>
+    
+    <!-- Login Modal -->
+    <LoginModal 
+      :visible="showLoginModal"
+      @close="showLoginModal = false"
+      @login-success="handleLoginSuccess"
+    />
   </div>
 </template>
 
@@ -347,7 +370,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Minimize2 } from 'lucide-vue-next';
 import TwoHeaderMenu from './pages/ide/TwoHeaderMenu';
 import CodeTabs from './pages/ide/CodeTabs';
-import UnifiedConsole from './pages/ide/UnifiedConsole';
+import HybridConsole from './pages/ide/HybridConsole';
 import ConsoleTabs from './pages/ide/ConsoleTabs';
 import ProjTree from './pages/ide/ProjTree';
 import IdeEditor from './pages/ide/IdeEditor';
@@ -362,8 +385,10 @@ import CsvViewer from './pages/ide/CsvViewer';
 import MediaViewer from './pages/ide/editor/MediaViewer';
 import SettingsModal from './pages/ide/SettingsModal';
 import KeyboardShortcutsModal from './pages/ide/KeyboardShortcutsModal';
+import FindReplaceModal from './pages/ide/FindReplaceModal';
 import FullscreenPreview from './pages/ide/FullscreenPreview';
 import DualModeREPL from './DualModeREPL';
+import LoginModal from './LoginModal';
 const path = require('path');
 
 export default {
@@ -375,10 +400,13 @@ export default {
       showUploadDialog: false,
       showNewFileDialog: false,
       showFileBrowserDialog: false,
+      showLoginModal: false,
       fileBrowserMode: 'open',
       fileToMove: null,
       showSettingsModal: false,
       showKeyboardShortcutsModal: false,
+      showFindReplaceModal: false,
+      findReplaceMode: 'find',
       showREPL: false,
       isReplMode: false,  // Toggle between normal console and REPL mode
       replSessionId: null,  // Track active REPL session
@@ -388,6 +416,7 @@ export default {
       contextMenuTarget: null,
       windowWidth: window.innerWidth,  // Track window width for responsive behavior
       leftSidebarVisible: true,
+      currentUser: null,
       
       dialogType: '',
       dialogTitle: '',
@@ -481,10 +510,11 @@ export default {
     Pane,
     TwoHeaderMenu,
     CodeTabs,
-    UnifiedConsole,
+    HybridConsole,
     ConsoleTabs,
     ProjTree,
     IdeEditor,
+    LoginModal,
     PythonREPL,
     DialogProjs,
     DialogText,
@@ -496,6 +526,7 @@ export default {
     MediaViewer,
     SettingsModal,
     KeyboardShortcutsModal,
+    FindReplaceModal,
     FullscreenPreview,
     ChevronLeft,
     ChevronRight,
@@ -511,17 +542,36 @@ export default {
     this.throttledHandleResizeRight = this.throttle(this.handleResizeRight, 16);
     this.throttledHandleResizeConsole = this.throttle(this.handleResizeConsole, 16);
 
-    // Initialize WebSocket if needed
-    try {
-      console.log('🔌 [VmIde] Initializing WebSocket...');
-      if (!this.wsInfo || !this.wsInfo.rws) {
-        this.$store.dispatch('websocket/init', {});
-        console.log('✅ [VmIde] WebSocket initialization dispatched');
-      } else {
-        console.log('ℹ️ [VmIde] WebSocket already initialized');
+    // Check if user is already logged in
+    const sessionId = localStorage.getItem('session_id');
+    const username = localStorage.getItem('username');
+    
+    if (sessionId && username) {
+      console.log('🔑 [VmIde] Found existing session for:', username);
+      this.currentUser = {
+        username: username,
+        role: localStorage.getItem('role'),
+        full_name: localStorage.getItem('full_name'),
+        session_id: sessionId
+      };
+      
+      // Initialize WebSocket only if logged in
+      try {
+        console.log('🔌 [VmIde] Initializing WebSocket with authentication...');
+        if (!this.wsInfo || !this.wsInfo.rws) {
+          this.$store.dispatch('websocket/init', {});
+          console.log('✅ [VmIde] WebSocket initialization dispatched');
+        } else {
+          console.log('ℹ️ [VmIde] WebSocket already initialized');
+        }
+      } catch (error) {
+        console.error('❌ [VmIde] Error initializing WebSocket:', error);
       }
-    } catch (error) {
-      console.error('❌ [VmIde] Error initializing WebSocket:', error);
+    } else {
+      console.log('🔒 [VmIde] No session found, user needs to login');
+      // Don't initialize WebSocket until after login
+      // User will click Sign In button to show login modal
+      return;
     }
 
     // Test image removed - right panel will only show when actual content is loaded
@@ -548,14 +598,16 @@ export default {
     window.addEventListener('resize', this.validateLayout);
     
     const self = this;
-    const t = setInterval(() => {
-      console.log("⏱️ [VmIde] WebSocket check:", { 
-        connected: self.wsInfo.connected, 
-        wsInfo: self.wsInfo 
-      });
-      if (self.wsInfo.connected) {
-        console.log("📡 [VmIde] WebSocket connected, listing projects...");
-        this.$store.dispatch(`ide/${types.IDE_LIST_PROJECTS}`, {
+    // Only start WebSocket timer if logged in
+    if (sessionId && username) {
+      const t = setInterval(() => {
+        console.log("⏱️ [VmIde] WebSocket check:", { 
+          connected: self.wsInfo.connected, 
+          wsInfo: self.wsInfo 
+        });
+        if (self.wsInfo.connected) {
+          console.log("📡 [VmIde] WebSocket connected, listing projects...");
+          this.$store.dispatch(`ide/${types.IDE_LIST_PROJECTS}`, {
           callback: (dict) => {
             console.log("📋 [VmIde] Project list response:", dict);
             clearInterval(t);
@@ -571,16 +623,23 @@ export default {
         })
       }
     }, 1000);
+    } // Close the if (sessionId && username) block
+    
     window.addEventListener('resize', this.resize);
+    
+    // Apply saved editor settings on mount
+    this.$nextTick(() => {
+      this.applyInitialEditorSettings();
+    });
   },
   
   beforeUnmount() {
     window.removeEventListener('resize', this.validateLayout);
     window.removeEventListener('resize', this.resize);
     
-    // Clean up WebSocket handler
-    if (this.wsMessageHandler && this.wsInfo && this.wsInfo.rws) {
-      this.wsInfo.rws.removeEventListener('message', this.wsMessageHandler);
+    // Clean up WebSocket handler - no need to remove since WebSocket module handles it
+    if (this.wsMessageHandler) {
+      // The WebSocket module will clean up event listeners when the connection closes
       this.wsMessageHandler = null;
     }
     
@@ -810,8 +869,56 @@ export default {
     toggleLeftSidebar(visible) {
       this.leftSidebarVisible = visible;
     },
+    applyInitialEditorSettings() {
+      // Apply saved font size if exists
+      const savedFontSize = localStorage.getItem('fontSize');
+      if (savedFontSize) {
+        this.updateFontSize(savedFontSize);
+      }
+      
+      // Apply saved line numbers setting if exists
+      const savedLineNumbers = localStorage.getItem('showLineNumbers');
+      if (savedLineNumbers !== null) {
+        this.updateLineNumbers(savedLineNumbers === 'true');
+      }
+    },
+    updateFontSize(value) {
+      // Update font size in all CodeMirror editors
+      const fontSize = parseInt(value) + 'px';
+      
+      // Update all existing CodeMirror instances
+      const editors = document.querySelectorAll('.CodeMirror');
+      editors.forEach(editor => {
+        if (editor.CodeMirror) {
+          editor.style.fontSize = fontSize;
+          editor.CodeMirror.refresh();
+        }
+      });
+      
+      // Update CSS for future editors
+      const style = document.getElementById('codemirror-font-size') || document.createElement('style');
+      style.id = 'codemirror-font-size';
+      style.innerHTML = `.CodeMirror { font-size: ${fontSize} !important; } .CodeMirror pre { font-size: ${fontSize} !important; }`;
+      if (!document.getElementById('codemirror-font-size')) {
+        document.head.appendChild(style);
+      }
+      
+      // Store in localStorage for persistence
+      localStorage.setItem('editorFontSize', value);
+    },
     updateLineNumbers(value) {
-      // Update line numbers in all editors
+      // Update line numbers in all CodeMirror editors
+      const editors = document.querySelectorAll('.CodeMirror');
+      editors.forEach(editor => {
+        if (editor.CodeMirror) {
+          editor.CodeMirror.setOption('lineNumbers', value);
+        }
+      });
+      
+      // Store in localStorage for persistence
+      localStorage.setItem('editorLineNumbers', value);
+      
+      // Also update the store for new editors
       this.$store.commit('ide/setEditorOption', { option: 'lineNumbers', value });
     },
     updateWordWrap(value) {
@@ -952,7 +1059,7 @@ export default {
     },
     
     setupWebSocketHandler() {
-      // Add a handler for WebSocket messages using event listener
+      // Add a handler for WebSocket messages using the store's mutation
       try {
         if (!this.wsInfo || !this.wsInfo.rws) {
           console.log('WebSocket not ready, retrying...');
@@ -960,13 +1067,8 @@ export default {
           return;
         }
         
-        // Remove any existing handler to avoid duplicates
-        if (this.wsMessageHandler) {
-          this.wsInfo.rws.removeEventListener('message', this.wsMessageHandler);
-        }
-        
         // Create a new message handler
-        this.wsMessageHandler = (event) => {
+        const wsMessageHandler = (event) => {
           // Handle REPL messages FIRST before the store consumes them
           try {
             const message = JSON.parse(event.data);
@@ -999,7 +1101,7 @@ export default {
                 
             if (isRepl) {
               console.log('🎯 REPL message matched!');
-              this.handleBackendReplResponse(message);
+              this.handleReplResponse(message);  // Call the existing method
             }
           } catch (e) {
             // Not JSON or parsing error, ignore
@@ -1007,8 +1109,15 @@ export default {
           
         };
         
-        // Add the event listener (doesn't mutate the WebSocket object)
-        this.wsInfo.rws.addEventListener('message', this.wsMessageHandler);
+        // Use the store's addEventListener mutation to properly add the listener
+        this.$store.commit('websocket/addEventListener', {
+          wsKey: 'default',
+          type: 'message', 
+          listener: wsMessageHandler
+        });
+        
+        // Store reference for cleanup
+        this.wsMessageHandler = wsMessageHandler;
         
         console.log('WebSocket handler for REPL set up successfully');
       } catch (error) {
@@ -1040,16 +1149,22 @@ export default {
             this.addReplOutput(dict.data.output, 'output');
           }
         }
-      } else if (dict.code === 2000 || dict.cmd === 'python_output') {
-        // Python output during execution
-        if (dict.data) {
-          if (dict.data.stdout) {
-            this.addReplOutput(dict.data.stdout, 'output');
-          }
-          if (dict.data.stderr) {
-            this.addReplOutput(dict.data.stderr, 'error');
-          }
+      } else if (dict.code === 2000) {
+        // Input request from Python script
+        console.log('Input request received:', dict.data);
+        if (dict.data && dict.data.prompt) {
+          // Show the input prompt
+          this.addReplOutput(dict.data.prompt, 'output');
+          // The input field should already be visible in the console
         }
+      } else if (dict.code === 5000) {
+        // Entering REPL mode after script execution
+        console.log('Entering REPL mode after script execution');
+        this.isReplMode = true;
+        this.addReplOutput('\n═══════════════════════════════════════\n', 'system');
+        this.addReplOutput('Entering interactive REPL mode', 'system');
+        this.addReplOutput('All variables from the script are available', 'system');
+        this.addReplOutput('Type exit() or press Ctrl+D to quit\n', 'system');
       } else if (dict.code === 1111 || dict.cmd === 'python_ended') {
         // REPL session ended
         this.addReplOutput('\nREPL session ended', 'system');
@@ -1722,43 +1837,68 @@ export default {
     loadAllDefaultProjects() {
       console.log('🚀 [loadAllDefaultProjects] Starting to load default projects');
       const self = this;
-      const defaultProjects = ['Local', 'Assignments', 'Lecture Notes', 'Testing'];
+      
+      // Get current username from localStorage
+      const username = localStorage.getItem('username');
+      
+      // Build list of projects to load - use actual project names from the server
+      const projectsToLoad = [];
+      
+      // Check for user's personal directory (e.g., "Local/sa9082")
+      const userProject = this.ideInfo.projList.find(p => p.name === `Local/${username}`);
+      if (userProject) {
+        projectsToLoad.push(userProject.name);
+      }
+      
+      // Add other standard projects if they exist
+      const standardProjects = ['Lecture Notes', 'Assignments', 'Tests'];
+      standardProjects.forEach(proj => {
+        if (this.ideInfo.projList.some(p => p.name === proj)) {
+          projectsToLoad.push(proj);
+        }
+      });
+      
+      console.log('📋 [loadAllDefaultProjects] Projects to load:', projectsToLoad);
+      console.log('📋 [loadAllDefaultProjects] Available projects:', this.ideInfo.projList);
+      
+      if (projectsToLoad.length === 0) {
+        console.warn('⚠️ [loadAllDefaultProjects] No projects to load');
+        return;
+      }
+      
       const loadedProjects = [];
       let loadCount = 0;
       
-      console.log('📋 [loadAllDefaultProjects] Project list:', this.ideInfo.projList);
-      
-      defaultProjects.forEach(projectName => {
-        // Check if project exists in the list
-        const projectExists = this.ideInfo.projList.some(p => p.name === projectName);
-        console.log(`🔍 [loadAllDefaultProjects] Checking ${projectName}: exists=${projectExists}`);
+      projectsToLoad.forEach(projectName => {
+        console.log(`🔍 [loadAllDefaultProjects] Loading project: ${projectName}`);
         
-        if (projectExists) {
-          this.$store.dispatch(`ide/${types.IDE_GET_PROJECT}`, {
-            projectName: projectName,
-            callback: (dict) => {
-              console.log(`📥 [loadAllDefaultProjects] Response for ${projectName}:`, dict);
-              if (dict.code == 0) {
-                loadedProjects.push(dict.data);
-                loadCount++;
-                
-                // When all projects are loaded, combine them
-                if (loadCount === defaultProjects.filter(p => 
-                  self.ideInfo.projList.some(proj => proj.name === p)
-                ).length) {
-                  console.log('✅ [loadAllDefaultProjects] All projects loaded:', loadedProjects);
-                  self.$store.commit('ide/handleMultipleProjects', loadedProjects);
-                  // Also set the first project as current for compatibility
-                  if (loadedProjects.length > 0) {
-                    self.$store.commit('ide/handleProject', loadedProjects[0]);
-                  }
+        this.$store.dispatch(`ide/${types.IDE_GET_PROJECT}`, {
+          projectName: projectName,
+          callback: (dict) => {
+            console.log(`📥 [loadAllDefaultProjects] Response for ${projectName}:`, dict);
+            if (dict.code == 0) {
+              loadedProjects.push(dict.data);
+              loadCount++;
+              
+              // When all projects are loaded, combine them
+              if (loadCount === projectsToLoad.length) {
+                console.log('✅ [loadAllDefaultProjects] All projects loaded:', loadedProjects);
+                self.$store.commit('ide/handleMultipleProjects', loadedProjects);
+                // Also set the user's project as current
+                const userProjectData = loadedProjects.find(p => p.name === `Local/${username}`);
+                if (userProjectData) {
+                  self.$store.commit('ide/handleProject', userProjectData);
+                } else if (loadedProjects.length > 0) {
+                  // Fallback to first project if user project not found
+                  self.$store.commit('ide/handleProject', loadedProjects[0]);
                 }
-              } else {
-                console.error(`❌ [loadAllDefaultProjects] Failed to load ${projectName}:`, dict);
               }
+            } else {
+              console.error(`❌ [loadAllDefaultProjects] Failed to load ${projectName}:`, dict);
+              loadCount++; // Still increment to avoid hanging
             }
-          });
-        }
+          }
+        });
       });
     },
     getProject(name) {
@@ -1860,9 +2000,21 @@ export default {
         }
         
         // Then fetch content as before
+        // Extract relative path from the full path
+        let relativePath = path;
+        if (actualProjectName && path.startsWith(actualProjectName + '/')) {
+          relativePath = path.substring(actualProjectName.length + 1);
+        }
+        
+        console.log('[getFile] Getting file with relative path:', {
+          originalPath: path,
+          projectName: actualProjectName,
+          relativePath: relativePath
+        });
+        
         this.$store.dispatch(`ide/${types.IDE_GET_FILE}`, {
           projectName: actualProjectName, // Ensure project name is passed
-          filePath: path,
+          filePath: relativePath,
           callback: (dict) => {
             if (dict.code == 0) {
               self.$store.commit('ide/handleGetFile', {
@@ -1965,21 +2117,9 @@ export default {
                 };
                 const mimeType = mimeTypes[fileExt] || 'application/octet-stream';
                 
-                // Create data URL for images or blob URL for PDFs
-                let previewContent;
-                if (fileExt === 'pdf') {
-                  // For PDF, create blob URL
-                  const binaryString = atob(base64Content);
-                  const bytes = new Uint8Array(binaryString.length);
-                  for (let i = 0; i < binaryString.length; i++) {
-                    bytes[i] = binaryString.charCodeAt(i);
-                  }
-                  const blob = new Blob([bytes], { type: mimeType });
-                  previewContent = URL.createObjectURL(blob);
-                } else {
-                  // For images, use data URL
-                  previewContent = `data:${mimeType};base64,${base64Content}`;
-                }
+                // Create data URL for both images and PDFs
+                // SimplePdfViewer expects base64 data, not blob URLs
+                const previewContent = `data:${mimeType};base64,${base64Content}`;
                 
                 // Set fullscreen preview in store
                 const fileData = {
@@ -2110,8 +2250,78 @@ export default {
       this.$message.info('Share project feature coming soon!');
     },
     handleSignIn() {
-      // Handle sign in functionality
-      this.$message.info('Sign in feature coming soon!');
+      console.log('handleSignIn called');
+      
+      // Check if already logged in
+      const existingSession = localStorage.getItem('session_id');
+      const existingUsername = localStorage.getItem('username');
+      
+      if (existingSession && existingUsername) {
+        // User is already logged in, ask if they want to switch accounts
+        ElMessageBox.confirm(
+          `You are already logged in as ${existingUsername}. Do you want to sign out and login with a different account?`,
+          'Already Logged In',
+          {
+            confirmButtonText: 'Sign Out',
+            cancelButtonText: 'Cancel',
+            type: 'info',
+          }
+        ).then(() => {
+          // User wants to sign out and login again
+          localStorage.removeItem('session_id');
+          localStorage.removeItem('username');
+          localStorage.removeItem('role');
+          localStorage.removeItem('full_name');
+          
+          // Reload to clear the session
+          window.location.reload();
+        }).catch(() => {
+          // User cancelled, do nothing
+        });
+        return;
+      }
+      
+      // Show login modal for new login
+      console.log('Setting showLoginModal to true');
+      this.showLoginModal = true;
+      console.log('showLoginModal is now:', this.showLoginModal);
+      
+      // Force Vue to update
+      this.$nextTick(() => {
+        console.log('After nextTick, showLoginModal:', this.showLoginModal);
+        console.log('Login modal element:', document.querySelector('.login-modal-overlay'));
+      });
+    },
+    handleLoginSuccess(userData) {
+      console.log('Login success received:', userData);
+      
+      // Handle successful login
+      if (userData) {
+        this.currentUser = userData;
+        
+        // Show success message using ElMessage
+        ElMessage.success(`Welcome, ${userData.full_name || userData.username}!`);
+        
+        // Since session is now stored in localStorage,
+        // reload the page to reinitialize with the authenticated session
+        // This avoids Vuex mutation issues with WebSocket reconnection
+        setTimeout(() => {
+          window.location.reload();
+        }, 500);
+      } else {
+        console.error('No user data received in handleLoginSuccess');
+      }
+    },
+    reconnectWebSocket() {
+      // Disconnect existing WebSocket
+      if (this.wsInfo && this.wsInfo.rws) {
+        this.wsInfo.rws.close();
+      }
+      
+      // Reconnect with authentication
+      setTimeout(() => {
+        this.$store.dispatch('websocket/init');
+      }, 500);
     },
     handleNewFileFromTree() {
       // Open new file dialog - same functionality as File > New File
@@ -2139,46 +2349,129 @@ export default {
     // Edit menu handlers
     handleUndo() {
       // Trigger undo in the active editor
-      this.$message.info('Undo feature coming soon!');
+      const activeEditor = this.getActiveCodeMirrorInstance();
+      if (activeEditor) {
+        activeEditor.undo();
+      } else {
+        document.execCommand('undo');
+      }
     },
     handleRedo() {
       // Trigger redo in the active editor
-      this.$message.info('Redo feature coming soon!');
+      const activeEditor = this.getActiveCodeMirrorInstance();
+      if (activeEditor) {
+        activeEditor.redo();
+      } else {
+        document.execCommand('redo');
+      }
     },
     handleCut() {
       // Trigger cut in the active editor
-      document.execCommand('cut');
+      const activeEditor = this.getActiveCodeMirrorInstance();
+      if (activeEditor && activeEditor.somethingSelected()) {
+        const selection = activeEditor.getSelection();
+        navigator.clipboard.writeText(selection);
+        activeEditor.replaceSelection('');
+      } else {
+        document.execCommand('cut');
+      }
     },
     handleCopy() {
       // Trigger copy in the active editor
-      document.execCommand('copy');
+      const activeEditor = this.getActiveCodeMirrorInstance();
+      if (activeEditor && activeEditor.somethingSelected()) {
+        const selection = activeEditor.getSelection();
+        navigator.clipboard.writeText(selection);
+      } else {
+        document.execCommand('copy');
+      }
     },
     handlePaste() {
       // Trigger paste in the active editor
-      document.execCommand('paste');
+      const activeEditor = this.getActiveCodeMirrorInstance();
+      if (activeEditor) {
+        navigator.clipboard.readText().then(text => {
+          activeEditor.replaceSelection(text);
+        }).catch(() => {
+          document.execCommand('paste');
+        });
+      } else {
+        document.execCommand('paste');
+      }
     },
     handleFind() {
-      // Open find dialog
-      this.$message.info('Find feature coming soon!');
+      // Open custom Find/Replace modal in find mode
+      this.findReplaceMode = 'find';
+      this.showFindReplaceModal = true;
     },
     handleReplace() {
-      // Open replace dialog
-      this.$message.info('Replace feature coming soon!');
+      // Open custom Find/Replace modal in replace mode
+      this.findReplaceMode = 'replace';
+      this.showFindReplaceModal = true;
     },
     handleComment() {
       // Toggle comment in the active editor
-      this.$message.info('Comment feature coming soon!');
+      const activeEditor = this.getActiveCodeMirrorInstance();
+      if (activeEditor) {
+        activeEditor.toggleComment();
+      }
+    },
+    getActiveCodeMirrorInstance() {
+      // Get the active CodeMirror instance from the current editor
+      const activeEditorElement = document.querySelector('.editor-content .code-editor-flex .CodeMirror');
+      if (activeEditorElement && activeEditorElement.CodeMirror) {
+        return activeEditorElement.CodeMirror;
+      }
+      return null;
     },
     // View menu handlers
     toggleConsole(visible) {
-      // Toggle console visibility
+      // Toggle console/REPL visibility
       if (visible) {
         this.consoleMode = 'normal';
         this.consolePaneSize = 30;
+        
+        // If no console is selected, start an empty REPL
+        if (!this.ideInfo.consoleSelected || !this.ideInfo.consoleSelected.id) {
+          this.startEmptyRepl();
+        }
       } else {
         this.consoleMode = 'collapsed';
         this.consolePaneSize = 5;
       }
+    },
+    
+    startEmptyRepl() {
+      // Create a REPL console item for empty REPL
+      const replConsole = {
+        id: 'empty-repl-' + Date.now(),
+        name: 'Python REPL',
+        path: 'REPL',
+        resultList: [],
+        run: false,
+        stop: false,
+        waitingForInput: false,
+        inputPrompt: ''
+      };
+      
+      // Add to console items
+      this.$store.commit('ide/pushConsoleItem', replConsole);
+      this.$store.commit('ide/selectConsoleItem', replConsole.id);
+      
+      // Start the empty REPL on server
+      this.sendMessage({
+        cmd: 'start_python_repl',
+        cmd_id: replConsole.id,
+        data: {
+          projectName: this.ideInfo.currProj?.data?.name || 'Local'
+        }
+      });
+      
+      // Mark as running
+      this.$store.commit('ide/updateConsoleItem', {
+        id: replConsole.id,
+        run: true
+      });
     },
     togglePreviewPanel(visible) {
       // Toggle preview panel visibility
@@ -3037,14 +3330,25 @@ export default {
                          this.ideInfo.currProj?.config?.name;
       
       // Remove duplicate console item creation - this was causing multiple input fields
+      const runId = this.ideInfo.consoleId;
+      
+      // Set replSessionId so we can receive the output from HybridREPLThread
+      this.replSessionId = runId;
+      console.log(`[VmIde] Setting replSessionId to ${runId} for Python program execution`);
+      
       this.$store.dispatch(`ide/${types.IDE_RUN_PYTHON_PROGRAM}`, {
-        msgId: this.ideInfo.consoleId,
+        msgId: runId,
         projectName: projectName,
         filePath: this.ideInfo.currProj.pathSelected,
         callback: {
           limits: -1,
           callback: (dict) => {
-            this.$store.commit('ide/handleRunResult', dict);
+            // Don't process through handleRunResult if we're handling via REPL
+            // The REPL handler will process all output directly
+            // Only process non-output messages (like program start)
+            if (!dict.data || (!dict.data.stdout && !dict.data.stderr)) {
+              this.$store.commit('ide/handleRunResult', dict);
+            }
           }
         }
       });
@@ -3066,14 +3370,25 @@ export default {
                          this.ideInfo.currProj?.data?.name ||
                          this.ideInfo.currProj?.config?.name;
       
+      const runId = this.ideInfo.consoleSelected.id;
+      
+      // Set replSessionId so we can receive the output from HybridREPLThread
+      this.replSessionId = runId;
+      console.log(`[VmIde] Setting replSessionId to ${runId} for Python program re-run`);
+      
       this.$store.dispatch(`ide/${types.IDE_RUN_PYTHON_PROGRAM}`, {
-        msgId: this.ideInfo.consoleSelected.id,
+        msgId: runId,
         projectName: projectName,
         filePath: this.ideInfo.consoleSelected.path,
         callback: {
           limits: -1,
           callback: (dict) => {
-            this.$store.commit('ide/handleRunResult', dict);
+            // Don't process through handleRunResult if we're handling via REPL
+            // The REPL handler will process all output directly
+            // Only process non-output messages (like program start)
+            if (!dict.data || (!dict.data.stdout && !dict.data.stderr)) {
+              this.$store.commit('ide/handleRunResult', dict);
+            }
           }
         }
       });
@@ -3489,7 +3804,45 @@ export default {
     
     async executeReplCommand() {
       const command = this.replInput;
-      await this.executeReplCommandDualMode(command);
+      
+      // Check if we're in script-to-REPL mode (after script execution)
+      if (this.ideInfo.consoleSelected && this.ideInfo.consoleSelected.waitingForReplInput) {
+        // Send command to the existing console's REPL session
+        const consoleId = this.ideInfo.consoleSelected.id;
+        
+        // Clear input
+        this.replInput = '';
+        this.replInputRows = 1;
+        
+        // Add command to console output using mutation
+        this.$store.commit('ide/addConsoleOutput', {
+          id: consoleId,
+          type: 'user-input',
+          text: `>>> ${command}`
+        });
+        
+        // Send command via WebSocket
+        if (this.wsInfo && this.wsInfo.rws && this.wsInfo.rws.readyState === WebSocket.OPEN) {
+          const msg = {
+            cmd: 'send_program_input',
+            id: consoleId,
+            data: {
+              program_id: consoleId,
+              input: command
+            }
+          };
+          this.wsInfo.rws.send(JSON.stringify(msg));
+          
+          // Mark as not waiting for input temporarily using mutation
+          this.$store.commit('ide/setConsoleWaitingForReplInput', {
+            id: consoleId,
+            waiting: false
+          });
+        }
+      } else {
+        // Use regular REPL mode
+        await this.executeReplCommandDualMode(command);
+      }
     },
     
     // Helper method to ensure REPL console exists
@@ -3838,18 +4191,52 @@ Advanced packages (install with micropip):
 
 .console-header {
   height: 35px;
-  background: var(--bg-secondary, #2A2A2D);
-  border-bottom: 1px solid var(--border-primary, #3c3c3c);
+  background: var(--console-header-bg, #323336);
+  border-bottom: 1px solid var(--console-header-border, #464647);
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 0 12px;
   user-select: none;
   transition: background-color 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .console-header:hover {
-  background: var(--bg-hover, #313133);
+  background: var(--console-header-hover, #3a3a3d);
+}
+
+/* Light theme console header */
+[data-theme="light"] .console-header {
+  background: #e2e6ea;
+  border-bottom: 1px solid #c8cfd6;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .console-header:hover {
+  background: #d8dde2;
+}
+
+/* Dark theme console header (default) */
+[data-theme="dark"] .console-header {
+  background: #323336;
+  border-bottom: 1px solid #464647;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+[data-theme="dark"] .console-header:hover {
+  background: #3a3a3d;
+}
+
+/* High contrast theme console header */
+[data-theme="contrast"] .console-header {
+  background: #1a1a1a;
+  border-bottom: 2px solid #3a3a3a;
+  box-shadow: 0 1px 3px rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="contrast"] .console-header:hover {
+  background: #252525;
 }
 
 .console-header-left {
@@ -3866,14 +4253,14 @@ Advanced packages (install with micropip):
 
 .console-expand-arrow {
   background: transparent;
-  border: 1px solid var(--border-primary, #3c3c3c);
+  border: 1px solid var(--console-header-button-border, #3c3c3c);
   border-radius: 4px;
   padding: 4px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-secondary, #B5B5B5);
+  color: var(--console-header-button-text, #B5B5B5);
   transition: all 0.2s;
   width: 28px;
   height: 28px;
@@ -3883,6 +4270,32 @@ Advanced packages (install with micropip):
   background: var(--accent-color, #007ACC);
   color: white;
   border-color: var(--accent-color, #007ACC);
+}
+
+[data-theme="light"] .console-expand-arrow {
+  border: 1px solid #adb5bd;
+  color: #6c757d;
+}
+
+[data-theme="light"] .console-expand-arrow:hover {
+  background: #0066cc;
+  border-color: #0066cc;
+}
+
+[data-theme="dark"] .console-expand-arrow {
+  border: 1px solid #565656;
+  color: #b5b5b5;
+}
+
+[data-theme="contrast"] .console-expand-arrow {
+  border: 2px solid #4a4a4a;
+  color: #ffffff;
+}
+
+[data-theme="contrast"] .console-expand-arrow:hover {
+  background: #ffffff;
+  color: #000000;
+  border-color: #ffffff;
 }
 
 .collapse-icon {
@@ -3898,8 +4311,23 @@ Advanced packages (install with micropip):
 
 .console-title {
   font-size: 14px;
-  font-weight: 500;
-  color: var(--text-primary, #CCCCCC);
+  font-weight: 600;
+  color: var(--console-header-text, #E5E5E5);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+[data-theme="light"] .console-title {
+  color: #495057;
+}
+
+[data-theme="dark"] .console-title {
+  color: #e5e5e5;
+}
+
+[data-theme="contrast"] .console-title {
+  color: #ffffff;
+  font-weight: 700;
 }
 
 .console-count {
@@ -3914,8 +4342,8 @@ Advanced packages (install with micropip):
 
 .console-action-btn {
   background: transparent;
-  border: 1px solid var(--border-secondary, #464647);
-  color: var(--text-secondary, #969696);
+  border: 1px solid var(--console-header-button-border, #464647);
+  color: var(--console-header-button-text, #969696);
   padding: 4px 12px;
   border-radius: 3px;
   cursor: pointer;
@@ -3924,9 +4352,42 @@ Advanced packages (install with micropip):
 }
 
 .console-action-btn:hover {
-  background: var(--bg-hover, #3A3A3C);
+  background: var(--console-header-button-hover, #3A3A3C);
   border-color: var(--accent-color, #007ACC);
   color: var(--text-primary, #FFFFFF);
+}
+
+[data-theme="light"] .console-action-btn {
+  border: 1px solid #adb5bd;
+  color: #6c757d;
+}
+
+[data-theme="light"] .console-action-btn:hover {
+  background: #e9ecef;
+  border-color: #0066cc;
+  color: #212529;
+}
+
+[data-theme="dark"] .console-action-btn {
+  border: 1px solid #565656;
+  color: #969696;
+}
+
+[data-theme="dark"] .console-action-btn:hover {
+  background: #3a3a3c;
+  border-color: #007acc;
+  color: #ffffff;
+}
+
+[data-theme="contrast"] .console-action-btn {
+  border: 2px solid #4a4a4a;
+  color: #ffffff;
+}
+
+[data-theme="contrast"] .console-action-btn:hover {
+  background: #2a2a2a;
+  border-color: #ffffff;
+  color: #ffffff;
 }
 
 .console-body {
@@ -3991,6 +4452,20 @@ Advanced packages (install with micropip):
   margin: 0;
   font-style: italic;
   white-space: pre-wrap;
+}
+
+.console-repl-prompt {
+  color: var(--accent-color, #007ACC);
+  font-weight: bold;
+  font-family: monospace;
+}
+
+.console-user-input {
+  color: var(--info-color, #3794FF);
+  margin: 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-weight: 500;
 }
 
 /* Console input area when waiting for program input */

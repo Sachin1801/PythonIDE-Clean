@@ -225,18 +225,39 @@ export default {
       this.showDirectoryTree = !this.showDirectoryTree;
     },
     formatCurrentPath(path) {
+      // If path already contains the project name, return as is
+      if (path && path !== '/') {
+        // Check if path already starts with a known project name
+        const knownProjects = ['Local', 'Lecture Notes', 'Assignments', 'Tests'];
+        for (let proj of knownProjects) {
+          if (path.startsWith(proj)) {
+            return path;
+          }
+        }
+      }
+      
       if (this.currentProject) {
         if (path === '/') {
           return this.currentProject;
         }
-        return this.currentProject + path;
+        // Only add project name if path doesn't already contain it
+        if (!path.startsWith(this.currentProject)) {
+          return this.currentProject + path;
+        }
+        return path;
       }
+      
       // Fallback to current project if no specific project context
       if (path === '/' && this.ideInfo.currProj) {
         return this.ideInfo.currProj.data?.label || this.ideInfo.currProj.config?.name;
       }
       if (path.startsWith('/') && this.ideInfo.currProj) {
-        return (this.ideInfo.currProj.data?.label || this.ideInfo.currProj.config?.name) + path;
+        const projName = this.ideInfo.currProj.data?.label || this.ideInfo.currProj.config?.name;
+        // Check if path already includes project name
+        if (!path.includes(projName)) {
+          return projName + path;
+        }
+        return path;
       }
       return path;
     },

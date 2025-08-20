@@ -70,6 +70,14 @@ const mutations = {
       }
     }
   },
+  setConsoleWaitingForReplInput(state, { id, waiting }) {
+    for (let i = 0; i < state.ideInfo.consoleItems.length; i++) {
+      if (state.ideInfo.consoleItems[i].id === id) {
+        state.ideInfo.consoleItems[i].waitingForReplInput = waiting;
+        break;
+      }
+    }
+  },
   pushConsoleItem(state, consoleItem) {
     // Check if item already exists
     const exists = state.ideInfo.consoleItems.find(item => item.id === consoleItem.id);
@@ -84,24 +92,70 @@ const mutations = {
     }
   },
   handleProjects(state, data) {
-    state.ideInfo.projList = data;
-    let lastAccessTime = 0;
-    for (var i = 0; i < state.ideInfo.projList.length; i++) {
-      if (state.ideInfo.projList[i].lastAccessTime > lastAccessTime) {
-        lastAccessTime = state.ideInfo.projList[i].lastAccessTime;
-        state.ideInfo.currProj.config.name = state.ideInfo.projList[i].name;
+    state.ideInfo.projList = data.map(proj => {
+      // Ensure each project has a name property
+      if (typeof proj === 'string') {
+        return { name: proj, lastAccessTime: 0 };
       }
+      return proj;
+    });
+    
+    // Find the user's personal project or the most recently accessed project
+    const username = localStorage.getItem('username');
+    let selectedProject = null;
+    
+    // First priority: user's personal directory
+    if (username) {
+      selectedProject = state.ideInfo.projList.find(p => p.name === `Local/${username}`);
+    }
+    
+    // Second priority: project with highest lastAccessTime
+    if (!selectedProject) {
+      let lastAccessTime = 0;
+      for (var i = 0; i < state.ideInfo.projList.length; i++) {
+        if (state.ideInfo.projList[i].lastAccessTime > lastAccessTime) {
+          lastAccessTime = state.ideInfo.projList[i].lastAccessTime;
+          selectedProject = state.ideInfo.projList[i];
+        }
+      }
+    }
+    
+    // Third priority: first project in the list
+    if (!selectedProject && state.ideInfo.projList.length > 0) {
+      selectedProject = state.ideInfo.projList[0];
+    }
+    
+    // Set the selected project name if found
+    if (selectedProject) {
+      state.ideInfo.currProj.config.name = selectedProject.name;
     }
   },
   handleProject(state, data) {
+    // Function to ensure label and uuid exist in the tree
+    const ensureNodeProperties = (node) => {
+      if (!node.label && node.name) {
+        node.label = node.name;
+      }
+      if (!node.uuid) {
+        node.uuid = node.path || node.name || Math.random().toString(36);
+      }
+      if (node.children) {
+        node.children.forEach(child => ensureNodeProperties(child));
+      }
+    };
+    
     // Don't clear codeItems to preserve open tabs across project switches
     // state.ideInfo.codeItems = [];
     state.ideInfo.currProj.expandedKeys = [];
     state.ideInfo.currProj.config = data.config || {};
+    
+    // Ensure the data has proper label and uuid properties
+    ensureNodeProperties(data);
     state.ideInfo.currProj.data = data;
+    
     state.ideInfo.currProj.pathSelected = state.ideInfo.currProj.config.selectFilePath;
     if (data.config !== undefined && data.config.expendKeys !== undefined) {
-      state.ideInfo.currProj.expandedKeys = data.config.expendKeys;
+      state.ideInfo.currProj.expandedKeys = data.config.expendKeys.filter(key => key !== null);
       state.ideInfo.currProj.expandedKeys.sort();
     }
     if (state.ideInfo.currProj.pathSelected && state.ideInfo.treeRef) {
@@ -121,11 +175,19 @@ const mutations = {
       children: []
     };
     
-    // Function to add projectName and fix UUIDs in a tree
+    // Function to add projectName, label and fix UUIDs in a tree
     const addProjectNameAndFixUuid = (node, projectName) => {
       node.projectName = projectName;
+      // Ensure label property exists (use name if label is missing)
+      if (!node.label && node.name) {
+        node.label = node.name;
+      }
+      // Generate UUID if missing
+      if (!node.uuid) {
+        node.uuid = node.path || node.name || Math.random().toString(36);
+      }
       // Fix root project UUID to be unique per project
-      if (node.path === '/') {
+      if (node.path === '/' || node.path === projectName) {
         node.uuid = `${projectName}_root`;
       }
       if (node.children) {
@@ -354,7 +416,7 @@ const mutations = {
         // Program starts, first set the running state to True and clear the output
         for (let i = 0; i < state.ideInfo.consoleItems.length; i++) {
           if (state.ideInfo.consoleItems[i].id !== dict.id) continue;
-          if (!state.ideInfo.consoleItems[i].run) {
+          if (!state.ideInfo.consoleItems[i].run && !state.ideInfo.consoleItems[i].isReplMode) {
             state.ideInfo.consoleItems[i].resultList = [];
           }
           state.ideInfo.consoleItems[i].run = true;
@@ -370,7 +432,29 @@ const mutations = {
             state.ideInfo.consoleItems[i].resultList.splice(0, 100);
           }
           // Push the result into the result list
-          state.ideInfo.consoleItems[i].resultList.push(`${dict.data.stdout}`);
+          const text = `${dict.data.stdout}`;
+          
+          // In REPL mode, check if output contains a new prompt
+          if (state.ideInfo.consoleItems[i].isReplMode && text.includes('>>> ')) {
+            // Split output and prompt
+            const parts = text.split('>>> ');
+            if (parts[0]) {
+              state.ideInfo.consoleItems[i].resultList.push({
+                type: 'text',
+                text: parts[0]
+              });
+            }
+            // Add the REPL prompt
+            state.ideInfo.consoleItems[i].resultList.push({
+              type: 'repl-prompt',
+              text: '>>> '
+            });
+            // Mark as waiting for REPL input again
+            state.ideInfo.consoleItems[i].waitingForReplInput = true;
+          } else {
+            // Regular output
+            state.ideInfo.consoleItems[i].resultList.push(text);
+          }
           // Limit refreshing only the selected Console's results
           // if (state.ideInfo.consoleSelected.id !== state.ideInfo.consoleItems[i].id && !window.GlobalUtil.model.socketModel.socketInfo.connected) {
           //   break;
@@ -456,6 +540,44 @@ const mutations = {
             `);
           }
         }
+        break;
+      }
+    }
+    else if (dict.code === 5000) {
+      // REPL mode transition
+      console.log('[REPL-MODE] Received code 5000 - REPL mode signal', dict);
+      for (let i = 0; i < state.ideInfo.consoleItems.length; i++) {
+        if (state.ideInfo.consoleItems[i].id !== dict.id) continue;
+        
+        // Set REPL mode flag on the console item
+        state.ideInfo.consoleItems[i].isReplMode = true;
+        state.ideInfo.consoleItems[i].replActive = true;
+        
+        // Add REPL mode indicator to console
+        state.ideInfo.consoleItems[i].resultList.push({
+          type: 'system',
+          text: '\n═══════════════════════════════════════════════════════════════════\nScript execution completed. Entering interactive REPL mode.\nAll variables from your script are available. Type Python code and press Enter.\n═══════════════════════════════════════════════════════════════════\n'
+        });
+        
+        // Show REPL prompt
+        state.ideInfo.consoleItems[i].resultList.push({
+          type: 'repl-prompt',
+          text: '>>> '
+        });
+        
+        // Mark as waiting for REPL input
+        state.ideInfo.consoleItems[i].waitingForReplInput = true;
+        
+        console.log('[REPL-MODE] Console item updated for REPL mode');
+        
+        // Focus the REPL input field
+        setTimeout(() => {
+          const replInput = document.querySelector('.repl-input');
+          if (replInput) {
+            replInput.focus();
+          }
+        }, 100);
+        
         break;
       }
     }
@@ -569,6 +691,16 @@ const mutations = {
       file: null,
       content: null
     };
+  },
+  // Editor options mutations
+  setEditorOption(state, { option, value }) {
+    // Store editor options in the state if needed
+    // For now, just log the change as the actual setting is handled in the component
+    console.log(`Editor option ${option} set to ${value}`);
+  },
+  setAutoSave(state, value) {
+    // Store auto-save setting
+    console.log(`Auto-save set to ${value}`);
   }
 };
 
@@ -624,6 +756,15 @@ const actions = {
     }, { root: true });
   },
   [types.IDE_SAVE_PROJECT](context, { wsKey, callback }) {
+    // Backend doesn't support ide_save_project command currently
+    // Just return success to avoid errors
+    if (callback) {
+      callback({ code: 0, data: {} });
+    }
+    return;
+    
+    // Original code commented out:
+    /*
     const openList = []
     for(let i = 0; i < context.state.ideInfo.codeItems.length; i++) {
       openList.push(context.state.ideInfo.codeItems[i].path);
@@ -639,6 +780,7 @@ const actions = {
       }, 
       callback: callback,
     }, { root: true });
+    */
   },
   [types.IDE_CREATE_FILE](context, { wsKey, projectName, parentPath, fileName, callback }) {
     context.dispatch('websocket/sendCmd', {
@@ -703,13 +845,20 @@ const actions = {
     }, { root: true });
   },
   [types.IDE_CREATE_FOLDER](context, { wsKey, projectName, parentPath, folderName, callback }) {
+    // Construct the full folder path
+    let folderPath = '';
+    if (parentPath === '/' || parentPath === '') {
+      folderPath = folderName;
+    } else {
+      folderPath = `${parentPath}/${folderName}`;
+    }
+    
     context.dispatch('websocket/sendCmd', {
       wsKey: wsKey,
       cmd: types.IDE_CREATE_FOLDER,
       data: {
         projectName: projectName || context.state.ideInfo.currProj.data.name,
-        parentPath: parentPath || context.state.ideInfo.nodeSelected.path,
-        folderName: folderName,
+        folderPath: folderPath,
       }, 
       callback: callback,
     }, { root: true });

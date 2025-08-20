@@ -31,6 +31,10 @@
                 <span class="shortcut-keys">Ctrl+Shift+S</span>
               </div>
               <div class="shortcut-item">
+                <span class="shortcut-action">Move</span>
+                <span class="shortcut-keys">Ctrl+Shift+M</span>
+              </div>
+              <div class="shortcut-item">
                 <span class="shortcut-action">Download</span>
                 <span class="shortcut-keys">Ctrl+D</span>
               </div>
@@ -109,7 +113,7 @@
               </div>
               <div class="shortcut-item">
                 <span class="shortcut-action">Toggle Preview Panel</span>
-                <span class="shortcut-keys">Ctrl+P</span>
+                <span class="shortcut-keys">Ctrl+Shift+P</span>
               </div>
               <div class="shortcut-item">
                 <span class="shortcut-action">Toggle Sidebar</span>

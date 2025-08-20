@@ -5,6 +5,7 @@ import sys
 import argparse
 import logging
 import time
+import gc
 import psutil
 from tornado import ioloop
 from tornado import web
@@ -84,6 +85,9 @@ class ProcessCleanupService:
                     
             if cleanup_count > 0:
                 logger.info(f"Process cleanup: killed {cleanup_count} abandoned processes")
+            
+            # Force garbage collection to free memory
+            gc.collect()
                 
         except Exception as e:
             logger.error(f"Error in process cleanup: {e}")

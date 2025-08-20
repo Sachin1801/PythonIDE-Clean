@@ -35,9 +35,9 @@ class DatabaseManager:
             # Parse database URL
             url = urlparse(self.database_url)
             
-            # Create connection pool
+            # Create connection pool (reduced for memory optimization)
             self.connection_pool = psycopg2.pool.ThreadedConnectionPool(
-                5, 20,  # min and max connections
+                2, 10,  # reduced from 5,20 to save memory on Railway
                 host=url.hostname,
                 port=url.port or 5432,
                 database=url.path[1:],

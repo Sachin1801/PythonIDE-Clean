@@ -36,6 +36,9 @@ RUN pip install --no-cache-dir -r server/requirements.txt
 # Copy backend code
 COPY server/ server/
 
+# Make startup script executable
+RUN chmod +x server/startup.sh
+
 # Copy built frontend from previous stage
 COPY --from=frontend-builder /app/dist dist/
 
@@ -48,12 +51,5 @@ RUN mkdir -p server/projects/ide/Local \
 # Expose port (Railway will override with PORT env var)
 EXPOSE 8080
 
-# Create a startup script
-RUN echo '#!/bin/sh\n\
-echo "Running database migrations..."\n\
-python server/migrations/add_modified_at_column.py || true\n\
-echo "Starting server..."\n\
-python server/server.py' > /app/start.sh && chmod +x /app/start.sh
-
-# Start the server
-CMD ["/app/start.sh"]
+# Start the server using the improved startup script
+CMD ["/app/server/startup.sh"]

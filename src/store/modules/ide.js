@@ -845,13 +845,20 @@ const actions = {
     }, { root: true });
   },
   [types.IDE_CREATE_FOLDER](context, { wsKey, projectName, parentPath, folderName, callback }) {
+    // Construct the full folder path
+    let folderPath = '';
+    if (parentPath === '/' || parentPath === '') {
+      folderPath = folderName;
+    } else {
+      folderPath = `${parentPath}/${folderName}`;
+    }
+    
     context.dispatch('websocket/sendCmd', {
       wsKey: wsKey,
       cmd: types.IDE_CREATE_FOLDER,
       data: {
         projectName: projectName || context.state.ideInfo.currProj.data.name,
-        parentPath: parentPath || context.state.ideInfo.nodeSelected.path,
-        folderName: folderName,
+        folderPath: folderPath,
       }, 
       callback: callback,
     }, { root: true });

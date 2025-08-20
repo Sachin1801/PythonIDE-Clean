@@ -1,9 +1,9 @@
 <template>
   <div>
     <div class="dialog-cover"></div>
-    <div class="new-file-dialog">
+    <div class="new-folder-dialog">
       <div class="dialog-header">
-        <h3>New File</h3>
+        <h3>New Folder</h3>
         <div class="close-btn" @click="onCancel">
           <X :size="20" />
         </div>
@@ -12,7 +12,7 @@
       <div class="dialog-body">
         <!-- Directory Navigation -->
         <div class="directory-section">
-          <label>Select Directory:</label>
+          <label>Select Parent Directory:</label>
           <div class="directory-nav">
             <div class="current-path" @click="toggleDirectoryTree">
               <FolderOpen :size="16" />
@@ -43,41 +43,39 @@
           </div>
         </div>
 
-        <!-- File Name Section -->
-        <div class="filename-section">
-          <label>File Name:</label>
-          <div class="filename-input-wrapper">
+        <!-- Folder Name Section -->
+        <div class="foldername-section">
+          <label>Folder Name:</label>
+          <div class="foldername-input-wrapper">
             <input 
               type="text" 
-              v-model="fileName"
-              @input="validateFileName"
-              placeholder="Enter file name (e.g., script.py)"
-              class="filename-input"
-              ref="fileNameInput"
+              v-model="folderName"
+              @input="validateFolderName"
+              placeholder="Enter folder name"
+              class="foldername-input"
+              ref="folderNameInput"
             />
-            <div v-if="fileExtension" class="file-type-icon">
-              <FileText :size="20" />
+            <div class="folder-type-icon">
+              <Folder :size="20" />
             </div>
           </div>
-          <div v-if="fileNameError" class="error-hint">
-            {{ fileNameError }}
+          <div v-if="folderNameError" class="error-hint">
+            {{ folderNameError }}
           </div>
-          <div v-else class="file-types-hint">
-            Common extensions: .py, .txt, .csv, .json, .md, .html, .css, .js
+          <div v-else class="folder-hint">
+            Folder names should not contain special characters
           </div>
         </div>
 
-
-
         <!-- Preview Section -->
-        <div v-if="fileName && !fileNameError" class="preview-section">
-          <label>File will be created at:</label>
-          <div class="file-preview">
-            <div class="file-info">
-              <FileText :size="20" />
+        <div v-if="folderName && !folderNameError" class="preview-section">
+          <label>Folder will be created at:</label>
+          <div class="folder-preview">
+            <div class="folder-info">
+              <Folder :size="20" />
               <div>
-                <div class="file-path">{{ getFullFilePath() }}</div>
-                <div class="file-type">{{ getFileTypeDescription() }}</div>
+                <div class="folder-path">{{ getFullFolderPath() }}</div>
+                <div class="folder-type">Directory</div>
               </div>
             </div>
           </div>
@@ -89,9 +87,9 @@
         <button 
           class="btn-create" 
           @click="onCreate"
-          :disabled="!fileName || !!fileNameError || creating"
+          :disabled="!folderName || !!folderNameError || creating"
         >
-          {{ creating ? 'Creating...' : 'Create File' }}
+          {{ creating ? 'Creating...' : 'Create Folder' }}
         </button>
       </div>
     </div>
@@ -99,7 +97,7 @@
 </template>
 
 <script>
-import { X, FolderOpen, Folder, ChevronRight, ChevronDown, FileText, Home } from 'lucide-vue-next';
+import { X, FolderOpen, Folder, ChevronRight, ChevronDown, Home } from 'lucide-vue-next';
 import * as types from '../../../../../store/mutation-types';
 import { ElMessage } from 'element-plus';
 
@@ -112,21 +110,10 @@ export default {
       currentPath: '/',
       currentProject: null,
       directories: [],
-      fileName: '',
-      fileNameError: '',
+      folderName: '',
+      folderNameError: '',
       creating: false,
       showDirectoryTree: false,
-
-    }
-  },
-  computed: {
-    ideInfo() {
-      return this.$store.state.ide.ideInfo;
-    },
-    fileExtension() {
-      if (!this.fileName) return '';
-      const lastDot = this.fileName.lastIndexOf('.');
-      return lastDot > 0 ? this.fileName.substring(lastDot) : '';
     }
   },
   components: {
@@ -135,14 +122,13 @@ export default {
     Folder,
     ChevronRight,
     ChevronDown,
-    FileText,
     Home
   },
   mounted() {
     this.loadDirectoryStructure();
-    // Focus on file name input
+    // Focus on folder name input
     this.$nextTick(() => {
-      this.$refs.fileNameInput?.focus();
+      this.$refs.folderNameInput?.focus();
     });
   },
   methods: {
@@ -261,16 +247,16 @@ export default {
       }
       return path;
     },
-    validateFileName() {
-      this.fileNameError = '';
+    validateFolderName() {
+      this.folderNameError = '';
       
-      if (!this.fileName) {
+      if (!this.folderName) {
         return;
       }
       
       // Check for invalid characters
-      if (/[<>:"|?*\\]/.test(this.fileName)) {
-        this.fileNameError = 'File name contains invalid characters';
+      if (/[<>:"|?*\\\/]/.test(this.folderName)) {
+        this.folderNameError = 'Folder name contains invalid characters';
         return;
       }
       
@@ -278,104 +264,60 @@ export default {
       const reserved = ['CON', 'PRN', 'AUX', 'NUL', 'COM1', 'COM2', 'COM3', 'COM4', 
                        'COM5', 'COM6', 'COM7', 'COM8', 'COM9', 'LPT1', 'LPT2', 
                        'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9'];
-      const nameWithoutExt = this.fileName.split('.')[0].toUpperCase();
-      if (reserved.includes(nameWithoutExt)) {
-        this.fileNameError = 'This is a reserved file name';
+      const nameUpper = this.folderName.toUpperCase();
+      if (reserved.includes(nameUpper)) {
+        this.folderNameError = 'This is a reserved folder name';
         return;
       }
       
-      // Check if file starts or ends with dot
-      if (this.fileName.startsWith('.') || this.fileName.endsWith('.')) {
-        this.fileNameError = 'File name cannot start or end with a dot';
+      // Check if folder starts or ends with dot
+      if (this.folderName.startsWith('.') || this.folderName.endsWith('.')) {
+        this.folderNameError = 'Folder name cannot start or end with a dot';
         return;
       }
       
-      // Warn if no extension
-      if (!this.fileExtension) {
-        this.fileNameError = 'Consider adding a file extension (e.g., .py, .txt)';
+      // Check if folder name is too long
+      if (this.folderName.length > 255) {
+        this.folderNameError = 'Folder name is too long';
+        return;
       }
     },
-
-    getFullFilePath() {
-      const fileName = this.fileName || 'new_file';
+    getFullFolderPath() {
+      const folderName = this.folderName || 'new_folder';
       const path = this.currentPath === '/' 
-        ? `/${fileName}` 
-        : `${this.currentPath}/${fileName}`;
+        ? `/${folderName}` 
+        : `${this.currentPath}/${folderName}`;
       
       return this.formatCurrentPath(path);
     },
-    getFileTypeDescription() {
-      const ext = this.fileExtension.toLowerCase();
-      const types = {
-        '.py': 'Python Script',
-        '.txt': 'Text File',
-        '.csv': 'CSV Data File',
-        '.json': 'JSON Data File',
-        '.md': 'Markdown Document',
-        '.html': 'HTML Document',
-        '.css': 'CSS Stylesheet',
-        '.js': 'JavaScript File',
-        '.xml': 'XML Document',
-        '.yaml': 'YAML Configuration',
-        '.yml': 'YAML Configuration',
-        '.ini': 'Configuration File',
-        '.log': 'Log File'
-      };
-      return types[ext] || 'File';
-    },
     async onCreate() {
-      if (!this.fileName || this.fileNameError) return;
+      if (!this.folderName || this.folderNameError) return;
       
       this.creating = true;
       
       try {
-        const fileName = this.fileName;
+        const folderName = this.folderName;
         const parentPath = this.currentPath;
         const projectName = this.currentProject || this.ideInfo.currProj?.data?.name || this.ideInfo.currProj?.config?.name;
         
-        console.log('[DialogNewFile] Creating file:', {
-          fileName,
+        console.log('[DialogNewFolder] Creating folder:', {
+          folderName,
           parentPath,
           projectName
         });
         
-        // Default content based on extension
-        let initialContent = '';
-        const ext = this.fileExtension.toLowerCase();
-        if (ext === '.py') {
-          initialContent = '#!/usr/bin/env python3\n\n';
-        } else if (ext === '.json') {
-          initialContent = '{}';
-        }
-        
-        // Create the file using the IDE store action
+        // Create the folder using the IDE store action
         await new Promise((resolve, reject) => {
-          this.$store.dispatch(`ide/${types.IDE_CREATE_FILE}`, {
+          this.$store.dispatch(`ide/${types.IDE_CREATE_FOLDER}`, {
             projectName: projectName,
             parentPath: parentPath,
-            fileName: fileName,
+            folderName: folderName,
             callback: (response) => {
-              console.log('[DialogNewFile] Create file response:', response);
+              console.log('[DialogNewFolder] Create folder response:', response);
               
               if (response.code === 0) {
-                // File created successfully
-                ElMessage.success(`File "${fileName}" created successfully`);
-                
-                // If we have initial content, write it to the file
-                if (initialContent) {
-                  const filePath = parentPath === '/' ? `/${fileName}` : `${parentPath}/${fileName}`;
-                  this.$store.dispatch(`ide/${types.IDE_WRITE_FILE}`, {
-                    projectName: projectName,
-                    filePath: filePath,
-                    fileData: initialContent,
-                    callback: (writeResponse) => {
-                      console.log('[DialogNewFile] Write file response:', writeResponse);
-                      resolve();
-                    }
-                  });
-                } else {
-                  resolve();
-                }
+                // Folder created successfully
+                ElMessage.success(`Folder "${folderName}" created successfully`);
                 
                 // Refresh the project tree
                 this.$store.dispatch(`ide/${types.IDE_GET_PROJECT}`, {
@@ -392,18 +334,19 @@ export default {
                   }
                 });
                 
-                // Open the newly created file
-                const newFilePath = parentPath === '/' ? `/${fileName}` : `${parentPath}/${fileName}`;
-                this.$emit('file-created', {
-                  path: newFilePath,
+                // Emit folder created event
+                const newFolderPath = parentPath === '/' ? `/${folderName}` : `${parentPath}/${folderName}`;
+                this.$emit('folder-created', {
+                  path: newFolderPath,
                   projectName: projectName
                 });
                 
                 // Close dialog
                 this.$emit('update:modelValue', false);
+                resolve();
               } else {
-                // Error creating file
-                const errorMsg = response.message || 'Failed to create file';
+                // Error creating folder
+                const errorMsg = response.message || response.msg || 'Failed to create folder';
                 ElMessage.error(errorMsg);
                 reject(new Error(errorMsg));
               }
@@ -411,14 +354,19 @@ export default {
           });
         });
       } catch (error) {
-        console.error('[DialogNewFile] Error creating file:', error);
-        ElMessage.error('Failed to create file: ' + error.message);
+        console.error('[DialogNewFolder] Error creating folder:', error);
+        ElMessage.error('Failed to create folder: ' + error.message);
       } finally {
         this.creating = false;
       }
     },
     onCancel() {
       this.$emit('update:modelValue', false);
+    }
+  },
+  computed: {
+    ideInfo() {
+      return this.$store.state.ide.ideInfo;
     }
   }
 }
@@ -435,7 +383,7 @@ export default {
   z-index: 9998;
 }
 
-.new-file-dialog {
+.new-folder-dialog {
   position: fixed;
   top: 50%;
   left: 50%;
@@ -488,13 +436,13 @@ export default {
 }
 
 .directory-section,
-.filename-section,
+.foldername-section,
 .preview-section {
   margin-bottom: 20px;
 }
 
 .directory-section label,
-.filename-section label,
+.foldername-section label,
 .preview-section label {
   display: block;
   margin-bottom: 8px;
@@ -568,13 +516,13 @@ export default {
   border-bottom: 1px solid var(--border-color, #464647);
 }
 
-.filename-input-wrapper {
+.foldername-input-wrapper {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.filename-input {
+.foldername-input {
   flex: 1;
   padding: 10px 12px;
   background: var(--input-bg, #2d2d30);
@@ -586,21 +534,21 @@ export default {
   transition: all 0.2s;
 }
 
-.filename-input:focus {
+.foldername-input:focus {
   outline: none;
   border-color: var(--accent-color, #007acc);
   background: var(--input-focus-bg, #383838);
 }
 
-.filename-input::placeholder {
+.foldername-input::placeholder {
   color: var(--text-disabled, #6b6b6b);
 }
 
-.file-type-icon {
+.folder-type-icon {
   color: var(--text-secondary, #969696);
 }
 
-.file-types-hint,
+.folder-hint,
 .error-hint {
   margin-top: 6px;
   font-size: 12px;
@@ -611,29 +559,27 @@ export default {
   color: var(--error-color, #f44747);
 }
 
-
-
-.file-preview {
+.folder-preview {
   padding: 12px;
   background: var(--preview-bg, #252526);
   border: 1px solid var(--border-color, #464647);
   border-radius: 4px;
 }
 
-.file-info {
+.folder-info {
   display: flex;
   align-items: center;
   gap: 12px;
 }
 
-.file-path {
+.folder-path {
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
   font-size: 13px;
   color: var(--text-primary, #cccccc);
   word-break: break-all;
 }
 
-.file-type {
+.folder-type {
   font-size: 12px;
   color: var(--text-secondary, #969696);
   margin-top: 4px;

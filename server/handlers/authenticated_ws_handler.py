@@ -14,6 +14,7 @@ import sys
 import os
 from collections import defaultdict
 from time import time
+from .websocket_keepalive import WebSocketKeepaliveMixin
 
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -76,7 +77,7 @@ class RateLimiter:
 rate_limiter = RateLimiter()
 
 
-class AuthenticatedWebSocketHandler(websocket.WebSocketHandler):
+class AuthenticatedWebSocketHandler(websocket.WebSocketHandler, WebSocketKeepaliveMixin):
     """WebSocket handler with authentication and secure file operations"""
     
     def __init__(self, application: tornado.web.Application, request: httputil.HTTPServerRequest, **kwargs: Any) -> None:
@@ -114,6 +115,10 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler):
     def open(self, *args: str, **kwargs: str) -> Optional[Awaitable[None]]:
         self.connected = True
         self.set_nodelay(True)
+        
+        # Setup keepalive mechanism
+        self.setup_keepalive()
+        
         logger.debug(f'WebSocket opened: ip={self.request.remote_ip}, id={self.id}, time={datetime.datetime.now()}')
         
         # Send authentication request
@@ -125,6 +130,21 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler):
     def on_close(self) -> None:
         self.connected = False
         self.authenticated = False
+        
+        # Cleanup keepalive
+        self.cleanup_keepalive()
+        
+        # Cleanup REPL handlers if they exist
+        if hasattr(self, 'repl_handlers'):
+            for file_path, handler in self.repl_handlers.items():
+                try:
+                    if handler and hasattr(handler, 'cleanup'):
+                        handler.cleanup()
+                        logger.info(f"Cleaned up REPL handler for {file_path}")
+                except Exception as e:
+                    logger.error(f"Error cleaning up REPL handler for {file_path}: {e}")
+            self.repl_handlers.clear()
+        
         logger.debug(f'WebSocket closed: ip={self.request.remote_ip}, user={self.username}, time={datetime.datetime.now()}')
     
     def on_message(self, message: Union[str, bytes]) -> Optional[Awaitable[None]]:
@@ -132,6 +152,12 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler):
         try:
             data = json.loads(message)
             cmd = data.get('cmd')
+            
+            # Handle keepalive pong responses
+            if cmd == 'pong' or data.get('type') == 'pong':
+                if hasattr(self, 'last_pong_time'):
+                    self.last_pong_time = time()
+                return
             
             # Handle authentication first
             if cmd == 'authenticate':

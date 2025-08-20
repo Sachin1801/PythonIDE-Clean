@@ -19,6 +19,13 @@ class DatabaseManager:
         self.is_postgres = True  # Always use PostgreSQL
         self.connection_pool = None
         
+        # Azure PostgreSQL URL format detection and conversion
+        if self.database_url and 'database.azure.com' in self.database_url:
+            logger.info("Azure PostgreSQL detected, configuring for Azure")
+            # Azure requires SSL
+            if 'sslmode=' not in self.database_url:
+                self.database_url += '&sslmode=require' if '?' in self.database_url else '?sslmode=require'
+        
         if not self.database_url:
             # Default to local PostgreSQL if no DATABASE_URL is set
             self.database_url = "postgresql://postgres:postgres@localhost:5432/pythonide"
@@ -35,14 +42,20 @@ class DatabaseManager:
             # Parse database URL
             url = urlparse(self.database_url)
             
-            # Create connection pool (reduced for memory optimization)
+            # Create connection pool with keepalive settings
             self.connection_pool = psycopg2.pool.ThreadedConnectionPool(
                 2, 10,  # reduced from 5,20 to save memory on Railway
                 host=url.hostname,
                 port=url.port or 5432,
                 database=url.path[1:],
                 user=url.username,
-                password=url.password
+                password=url.password,
+                # Add keepalive parameters to prevent connection drops
+                keepalives=1,
+                keepalives_idle=30,
+                keepalives_interval=10,
+                keepalives_count=5,
+                connect_timeout=10
             )
             logger.info("PostgreSQL connection pool created")
             
@@ -212,6 +225,16 @@ class DatabaseManager:
         try:
             if self.is_postgres:
                 conn = self.connection_pool.getconn()
+                # Test connection is still valid
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute('SELECT 1')
+                except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+                    logger.warning(f"Connection invalid, recreating: {e}")
+                    # Return bad connection to pool and get a new one
+                    self.connection_pool.putconn(conn, close=True)
+                    conn = self.connection_pool.getconn()
+                
                 # Set cursor factory to return dictionaries
                 conn.cursor_factory = RealDictCursor
                 yield conn
@@ -229,7 +252,12 @@ class DatabaseManager:
         finally:
             if conn:
                 if self.is_postgres:
-                    self.connection_pool.putconn(conn)
+                    # Check if connection is still good before returning to pool
+                    try:
+                        conn.cursor().execute('SELECT 1')
+                        self.connection_pool.putconn(conn)
+                    except:
+                        self.connection_pool.putconn(conn, close=True)
                 else:
                     conn.close()
     

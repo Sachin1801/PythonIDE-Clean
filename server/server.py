@@ -19,6 +19,7 @@ from handlers.vue_handler import VueHandler
 from handlers.auth_handler import LoginHandler, LogoutHandler, ValidateSessionHandler, ChangePasswordHandler
 from setup_route import SetupHandler, ResetDatabaseHandler
 from common.database import db_manager
+from health_monitor import health_monitor
 
 # Load environment variables
 load_dotenv()
@@ -35,9 +36,29 @@ class HealthCheckHandler(web.RequestHandler):
     """Health check endpoint for Railway"""
     def get(self):
         try:
+            # Update activity timestamp
+            health_monitor.update_activity()
+            
             # Check database connection
             db_manager.execute_query("SELECT 1")
-            self.write({"status": "healthy", "database": "connected"})
+            
+            # Check system resources
+            memory = psutil.virtual_memory()
+            cpu = psutil.cpu_percent(interval=0.1)
+            
+            health_status = {
+                "status": "healthy",
+                "database": "connected",
+                "memory_percent": memory.percent,
+                "cpu_percent": cpu,
+                "uptime": int(time.time() - health_monitor.start_time) if hasattr(health_monitor, 'start_time') else 0
+            }
+            
+            # Warn if resources are getting high
+            if memory.percent > 80 or cpu > 80:
+                health_status["warning"] = "High resource usage detected"
+            
+            self.write(health_status)
         except Exception as e:
             self.set_status(503)
             self.write({"status": "unhealthy", "error": str(e)})
@@ -204,6 +225,9 @@ def main():
     )
     resource_check_callback.start()
     logger.info("Resource monitoring service started")
+    
+    # Start health monitoring service
+    health_monitor.start()
     
     main_ioloop.start()
 

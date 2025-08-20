@@ -1,0 +1,62 @@
+# Azure DevOps Pipeline for Python IDE
+trigger:
+- main
+- backend/migration
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  pythonVersion: '3.11'
+  
+steps:
+# Setup Python
+- task: UsePythonVersion@0
+  inputs:
+    versionSpec: '$(pythonVersion)'
+  displayName: 'Use Python $(pythonVersion)'
+
+# Install backend dependencies
+- script: |
+    python -m pip install --upgrade pip
+    pip install -r server/requirements.txt
+  displayName: 'Install Python dependencies'
+
+# Setup Node.js
+- task: NodeTool@0
+  inputs:
+    versionSpec: '18.x'
+  displayName: 'Install Node.js'
+
+# Build frontend
+- script: |
+    npm install
+    npm run build
+  displayName: 'Build frontend'
+
+# Run tests (if you have any)
+- script: |
+    python -m pytest server/tests --junitxml=junit/test-results.xml || true
+  displayName: 'Run tests'
+  continueOnError: true
+
+# Publish test results
+- task: PublishTestResults@2
+  condition: succeededOrFailed()
+  inputs:
+    testResultsFiles: '**/test-*.xml'
+    testRunTitle: 'Python IDE Tests'
+
+# Archive files
+- task: ArchiveFiles@2
+  inputs:
+    rootFolderOrFile: '$(Build.SourcesDirectory)'
+    includeRootFolder: false
+    archiveType: 'zip'
+    archiveFile: '$(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip'
+
+# Publish artifact
+- task: PublishBuildArtifacts@1
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: 'drop'

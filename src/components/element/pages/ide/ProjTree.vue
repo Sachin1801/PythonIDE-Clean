@@ -3,6 +3,9 @@
     <div class="tree-header">
       <span class="tree-title">File Management</span>
       <div class="tree-header-actions">
+        <button class="action-btn new-folder-btn" @click="handleNewFolder" title="New Folder">
+          <FolderPlus :size="16" />
+        </button>
         <button class="action-btn new-file-btn" @click="handleNewFile" title="New File">
           <FilePlus :size="16" />
         </button>
@@ -93,7 +96,7 @@
 <script>
 import * as types from '../../../../store/mutation-types';
 import { getIconForFile, getIconForFolder, getIconForOpenFolder } from 'vscode-icons-js';
-import { RefreshCw, MoreVertical, FilePlus } from 'lucide-vue-next';
+import { RefreshCw, MoreVertical, FilePlus, FolderPlus } from 'lucide-vue-next';
 import { ElMessage, ElMessageBox } from 'element-plus';
 
 export default {
@@ -101,6 +104,7 @@ export default {
     RefreshCw,
     MoreVertical,
     FilePlus,
+    FolderPlus,
   },
   data() {
     return {
@@ -146,6 +150,20 @@ export default {
       
       // Emit event to open new file dialog
       this.$emit('new-file');
+    },
+    handleNewFolder() {
+      // Check if a folder is selected, if not select the root folder
+      const nodeSelected = this.ideInfo.nodeSelected;
+      if (!nodeSelected || (nodeSelected.type !== 'dir' && nodeSelected.type !== 'folder')) {
+        // Select the root folder
+        const rootFolder = this.ideInfo.currProj?.data;
+        if (rootFolder) {
+          this.$store.commit('ide/setNodeSelected', rootFolder);
+        }
+      }
+      
+      // Emit event to open new folder dialog
+      this.$emit('new-folder');
     },
     refreshTree() {
       // Refresh all projects if in multi-root mode

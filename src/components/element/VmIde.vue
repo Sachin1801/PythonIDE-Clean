@@ -71,6 +71,7 @@
               @delete-item="handleDeleteItem"
               @download-item="handleDownloadItem"
               @new-file="handleNewFileFromTree"
+              @new-folder="handleNewFolderFromTree"
             ></ProjTree>
           </div>
         </pane>
@@ -332,6 +333,7 @@
       @on-cancel="onCancelDelete" @on-delete="onDelete"></DialogDelete>
     <DialogUpload v-if="showUploadDialog" v-model="showUploadDialog" @refresh-tree="refreshProjectTree" @close="showUploadDialog = false"></DialogUpload>
     <DialogNewFile v-if="showNewFileDialog" v-model="showNewFileDialog" @file-created="handleFileCreated"></DialogNewFile>
+    <DialogNewFolder v-if="showNewFolderDialog" v-model="showNewFolderDialog" @folder-created="handleFolderCreated"></DialogNewFolder>
     <DialogFileBrowser 
       v-model="showFileBrowserDialog" 
       :mode="fileBrowserMode"
@@ -380,6 +382,7 @@ import DialogText from './pages/ide/dialog/DialogText';
 import DialogDelete from './pages/ide/dialog/DialogDelete';
 import DialogUpload from './pages/ide/dialog/DialogUpload';
 import DialogNewFile from './pages/ide/dialog/DialogNewFile';
+import DialogNewFolder from './pages/ide/dialog/DialogNewFolder';
 import DialogFileBrowser from './pages/ide/dialog/DialogFileBrowser';
 import CsvViewer from './pages/ide/CsvViewer';
 import MediaViewer from './pages/ide/editor/MediaViewer';
@@ -399,6 +402,7 @@ export default {
       showProjsDialog: false,
       showUploadDialog: false,
       showNewFileDialog: false,
+      showNewFolderDialog: false,
       showFileBrowserDialog: false,
       showLoginModal: false,
       fileBrowserMode: 'open',
@@ -521,6 +525,7 @@ export default {
     DialogDelete,
     DialogUpload,
     DialogNewFile,
+    DialogNewFolder,
     DialogFileBrowser,
     CsvViewer,
     MediaViewer,
@@ -1685,6 +1690,13 @@ export default {
       // Refresh the project tree
       this.refreshProjectTree();
     },
+    handleFolderCreated(data) {
+      // Handle folder creation from new folder dialog
+      console.log('[handleFolderCreated] Folder created:', data);
+      
+      // Refresh the project tree
+      this.refreshProjectTree();
+    },
     refreshProjectTree() {
       // Refresh the project tree by re-fetching the project data
       const self = this;
@@ -2341,6 +2353,18 @@ export default {
         tips: 'Enter file name:',
         text: 'untitled.py'
       });
+    },
+    handleNewFolderFromTree() {
+      // Open new folder dialog
+      const nodeSelected = this.ideInfo.nodeSelected;
+      if (!nodeSelected || (nodeSelected.type !== 'dir' && nodeSelected.type !== 'folder')) {
+        // Select the root folder if no folder is selected
+        const rootFolder = this.ideInfo.currProj?.data;
+        if (rootFolder) {
+          this.$store.commit('ide/setNodeSelected', rootFolder);
+        }
+      }
+      this.showNewFolderDialog = true;
     },
     shareFile() {
       // Handle share file functionality

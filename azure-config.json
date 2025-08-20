@@ -1,0 +1,11 @@
+{
+    "resourceGroup": "PythonIDE-RG",
+    "appName": "pythonide-3d84299d",
+    "databaseName": "pythonide-db-bd554478",
+    "databaseHost": "pythonide-db-bd554478.postgres.database.azure.com",
+    "databaseAdmin": "pythonideadmin",
+    "databasePassword": "PyIDE@NY4YKCiF0uJUd5fj",
+    "location": "canadacentral",
+    "appUrl": "https://pythonide-3d84299d.azurewebsites.net",
+    "deploymentUrl": "https://None@pythonide-3d84299d.scm.azurewebsites.net/pythonide-3d84299d.git"
+}

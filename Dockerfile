@@ -1,15 +1,34 @@
-# Production Dockerfile for Python IDE
+# Multi-stage build for better efficiency
+# Stage 1: Frontend build
+FROM node:18-alpine AS frontend-builder
+
+WORKDIR /app
+
+# Copy frontend package files
+COPY package*.json ./
+COPY .env.production ./
+
+# Install dependencies (including dev dependencies for build)
+RUN npm ci
+
+# Copy frontend source
+COPY src/ ./src/
+COPY public/ ./public/
+COPY vue.config.js ./
+COPY babel.config.js ./
+
+# Build frontend
+RUN npm run build
+
+# Stage 2: Python runtime
 FROM python:3.11-slim
 
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies and Node.js for frontend build
+# Install only essential system dependencies
 RUN apt-get update && apt-get install -y \
     gcc \
-    curl \
-    && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
-    && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy and install Python dependencies
@@ -19,16 +38,8 @@ RUN pip install --no-cache-dir -r server/requirements.txt
 # Copy server code
 COPY server/ ./server/
 
-# Copy frontend source and build it
-COPY package*.json ./
-COPY src/ ./src/
-COPY public/ ./public/
-COPY .env.production ./
-COPY vue.config.js ./
-COPY babel.config.js ./
-
-# Install frontend dependencies and build
-RUN npm install && npm run build
+# Copy built frontend from previous stage
+COPY --from=frontend-builder /app/dist/ ./dist/
 
 # Create necessary directories
 RUN mkdir -p server/projects/ide/Local \

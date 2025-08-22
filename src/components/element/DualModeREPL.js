@@ -80,8 +80,19 @@ export const DualModeREPL = {
         }
       } catch (error) {
         console.error('❌ [REPL] Backend REPL failed:', error);
-        this.addReplOutput('Backend unavailable, switching to browser mode...', 'error');
-        await this.startPyodideRepl();
+        this.addReplOutput('Backend connection lost. Reconnecting...', 'system');
+        
+        // Try to reconnect instead of immediately switching to Pyodide
+        setTimeout(async () => {
+          if (this.wsInfo?.rws?.readyState === WebSocket.OPEN) {
+            console.log('🔄 [REPL] Retrying backend REPL after reconnection');
+            await this.startBackendRepl();
+          } else {
+            console.log('🌐 [REPL] Backend still unavailable, switching to browser mode');
+            this.addReplOutput('Backend unavailable, switching to browser mode...', 'error');
+            await this.startPyodideRepl();
+          }
+        }, 2000); // Wait 2 seconds for potential reconnection
       }
     },
 
@@ -248,11 +259,11 @@ export const DualModeREPL = {
         }
       } catch (error) {
         console.error('❌ [REPL] Backend execution failed:', error);
-        this.addReplOutput('Backend error, switching to browser mode...', 'error');
-        await this.startPyodideRepl();
-        if (this.pyodideReady) {
-          await this.executePyodideCommand(command);
-        }
+        this.addReplOutput('Backend connection lost. Please restart REPL if needed.', 'system');
+        
+        // Don't automatically switch to Pyodide for individual command failures
+        // This preserves the backend session state when connection is restored
+        console.log('⚠️ [REPL] Keeping backend mode, user can manually restart if needed');
       }
     },
 

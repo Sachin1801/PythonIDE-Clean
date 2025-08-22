@@ -43,10 +43,13 @@ class HybridREPLThread(threading.Thread):
         
         # Resource limits (configurable via environment)
         self.memory_limit_mb = int(os.environ.get('MEMORY_LIMIT_MB', '128'))
-        self.cpu_time_limit = int(os.environ.get('EXECUTION_TIMEOUT', '30'))
+        self.cpu_time_limit = int(os.environ.get('EXECUTION_TIMEOUT', '60'))  # Changed from 30 to 60 seconds
         self.file_size_limit_mb = int(os.environ.get('FILE_SIZE_LIMIT_MB', '10'))
         self.max_processes = int(os.environ.get('MAX_PROCESSES', '50'))
         self.start_time = time.time()
+        
+        # REPL sessions should have extended CPU time for interactive use
+        self.repl_cpu_limit = 300  # Changed from 3600 to 300 seconds (5 minutes)
         
     def kill(self):
         """Kill the running subprocess"""
@@ -78,8 +81,10 @@ class HybridREPLThread(threading.Thread):
             memory_bytes = self.memory_limit_mb * 1024 * 1024
             resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
             
-            # CPU time limit
-            resource.setrlimit(resource.RLIMIT_CPU, (self.cpu_time_limit, self.cpu_time_limit))
+            # CPU time limit - use extended limit for REPL or if no script (empty REPL)
+            cpu_limit = self.repl_cpu_limit if (not self.script_path) else self.cpu_time_limit
+            resource.setrlimit(resource.RLIMIT_CPU, (cpu_limit, cpu_limit))
+            print(f"[HYBRID-REPL] Set CPU limit to {cpu_limit}s for {'REPL' if not self.script_path else 'script'} mode")
             
             # File size limit
             file_size_bytes = self.file_size_limit_mb * 1024 * 1024
@@ -162,15 +167,21 @@ script_globals = {}
 # Execute the user script
 script_path = r"{self.script_path}"
 
+# Signal script execution starting
+print("__SCRIPT_START__")
+sys.stdout.flush()
+
 try:
     with open(script_path, 'r') as f:
         script_code = f.read()
     
     # Execute script and capture its namespace
+    # Note: exec() output goes to current stdout, which is captured by parent process
     exec(compile(script_code, script_path, 'exec'), script_globals)
     
     # Script completed successfully
-    pass
+    print("__SCRIPT_END__")
+    sys.stdout.flush()
     
 except Exception as e:
     # Print error
@@ -183,8 +194,13 @@ except Exception as e:
 
 # Update globals with script variables (excluding private ones)
 for key, value in script_globals.items():
-    if not key.startswith('__'):
+    if not key.startswith('__') and not key.startswith('_'):
         globals()[key] = value
+
+# Also make variables available globally for REPL access
+for var_name, var_value in script_globals.items():
+    if not var_name.startswith('__') and not var_name.startswith('_'):
+        globals()[var_name] = var_value
 
 # Variables are now available in REPL scope
 
@@ -219,24 +235,40 @@ while True:
                 
                 # Check if we need more lines
                 code_str = '\\n'.join(lines)
-                compile(code_str, '<stdin>', 'single')
-                break  # Code is complete
-                
-            except SyntaxError as e:
-                if 'unexpected EOF' in str(e) or 'incomplete' in str(e):
-                    prompt = "... "  # Continue on next line
-                    continue
-                else:
-                    # Real syntax error
-                    raise
+                try:
+                    compile(code_str, '<stdin>', 'single')
+                    break  # Code is complete
+                except SyntaxError as e:
+                    error_msg = str(e).lower()
+                    if ('unexpected eof' in error_msg or 
+                        'incomplete' in error_msg or
+                        'expected an indented block' in error_msg or
+                        'incomplete input' in error_msg):
+                        prompt = "... "  # Continue on next line
+                        continue
+                    else:
+                        # Real syntax error - let it execute to show the error
+                        break
             except EOFError:
                 print()
                 sys.exit(0)
         
-        # Execute the complete code with script globals
+        # Execute the complete code with script globals merged
         code_str = '\\n'.join(lines)
         if code_str.strip():
-            exec(compile(code_str, '<stdin>', 'single'), globals())
+            # Merge script variables into current execution context
+            exec_globals = globals().copy()
+            exec_globals.update(script_globals)
+            exec(compile(code_str, '<stdin>', 'single'), exec_globals)
+            
+            # CRITICAL FIX: Update script_globals with new variables for persistence
+            # This ensures REPL assignments persist across commands (like IDLE)
+            for k, v in exec_globals.items():
+                if not k.startswith('__') and not k.startswith('_'):
+                    script_globals[k] = v
+            
+            # Update current globals with any new variables from execution
+            globals().update({k: v for k, v in exec_globals.items() if not k.startswith('__')})
             
     except SystemExit:
         break
@@ -385,6 +417,7 @@ while True:
                     continue
                 
                 buffer += char
+                self._last_char_time = time.time()  # Track when we last received a character
                 
                 # Check for special markers first
                 if "__INPUT_REQUEST_START__" in buffer and "__INPUT_REQUEST_END__" in buffer:
@@ -420,6 +453,19 @@ while True:
                         
                         # Clear the marker from buffer
                         buffer = buffer[end + len("__MATPLOTLIB_FIGURE_END__"):]
+                
+                elif "__SCRIPT_START__" in buffer:
+                    # Script execution starting - signal to frontend
+                    print(f"[HYBRID-REPL] Script execution starting")
+                    buffer = buffer.replace("__SCRIPT_START__", "")
+                    # Send script start signal to client (null data triggers run=true)
+                    self.response_to_client(0, None)
+                
+                elif "__SCRIPT_END__" in buffer:
+                    # Script execution completed successfully
+                    print(f"[HYBRID-REPL] Script execution completed")
+                    buffer = buffer.replace("__SCRIPT_END__", "")
+                    self.script_executed = True
                 
                 elif "__SCRIPT_ERROR__" in buffer:
                     # Script had an error, don't start REPL
@@ -457,11 +503,31 @@ while True:
                     # Keep the incomplete line in buffer
                     buffer = lines[-1]
                 
-                # In REPL mode, check for prompt
-                elif self.repl_mode and buffer.endswith('>>> '):
-                    print(f"[HYBRID-REPL] REPL prompt detected: {repr(buffer)}")
-                    self.response_to_client(0, {'stdout': buffer})
-                    buffer = ""
+                # In REPL mode, check for prompt patterns
+                elif self.repl_mode:
+                    # Check for various prompt patterns
+                    if buffer.endswith('>>> ') or buffer.endswith('... '):
+                        print(f"[HYBRID-REPL] REPL prompt detected: {repr(buffer)}")
+                        self.response_to_client(0, {'stdout': buffer})
+                        buffer = ""
+                    # CRITICAL FIX: Flush output that ends with >>> without space  
+                    elif buffer.endswith('>>>'):
+                        print(f"[HYBRID-REPL] REPL prompt detected (no space): {repr(buffer)}")
+                        self.response_to_client(0, {'stdout': buffer + ' '})
+                        buffer = ""
+                    # CRITICAL FIX: In REPL mode, send output lines that don't end with newline
+                    # after a short delay to catch expression results like 'Sachin'
+                    elif len(buffer) > 0 and not buffer.endswith(('>>>', '...')) and time.time() - getattr(self, '_last_char_time', 0) > 0.3:
+                        # Likely an expression result or output that needs flushing
+                        if buffer.strip() and not buffer.isspace():  # Only send non-empty, non-whitespace content
+                            print(f"[HYBRID-REPL] Flushing buffered output: {repr(buffer)}")
+                            self.response_to_client(0, {'stdout': buffer})
+                            buffer = ""
+                    # Also flush if buffer gets too long (prevent memory issues)
+                    elif len(buffer) > 1000:
+                        print(f"[HYBRID-REPL] Flushing large buffer: {repr(buffer[:100])}...")
+                        self.response_to_client(0, {'stdout': buffer})
+                        buffer = ""
                 
             except Exception as e:
                 print(f"[HYBRID-REPL] Error reading output: {e}")

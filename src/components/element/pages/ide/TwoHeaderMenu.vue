@@ -620,7 +620,14 @@ export default {
           ElMessage.warning('Please select a file to download');
         }
       } else {
-        this.$emit('download-file');
+        // Convert tree node selection to fileInfo format
+        const selectedFile = this.ideInfo.nodeSelected;
+        const fileInfo = {
+          fileName: selectedFile.label || selectedFile.name,
+          filePath: selectedFile.path,
+          projectName: selectedFile.projectName || this.ideInfo.currProj?.data?.name
+        };
+        this.$emit('download-file', fileInfo);
       }
     },
     runScript() {
@@ -683,8 +690,10 @@ export default {
       this.$emit('open-file-browser');
     },
     duplicateFile() {
+      console.log('🔍 [DEBUG] duplicateFile() called from TwoHeaderMenu');
       this.closeDropdowns();
       if (!this.hasSelectedFile) {
+        console.log('🔍 [DEBUG] No file selected for duplication');
         ElMessage.warning('Please select a file to duplicate');
         return;
       }
@@ -693,6 +702,12 @@ export default {
       const extension = fileName.includes('.') ? fileName.substring(fileName.lastIndexOf('.')) : '';
       const baseName = fileName.includes('.') ? fileName.substring(0, fileName.lastIndexOf('.')) : fileName;
       const newName = `${baseName}_copy${extension}`;
+      
+      console.log('🔍 [DEBUG] Emitting duplicate-file event:', {
+        originalPath: selectedFile.path,
+        newName: newName,
+        projectName: selectedFile.projectName || this.ideInfo.currProj?.data?.name
+      });
       
       this.$emit('duplicate-file', {
         originalPath: selectedFile.path,

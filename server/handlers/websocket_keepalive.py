@@ -13,8 +13,8 @@ class WebSocketKeepaliveMixin:
     def setup_keepalive(self):
         """Initialize keepalive mechanism"""
         self.last_pong_time = time.time()
-        self.keepalive_ping_interval = 30  # Send ping every 30 seconds
-        self.keepalive_pong_timeout = 60   # Close connection if no pong in 60 seconds
+        self.keepalive_ping_interval = 45  # Send ping every 45 seconds (less aggressive)
+        self.keepalive_pong_timeout = 120  # Close connection if no pong in 120 seconds (more lenient)
         
         # Start periodic ping
         self.ping_callback = PeriodicCallback(
@@ -57,8 +57,9 @@ class WebSocketKeepaliveMixin:
     
     def check_pong_timeout(self):
         """Check if client is still responsive"""
-        if time.time() - self.last_pong_time > self.keepalive_pong_timeout:
-            logger.warning(f"Pong timeout for {self.request.remote_ip}, closing connection")
+        elapsed_time = time.time() - self.last_pong_time
+        if elapsed_time > self.keepalive_pong_timeout:
+            logger.warning(f"WebSocket pong timeout for {self.request.remote_ip}: {elapsed_time:.1f}s elapsed (max {self.keepalive_pong_timeout}s), closing connection and triggering reconnection")
             if hasattr(self, 'close'):
                 self.close()
     

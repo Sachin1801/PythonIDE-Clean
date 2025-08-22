@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Python IDE Favicon -->
+  <rect width="32" height="32" rx="4" fill="#1e1e1e"/>
+  <!-- Python snake stylized as code brackets -->
+  <text x="50%" y="50%" font-family="monospace" font-size="20" font-weight="bold" fill="#3776ab" text-anchor="middle" dominant-baseline="middle">&lt;/&gt;</text>
+  <!-- Small Python indicator -->
+  <circle cx="26" cy="26" r="4" fill="#ffd43b"/>
+  <text x="26" y="27" font-family="Arial" font-size="6" font-weight="bold" fill="#1e1e1e" text-anchor="middle" dominant-baseline="middle">Py</text>
+</svg>

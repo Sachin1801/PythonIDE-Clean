@@ -1,7 +1,3 @@
-# Root requirements file for Azure deployment
-# Azure looks for this in the root directory
-
-# Backend dependencies
 jedi==0.18.1
 tornado==6.1
 packaging

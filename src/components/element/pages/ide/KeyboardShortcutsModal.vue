@@ -16,7 +16,7 @@
             <div class="shortcut-list">
               <div class="shortcut-item">
                 <span class="shortcut-action">New File</span>
-                <span class="shortcut-keys">Ctrl+N</span>
+                <span class="shortcut-keys">Ctrl+Alt+N</span>
               </div>
               <div class="shortcut-item">
                 <span class="shortcut-action">Open File</span>

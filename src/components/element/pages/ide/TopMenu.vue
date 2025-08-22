@@ -243,8 +243,10 @@ export default {
       this.$emit('open-file-browser');
     },
     duplicateFile() {
+      console.log('🔍 [DEBUG] duplicateFile() called from TopMenu');
       this.closeDropdowns();
       if (!this.hasSelectedFile) {
+        console.log('🔍 [DEBUG] No file selected for duplication');
         this.$message.warning('Please select a file to duplicate');
         return;
       }
@@ -254,6 +256,12 @@ export default {
       const baseName = fileName.includes('.') ? fileName.substring(0, fileName.lastIndexOf('.')) : fileName;
       const newName = `${baseName}_copy${extension}`;
       
+      console.log('🔍 [DEBUG] Emitting duplicate-file event:', {
+        originalPath: selectedFile.path,
+        newName: newName,
+        projectName: selectedFile.projectName || this.ideInfo.currProj?.data?.name
+      });
+      
       this.$emit('duplicate-file', {
         originalPath: selectedFile.path,
         newName: newName,
@@ -262,12 +270,30 @@ export default {
     },
     saveAsFile() {
       this.closeDropdowns();
-      if (!this.ideInfo.codeSelected) {
-        this.$message.warning('Please open a file first');
+      
+      // Check if we have a file selected in the tree (like delete functionality)
+      if (this.hasSelectedFile) {
+        const selectedFile = this.ideInfo.nodeSelected;
+        
+        // Convert tree node to fileInfo format (like codeSelected)
+        const fileInfo = {
+          fileName: selectedFile.label || selectedFile.name,
+          filePath: selectedFile.path,
+          projectName: selectedFile.projectName || this.ideInfo.currProj?.data?.name
+        };
+        
+        this.$emit('save-as-file', fileInfo);
         return;
       }
-      // Trigger browser's save dialog
-      this.$emit('save-as-file', this.ideInfo.codeSelected);
+      
+      // Fallback to currently open file in editor
+      if (this.ideInfo.codeSelected) {
+        this.$emit('save-as-file', this.ideInfo.codeSelected);
+        return;
+      }
+      
+      // No file selected
+      this.$message.warning('Please select a file to save');
     },
     moveFile() {
       this.closeDropdowns();

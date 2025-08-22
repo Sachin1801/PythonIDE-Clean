@@ -33,7 +33,7 @@
       @toggle-console="toggleConsole"
       @toggle-preview-panel="togglePreviewPanel"
       @toggle-sidebar="toggleLeftSidebar"
-      @show-keyboard-shortcuts="showKeyboardShortcutsModal = true"
+      @show-keyboard-shortcuts="showKeyboardShortcutsModal = !showKeyboardShortcutsModal"
     ></TwoHeaderMenu>
     
     <!-- Settings Modal -->
@@ -1105,8 +1105,10 @@ export default {
             console.log(`🔍 Match check: id=${message.id===this.replSessionId}, cmd_id=${message.cmd_id===this.replSessionId}, prog_id=${message.data?.program_id===this.replSessionId}, isReplMode=${this.isReplMode}, code=${message.code}`);
                 
             if (isRepl) {
-              console.log('🎯 REPL message matched!');
+              console.log('🎯 REPL message matched - routing to REPL handler only!');
               this.handleReplResponse(message);  // Call the existing method
+              // CRITICAL: Don't let this message be processed by normal handlers to prevent duplicate output
+              return;  // Early return to prevent further processing
             }
           } catch (e) {
             // Not JSON or parsing error, ignore
@@ -1136,7 +1138,8 @@ export default {
     },
     
     handleReplResponse(dict) {
-      console.log('Processing REPL response:', dict);
+      console.log('🎯 [REPL] Processing REPL response:', dict);
+      console.log('🎯 [REPL] Response code:', dict?.code, 'Data keys:', dict?.data ? Object.keys(dict.data) : 'no data');
       
       if (!dict) return;
       
@@ -1145,7 +1148,17 @@ export default {
         // Success response with output
         if (dict.data) {
           if (dict.data.stdout) {
-            this.addReplOutput(dict.data.stdout, 'output');
+            // Filter out REPL prompts from stdout but allow other content
+            const output = dict.data.stdout;
+            console.log('🔍 [REPL] Processing stdout:', JSON.stringify(output));
+            
+            // Only filter pure REPL prompts, allow everything else
+            if (!output.match(/^(>>>|\.\.\.)\s*$/) && output.trim() !== '') {
+              this.addReplOutput(output, 'output');
+            } else if (output.trim() === '') {
+              // For empty lines, still add them to maintain formatting
+              this.addReplOutput('', 'output');
+            }
           }
           if (dict.data.stderr) {
             this.addReplOutput(dict.data.stderr, 'error');
@@ -1166,10 +1179,7 @@ export default {
         // Entering REPL mode after script execution
         console.log('Entering REPL mode after script execution');
         this.isReplMode = true;
-        this.addReplOutput('\n═══════════════════════════════════════\n', 'system');
-        this.addReplOutput('Entering interactive REPL mode', 'system');
-        this.addReplOutput('All variables from the script are available', 'system');
-        this.addReplOutput('Type exit() or press Ctrl+D to quit\n', 'system');
+        // REPL mode starting - no extra messages needed
       } else if (dict.code === 1111 || dict.cmd === 'python_ended') {
         // REPL session ended
         this.addReplOutput('\nREPL session ended', 'system');
@@ -1378,6 +1388,12 @@ export default {
     
     // Per-file console management
     handleTabChange(newFile, oldFile) {
+      // CRITICAL: Stop REPL session when switching files
+      if (this.isReplMode && this.replSessionId) {
+        console.log('🔄 [VmIde] File switched - stopping REPL session');
+        this.stopReplSession();
+      }
+      
       // Save current console state for the old file
       if (oldFile && oldFile.path && this.activeFilePath) {
         this.saveFileConsoleState(this.activeFilePath);
@@ -1453,6 +1469,12 @@ export default {
     },
     
     getOrCreateFileConsole(filePath) {
+      // Safety check - ensure filePath is valid
+      if (!filePath || typeof filePath !== 'string') {
+        console.error('getOrCreateFileConsole: Invalid file path provided:', filePath);
+        return null;
+      }
+      
       // Find existing console for this file
       let fileConsole = this.ideInfo.consoleItems.find(
         item => item.path === filePath
@@ -2513,14 +2535,22 @@ export default {
       this.getFile(filePath);
       this.showFileBrowserDialog = false;
     },
-    duplicateFile(data) {
+    async duplicateFile(data) {
       const { originalPath, newName, projectName } = data;
       const self = this;
+      
+      console.log('🔍 [DEBUG] duplicateFile called with:', { originalPath, newName, projectName });
       
       // Get the parent directory
       const lastSlash = originalPath.lastIndexOf('/');
       const parentPath = lastSlash > 0 ? originalPath.substring(0, lastSlash) : '/';
-      const newPath = parentPath + '/' + newName;
+      
+      // Generate unique filename with auto-numbering
+      const uniqueName = await this.generateUniqueFileName(newName, parentPath, projectName);
+      const newPath = parentPath + '/' + uniqueName;
+      
+      console.log('🔍 [DEBUG] Generated unique filename:', uniqueName);
+      console.log('🔍 [DEBUG] New file path will be:', newPath);
       
       // First, get the original file content
       this.$store.dispatch(`ide/${types.IDE_GET_FILE}`, {
@@ -2530,56 +2560,357 @@ export default {
           if (dict.code == 0) {
             const content = dict.data.content || dict.data;
             
-            // Create the duplicate file
+            console.log('🔍 [DEBUG] Original file content retrieved, length:', content?.length);
+            
+            // Create the duplicate file with unique name
+            // First create the file, then write the content
             self.$store.dispatch(`ide/${types.IDE_CREATE_FILE}`, {
               projectName: projectName,
-              filePath: newPath,
-              content: content,
+              parentPath: parentPath,
+              fileName: uniqueName,
               callback: (createDict) => {
                 if (createDict.code == 0) {
-                  ElMessage.success(`File duplicated as ${newName}`);
-                  self.refreshProjectTree();
+                  console.log('🔍 [DEBUG] File created successfully, now writing content');
+                  
+                  // Now write the content to the created file
+                  self.$store.dispatch(`ide/${types.IDE_WRITE_FILE}`, {
+                    projectName: projectName,
+                    filePath: newPath,
+                    fileData: content,
+                    complete: true,
+                    callback: (writeDict) => {
+                      if (writeDict.code == 0) {
+                        console.log('🔍 [DEBUG] File duplicated successfully as:', uniqueName);
+                        ElMessage.success(`File duplicated as ${uniqueName}`);
+                        self.refreshProjectTree();
+                      } else {
+                        console.error('🔍 [DEBUG] Failed to write content to duplicate file:', writeDict);
+                        ElMessage.error('Failed to write content to duplicate file');
+                      }
+                    }
+                  });
                 } else {
-                  ElMessage.error('Failed to duplicate file');
+                  console.error('🔍 [DEBUG] Failed to create duplicate file:', createDict);
+                  ElMessage.error('Failed to create duplicate file');
                 }
               }
             });
           } else {
+            console.error('🔍 [DEBUG] Failed to read original file:', dict);
             ElMessage.error('Failed to read original file');
           }
         }
       });
     },
-    saveAsFile(fileInfo) {
-      // Save As - triggers browser download with ability to rename
+    
+    async generateUniqueFileName(proposedName, parentPath, projectName) {
+      // Extract file extension and base name
+      const lastDotIndex = proposedName.lastIndexOf('.');
+      const extension = lastDotIndex > 0 ? proposedName.substring(lastDotIndex) : '';
+      const baseName = lastDotIndex > 0 ? proposedName.substring(0, lastDotIndex) : proposedName;
+      
+      console.log('🔍 [DEBUG] generateUniqueFileName:', { proposedName, baseName, extension, parentPath });
+      
+      // Get list of existing files in the directory
+      const existingFiles = await this.getExistingFilesInDirectory(parentPath, projectName);
+      console.log('🔍 [DEBUG] Existing files in directory:', existingFiles);
+      
+      // Check if the proposed name is already unique
+      if (!existingFiles.includes(proposedName)) {
+        console.log('🔍 [DEBUG] Proposed name is already unique:', proposedName);
+        return proposedName;
+      }
+      
+      // Generate numbered variants until we find a unique one
+      for (let i = 1; i < 1000; i++) {
+        const numberedName = i === 1 ? 
+          `${baseName}_copy${extension}` : 
+          `${baseName}_copy_${i}${extension}`;
+          
+        if (!existingFiles.includes(numberedName)) {
+          console.log('🔍 [DEBUG] Found unique name:', numberedName);
+          return numberedName;
+        }
+      }
+      
+      // Fallback with timestamp if we somehow hit the limit
+      const timestamp = Date.now();
+      const fallbackName = `${baseName}_copy_${timestamp}${extension}`;
+      console.log('🔍 [DEBUG] Using timestamp fallback:', fallbackName);
+      return fallbackName;
+    },
+    
+    async getExistingFilesInDirectory(directoryPath, projectName) {
+      return new Promise((resolve) => {
+        // Get the current project tree data
+        const projectData = this.ideInfo.currProj?.data;
+        if (!projectData) {
+          console.log('🔍 [DEBUG] No project data available');
+          resolve([]);
+          return;
+        }
+        
+        // Find the target directory in the tree
+        const findDirectory = (node, targetPath) => {
+          if (node.path === targetPath && node.type === 'dir') {
+            return node;
+          }
+          if (node.children) {
+            for (const child of node.children) {
+              const result = findDirectory(child, targetPath);
+              if (result) return result;
+            }
+          }
+          return null;
+        };
+        
+        const targetDir = findDirectory(projectData, directoryPath);
+        console.log('🔍 [DEBUG] Found target directory:', targetDir);
+        
+        if (targetDir && targetDir.children) {
+          // Extract filenames from the directory
+          const filenames = targetDir.children
+            .filter(child => child.type === 'file')
+            .map(child => child.label || child.name);
+          console.log('🔍 [DEBUG] Extracted filenames:', filenames);
+          resolve(filenames);
+        } else {
+          console.log('🔍 [DEBUG] Directory not found or has no children');
+          resolve([]);
+        }
+      });
+    },
+    async saveAsFile(fileInfo) {
+      console.log('🔍 [DEBUG] VmIde.saveAsFile() called with:', fileInfo);
+      
+      // Save As - allows user to choose location and rename file
       if (!fileInfo || !fileInfo.fileName) {
+        console.log('🔍 [DEBUG] Invalid fileInfo - no fileName');
         ElMessage.error('No file selected to save');
         return;
       }
       
-      // Get current file content from editor
+      // First try to get content from editor if file is open
       const codeItem = this.ideInfo.codeItems.find(item => 
         item.filePath === fileInfo.filePath && 
         (item.projectName === fileInfo.projectName || (!item.projectName && !fileInfo.projectName))
       );
       
-      if (!codeItem) {
-        ElMessage.error('File not found in editor');
-        return;
+      console.log('🔍 [DEBUG] Looking for codeItem with filePath:', fileInfo.filePath);
+      console.log('🔍 [DEBUG] Available codeItems:', this.ideInfo.codeItems?.map(item => ({ filePath: item.filePath, projectName: item.projectName })));
+      console.log('🔍 [DEBUG] Found codeItem:', !!codeItem);
+      
+      if (codeItem) {
+        // File is open in editor, use editor content
+        console.log('🔍 [DEBUG] Using editor content, calling performSaveAs');
+        await this.performSaveAs(fileInfo, codeItem.content);
+      } else {
+        // File is not open in editor, read from server
+        console.log('🔍 [DEBUG] File not in editor, reading from server');
+        this.readFileForSaveAs(fileInfo);
       }
+    },
+    
+    readFileForSaveAs(fileInfo) {
+      console.log('🔍 [DEBUG] readFileForSaveAs called with:', fileInfo);
       
-      // Create a blob and trigger download
-      const blob = new Blob([codeItem.content], { type: 'text/plain' });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = fileInfo.fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      // Check if it's a binary file
+      const binaryExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.pdf', '.zip', '.tar', '.gz'];
+      const isBinary = binaryExtensions.some(ext => fileInfo.fileName.toLowerCase().endsWith(ext));
       
-      ElMessage.success('File downloaded successfully');
+      console.log('🔍 [DEBUG] File is binary:', isBinary);
+      console.log('🔍 [DEBUG] Dispatching IDE_GET_FILE with:', {
+        projectName: fileInfo.projectName,
+        filePath: fileInfo.filePath,
+        binary: isBinary
+      });
+      
+      this.$store.dispatch(`ide/${types.IDE_GET_FILE}`, {
+        projectName: fileInfo.projectName,
+        filePath: fileInfo.filePath,
+        binary: isBinary,
+        callback: async (dict) => {
+          console.log('🔍 [DEBUG] IDE_GET_FILE callback received:', { code: dict.code, hasData: !!dict.data });
+          
+          if (dict.code == 0) {
+            // Get the actual content
+            let fileContent = dict.data?.content || dict.data;
+            
+            if (isBinary) {
+              // For binary files, we need to handle base64 data differently
+              ElMessage.info('Binary files should be downloaded using the Download option instead.');
+              return;
+            } else {
+              // For text files, use the content directly
+              if (typeof fileContent === 'object' && fileContent.content) {
+                fileContent = fileContent.content;
+              }
+              await this.performSaveAs(fileInfo, fileContent);
+            }
+          } else {
+            ElMessage.error('Failed to read file content');
+          }
+        }
+      });
+    },
+    
+    async performSaveAs(fileInfo, content) {
+      console.log('🔍 [DEBUG] performSaveAs called with fileInfo:', fileInfo);
+      console.log('🔍 [DEBUG] Content length:', content?.length);
+      
+      // Determine file type for proper MIME type
+      const getFileType = (fileName) => {
+        const ext = fileName.toLowerCase().split('.').pop();
+        const mimeTypes = {
+          'py': 'text/x-python',
+          'js': 'text/javascript',
+          'html': 'text/html',
+          'css': 'text/css',
+          'json': 'application/json',
+          'md': 'text/markdown',
+          'txt': 'text/plain',
+          'csv': 'text/csv',
+          'xml': 'text/xml'
+        };
+        return mimeTypes[ext] || 'text/plain';
+      };
+
+      const mimeType = getFileType(fileInfo.fileName);
+
+      // Check for File System Access API support and HTTPS requirement
+      const hasFileSystemAccess = 'showSaveFilePicker' in window;
+      const isSecureContext = window.isSecureContext;
+      
+      // Try modern File System Access API first (Chrome 86+, Edge 86+, requires HTTPS)
+      if (hasFileSystemAccess && isSecureContext) {
+        try {
+          // Configure file type options
+          const fileExtension = fileInfo.fileName.split('.').pop() || 'txt';
+          const options = {
+            suggestedName: fileInfo.fileName,
+            types: [{
+              description: `${fileExtension.toUpperCase()} files`,
+              accept: {
+                [mimeType]: ['.' + fileExtension]
+              }
+            }],
+            excludeAcceptAllOption: false // Allow "All Files" option
+          };
+
+          // Show save file picker with proper error handling
+          const fileHandle = await window.showSaveFilePicker(options);
+          
+          // Create writable stream
+          const writable = await fileHandle.createWritable();
+          
+          // Write file content with progress for large files
+          if (content.length > 1024 * 1024) { // Files larger than 1MB
+            const chunks = content.match(/.{1,65536}/g) || []; // 64KB chunks
+            for (const chunk of chunks) {
+              await writable.write(chunk);
+            }
+          } else {
+            await writable.write(content);
+          }
+          
+          // Close the stream
+          await writable.close();
+          
+          ElMessage.success(`File saved successfully as: ${fileHandle.name}`);
+          return;
+        } catch (error) {
+          // User cancelled or error occurred
+          if (error.name === 'AbortError') {
+            return; // User cancelled - no error message
+          }
+          if (error.name === 'NotAllowedError') {
+            ElMessage.warning('File access permission denied. Using fallback download method.');
+          } else {
+            console.warn('File System Access API failed:', error);
+          }
+          // Fall through to legacy method
+        }
+      } else if (hasFileSystemAccess && !isSecureContext) {
+        console.warn('File System Access API requires HTTPS. Using fallback method.');
+      }
+
+      // Fallback method for older browsers or when File System Access API fails
+      try {
+        // Create blob with proper UTF-8 encoding
+        const blob = new Blob([content], { 
+          type: mimeType + ';charset=utf-8' 
+        });
+        
+        // Check if the download attribute is supported
+        const testLink = document.createElement('a');
+        const isDownloadSupported = 'download' in testLink;
+        
+        if (isDownloadSupported) {
+          // Modern approach with download attribute
+          const url = window.URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = fileInfo.fileName;
+          
+          // Ensure link is properly configured for all browsers
+          link.style.display = 'none';
+          link.setAttribute('target', '_blank');
+          link.setAttribute('rel', 'noopener noreferrer');
+          
+          document.body.appendChild(link);
+          
+          // Trigger download with cross-browser support
+          if (typeof link.click === 'function') {
+            link.click();
+          } else {
+            // Fallback for older browsers
+            const event = new MouseEvent('click', {
+              view: window,
+              bubbles: true,
+              cancelable: true
+            });
+            link.dispatchEvent(event);
+          }
+          
+          // Cleanup with proper timing
+          setTimeout(() => {
+            if (document.body.contains(link)) {
+              document.body.removeChild(link);
+            }
+            window.URL.revokeObjectURL(url);
+          }, 150);
+          
+          ElMessage.success('File downloaded to your default downloads folder');
+        } else {
+          // Very old browser fallback - open in new window
+          const url = window.URL.createObjectURL(blob);
+          const newWindow = window.open(url, '_blank');
+          
+          if (newWindow) {
+            ElMessage.info('File opened in new window. Use browser\'s save function to download.');
+            // Cleanup after window opens
+            setTimeout(() => {
+              window.URL.revokeObjectURL(url);
+            }, 1000);
+          } else {
+            throw new Error('Popup blocked or browser not supported');
+          }
+        }
+      } catch (error) {
+        console.error('Save As failed:', error);
+        
+        // Last resort - copy to clipboard if available
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          try {
+            await navigator.clipboard.writeText(content);
+            ElMessage.warning('Could not download file. Content copied to clipboard instead.');
+          } catch (clipboardError) {
+            ElMessage.error('Failed to save file. Please try using a modern browser.');
+          }
+        } else {
+          ElMessage.error('Failed to save file. Please try using a modern browser.');
+        }
+      }
     },
     openMoveDialog(fileData) {
       this.fileBrowserMode = 'move';
@@ -3309,6 +3640,19 @@ export default {
       this.$forceUpdate();
     },
     runPathSelected() {
+      // Check if there's a file selected
+      const currentFilePath = this.ideInfo.currProj.pathSelected;
+      
+      if (!currentFilePath || currentFilePath === '' || currentFilePath === null) {
+        // Show notification that no script is open
+        ElMessage({
+          type: 'warning',
+          message: 'No script is open to run. Please open a Python file first.',
+          duration: 3000
+        });
+        return;
+      }
+      
       // Ensure console is expanded when running
       if (!this.consoleExpanded) {
         this.consoleExpanded = true;
@@ -3316,8 +3660,6 @@ export default {
       }
       
       // Don't create output tab in right panel anymore - console is sufficient
-      
-      const currentFilePath = this.ideInfo.currProj.pathSelected;
       
       // Get or create console for this specific file
       const fileConsole = this.getOrCreateFileConsole(currentFilePath);
@@ -3367,11 +3709,41 @@ export default {
         callback: {
           limits: -1,
           callback: (dict) => {
-            // Don't process through handleRunResult if we're handling via REPL
-            // The REPL handler will process all output directly
-            // Only process non-output messages (like program start)
-            if (!dict.data || (!dict.data.stdout && !dict.data.stderr)) {
+            console.log('🔍 [VmIde] Script execution callback:', dict);
+            
+            // CRITICAL: Don't process REPL messages through handleRunResult  
+            // Check if this message belongs to the current REPL session
+            const isReplMessage = (
+              dict.id === this.replSessionId || 
+              dict.cmd_id === this.replSessionId ||
+              (dict.data && dict.data.program_id === this.replSessionId) ||
+              // If REPL is active and this is output, it belongs to REPL
+              (this.isReplMode && this.replSessionId && 
+               (dict.code === 0 || dict.code === 2000 || dict.code === 5000) &&
+               dict.data && (dict.data.stdout || dict.data.stderr))
+            );
+            
+            // CRITICAL FIX: Always allow program start/end messages through to store
+            const isProgramLifecycleMessage = (
+              dict.data === null || dict.data === undefined || // Program start signal
+              dict.code === 2000 ||                           // Input request signals
+              dict.code === 4000 || dict.code === 5000        // Error or REPL transition signals
+            );
+            
+            console.log('🔍 [Script] Callback - isReplMessage:', isReplMessage, 'isProgramLifecycle:', isProgramLifecycleMessage, 'code:', dict.code, 'id:', dict.id, 'replSessionId:', this.replSessionId);
+            
+            if (!isReplMessage || isProgramLifecycleMessage) {
+              // Process all non-REPL messages and all program lifecycle messages through normal console handling
+              console.log('✅ [Script] Processing through handleRunResult');
               this.$store.commit('ide/handleRunResult', dict);
+            } else {
+              console.log('⏭️ [Script] Skipping - will be handled by REPL');
+            }
+            
+            // Check if this should trigger REPL mode (non-duplicate message only)
+            if (dict.code === 5000 && !isReplMessage) {
+              console.log('🎯 [VmIde] Script completed, entering REPL mode');
+              this.isReplMode = true;
             }
           }
         }
@@ -3407,12 +3779,35 @@ export default {
         callback: {
           limits: -1,
           callback: (dict) => {
-            // Don't process through handleRunResult if we're handling via REPL
-            // The REPL handler will process all output directly
-            // Only process non-output messages (like program start)
-            if (!dict.data || (!dict.data.stdout && !dict.data.stderr)) {
+            // CRITICAL: Don't process REPL messages through handleRunResult at all
+            // Check if this message belongs to the current REPL session
+            const isReplMessage = (
+              dict.id === this.replSessionId || 
+              dict.cmd_id === this.replSessionId ||
+              (dict.data && dict.data.program_id === this.replSessionId) ||
+              // If REPL is active and this is output, it belongs to REPL
+              (this.isReplMode && this.replSessionId && 
+               (dict.code === 0 || dict.code === 2000 || dict.code === 5000) &&
+               dict.data && (dict.data.stdout || dict.data.stderr))
+            );
+            
+            // CRITICAL FIX: Always allow program start/end messages through to store
+            const isProgramLifecycleMessage = (
+              dict.data === null || dict.data === undefined || // Program start signal
+              dict.code === 2000 ||                           // Input request signals
+              dict.code === 4000 || dict.code === 5000        // Error or REPL transition signals
+            );
+            
+            console.log('🔍 [REPL] Callback - isReplMessage:', isReplMessage, 'isProgramLifecycle:', isProgramLifecycleMessage, 'code:', dict.code, 'id:', dict.id, 'replSessionId:', this.replSessionId);
+            
+            if (!isReplMessage || isProgramLifecycleMessage) {
+              // Process all non-REPL messages and all program lifecycle messages through normal console handling
+              console.log('✅ [REPL] Processing through handleRunResult');
               this.$store.commit('ide/handleRunResult', dict);
+            } else {
+              console.log('⏭️ [REPL] Skipping - will be handled by WebSocket');
             }
+            // REPL messages are handled by the WebSocket listener above
           }
         }
       });

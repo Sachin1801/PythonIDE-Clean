@@ -119,7 +119,7 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler, WebSocketKeepali
         # Setup keepalive mechanism
         self.setup_keepalive()
         
-        logger.debug(f'WebSocket opened: ip={self.request.remote_ip}, id={self.id}, time={datetime.datetime.now()}')
+        logger.info(f'WebSocket connection established: ip={self.request.remote_ip}, id={self.id}, time={datetime.datetime.now()}')
         
         # Send authentication request
         self.write_message(json.dumps({
@@ -145,7 +145,7 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler, WebSocketKeepali
                     logger.error(f"Error cleaning up REPL handler for {file_path}: {e}")
             self.repl_handlers.clear()
         
-        logger.debug(f'WebSocket closed: ip={self.request.remote_ip}, user={self.username}, time={datetime.datetime.now()}')
+        logger.info(f'WebSocket connection closed: ip={self.request.remote_ip}, user={self.username}, time={datetime.datetime.now()}')
     
     def on_message(self, message: Union[str, bytes]) -> Optional[Awaitable[None]]:
         """Handle incoming WebSocket messages"""

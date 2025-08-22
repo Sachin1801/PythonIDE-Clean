@@ -553,11 +553,7 @@ const mutations = {
         state.ideInfo.consoleItems[i].isReplMode = true;
         state.ideInfo.consoleItems[i].replActive = true;
         
-        // Add REPL mode indicator to console
-        state.ideInfo.consoleItems[i].resultList.push({
-          type: 'system',
-          text: '\n═══════════════════════════════════════════════════════════════════\nScript execution completed. Entering interactive REPL mode.\nAll variables from your script are available. Type Python code and press Enter.\n═══════════════════════════════════════════════════════════════════\n'
-        });
+        // REPL mode started - no extra messages needed
         
         // Show REPL prompt
         state.ideInfo.consoleItems[i].resultList.push({

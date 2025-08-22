@@ -262,12 +262,30 @@ export default {
     },
     saveAsFile() {
       this.closeDropdowns();
-      if (!this.ideInfo.codeSelected) {
-        this.$message.warning('Please open a file first');
+      
+      // Check if we have a file selected in the tree (like delete functionality)
+      if (this.hasSelectedFile) {
+        const selectedFile = this.ideInfo.nodeSelected;
+        
+        // Convert tree node to fileInfo format (like codeSelected)
+        const fileInfo = {
+          fileName: selectedFile.label || selectedFile.name,
+          filePath: selectedFile.path,
+          projectName: selectedFile.projectName || this.ideInfo.currProj?.data?.name
+        };
+        
+        this.$emit('save-as-file', fileInfo);
         return;
       }
-      // Trigger browser's save dialog
-      this.$emit('save-as-file', this.ideInfo.codeSelected);
+      
+      // Fallback to currently open file in editor
+      if (this.ideInfo.codeSelected) {
+        this.$emit('save-as-file', this.ideInfo.codeSelected);
+        return;
+      }
+      
+      // No file selected
+      this.$message.warning('Please select a file to save');
     },
     moveFile() {
       this.closeDropdowns();

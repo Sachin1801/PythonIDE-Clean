@@ -22,7 +22,7 @@
               <li class="nav__dropdown-item">
                 <button @click="newFile()">
                   <span>New File</span>
-                  <span class="nav__keyboard-shortcut">Ctrl+N</span>
+                  <span class="nav__keyboard-shortcut">Ctrl+Alt+N</span>
                 </button>
               </li>
               <li class="nav__dropdown-item">
@@ -43,7 +43,7 @@
                 </button>
               </li>
               <li class="nav__dropdown-item">
-                <button @click="saveAsFile()">
+                <button @click="saveAsFile()" :disabled="!canSaveAsFile">
                   <span>Save As</span>
                   <span class="nav__keyboard-shortcut">Ctrl+Shift+S</span>
                 </button>
@@ -339,7 +339,13 @@ export default {
              this.ideInfo.currProj.pathSelected.endsWith('.py');
     },
     hasSelectedFile() {
-      return this.ideInfo.nodeSelected && this.ideInfo.nodeSelected.type === 'file';
+      const result = this.ideInfo.nodeSelected && this.ideInfo.nodeSelected.type === 'file';
+      console.log('🔍 [DEBUG] hasSelectedFile computed:', {
+        nodeSelected: this.ideInfo.nodeSelected,
+        nodeType: this.ideInfo.nodeSelected?.type,
+        result: result
+      });
+      return result;
     },
     canDeleteFile() {
       // Check if a file is selected and it's not a protected item
@@ -354,6 +360,22 @@ export default {
         return 'Can only delete files';
       }
       return `Delete ${this.ideInfo.nodeSelected.label || this.ideInfo.nodeSelected.name}`;
+    },
+    canSaveAsFile() {
+      // Can save if we have a file selected in tree OR a file open in editor
+      const hasSelected = this.hasSelectedFile;
+      const hasCodeSelected = this.ideInfo.codeSelected && this.ideInfo.codeSelected.fileName;
+      const result = hasSelected || hasCodeSelected;
+      
+      console.log('🔍 [DEBUG] canSaveAsFile computed:', {
+        hasSelectedFile: hasSelected,
+        nodeSelected: this.ideInfo.nodeSelected,
+        hasCodeSelected: hasCodeSelected,
+        codeSelected: this.ideInfo.codeSelected,
+        result: result
+      });
+      
+      return result;
     },
   },
   components: {
@@ -399,13 +421,20 @@ export default {
       }
       // Ctrl+Shift+S - Save As
       if (e.ctrlKey && e.shiftKey && e.key === 'S') {
+        console.log('🔍 [DEBUG] Ctrl+Shift+S keyboard shortcut triggered');
+        console.log('🔍 [DEBUG] canSaveAsFile:', this.canSaveAsFile);
         e.preventDefault();
         e.stopPropagation();
-        this.saveAsFile();
+        if (this.canSaveAsFile) {
+          console.log('🔍 [DEBUG] Calling saveAsFile() from keyboard shortcut');
+          this.saveAsFile();
+        } else {
+          console.log('🔍 [DEBUG] Cannot save as - no file available');
+        }
         return;
       }
-      // Ctrl+N - New File
-      if (e.ctrlKey && !e.shiftKey && e.key === 'n') {
+      // Ctrl+Alt+N - New File
+      if (e.ctrlKey && e.altKey && !e.shiftKey && e.key === 'n') {
         e.preventDefault();
         e.stopPropagation();
         this.newFile();
@@ -672,13 +701,41 @@ export default {
       });
     },
     saveAsFile() {
+      console.log('🔍 [DEBUG] saveAsFile() called');
+      console.log('🔍 [DEBUG] hasSelectedFile:', this.hasSelectedFile);
+      console.log('🔍 [DEBUG] nodeSelected:', this.ideInfo.nodeSelected);
+      console.log('🔍 [DEBUG] codeSelected:', this.ideInfo.codeSelected);
+      console.log('🔍 [DEBUG] canSaveAsFile:', this.canSaveAsFile);
+      
       this.closeDropdowns();
-      if (!this.ideInfo.codeSelected) {
-        ElMessage.warning('Please open a file first');
+      
+      // Check if we have a file selected in the tree (like delete functionality)
+      if (this.hasSelectedFile) {
+        const selectedFile = this.ideInfo.nodeSelected;
+        
+        // Convert tree node to fileInfo format (like codeSelected)
+        const fileInfo = {
+          fileName: selectedFile.label || selectedFile.name,
+          filePath: selectedFile.path,
+          projectName: selectedFile.projectName || this.ideInfo.currProj?.data?.name
+        };
+        
+        console.log('🔍 [DEBUG] Converted tree file to fileInfo:', fileInfo);
+        console.log('🔍 [DEBUG] Original selectedFile:', selectedFile);
+        this.$emit('save-as-file', fileInfo);
         return;
       }
-      // Trigger browser's save dialog
-      this.$emit('save-as-file', this.ideInfo.codeSelected);
+      
+      // Fallback to currently open file in editor
+      if (this.ideInfo.codeSelected) {
+        console.log('🔍 [DEBUG] Emitting save-as-file for editor file:', this.ideInfo.codeSelected);
+        this.$emit('save-as-file', this.ideInfo.codeSelected);
+        return;
+      }
+      
+      // No file selected
+      console.log('🔍 [DEBUG] No file available for save as');
+      ElMessage.warning('Please select a file to save');
     },
     moveFile() {
       this.closeDropdowns();

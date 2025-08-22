@@ -2553,36 +2553,237 @@ export default {
         }
       });
     },
-    saveAsFile(fileInfo) {
-      // Save As - triggers browser download with ability to rename
+    async saveAsFile(fileInfo) {
+      console.log('🔍 [DEBUG] VmIde.saveAsFile() called with:', fileInfo);
+      
+      // Save As - allows user to choose location and rename file
       if (!fileInfo || !fileInfo.fileName) {
+        console.log('🔍 [DEBUG] Invalid fileInfo - no fileName');
         ElMessage.error('No file selected to save');
         return;
       }
       
-      // Get current file content from editor
+      // First try to get content from editor if file is open
       const codeItem = this.ideInfo.codeItems.find(item => 
         item.filePath === fileInfo.filePath && 
         (item.projectName === fileInfo.projectName || (!item.projectName && !fileInfo.projectName))
       );
       
-      if (!codeItem) {
-        ElMessage.error('File not found in editor');
-        return;
+      console.log('🔍 [DEBUG] Looking for codeItem with filePath:', fileInfo.filePath);
+      console.log('🔍 [DEBUG] Available codeItems:', this.ideInfo.codeItems?.map(item => ({ filePath: item.filePath, projectName: item.projectName })));
+      console.log('🔍 [DEBUG] Found codeItem:', !!codeItem);
+      
+      if (codeItem) {
+        // File is open in editor, use editor content
+        console.log('🔍 [DEBUG] Using editor content, calling performSaveAs');
+        await this.performSaveAs(fileInfo, codeItem.content);
+      } else {
+        // File is not open in editor, read from server
+        console.log('🔍 [DEBUG] File not in editor, reading from server');
+        this.readFileForSaveAs(fileInfo);
       }
+    },
+    
+    readFileForSaveAs(fileInfo) {
+      console.log('🔍 [DEBUG] readFileForSaveAs called with:', fileInfo);
       
-      // Create a blob and trigger download
-      const blob = new Blob([codeItem.content], { type: 'text/plain' });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = fileInfo.fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      // Check if it's a binary file
+      const binaryExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.pdf', '.zip', '.tar', '.gz'];
+      const isBinary = binaryExtensions.some(ext => fileInfo.fileName.toLowerCase().endsWith(ext));
       
-      ElMessage.success('File downloaded successfully');
+      console.log('🔍 [DEBUG] File is binary:', isBinary);
+      console.log('🔍 [DEBUG] Dispatching IDE_GET_FILE with:', {
+        projectName: fileInfo.projectName,
+        filePath: fileInfo.filePath,
+        binary: isBinary
+      });
+      
+      this.$store.dispatch(`ide/${types.IDE_GET_FILE}`, {
+        projectName: fileInfo.projectName,
+        filePath: fileInfo.filePath,
+        binary: isBinary,
+        callback: async (dict) => {
+          console.log('🔍 [DEBUG] IDE_GET_FILE callback received:', { code: dict.code, hasData: !!dict.data });
+          
+          if (dict.code == 0) {
+            // Get the actual content
+            let fileContent = dict.data?.content || dict.data;
+            
+            if (isBinary) {
+              // For binary files, we need to handle base64 data differently
+              ElMessage.info('Binary files should be downloaded using the Download option instead.');
+              return;
+            } else {
+              // For text files, use the content directly
+              if (typeof fileContent === 'object' && fileContent.content) {
+                fileContent = fileContent.content;
+              }
+              await this.performSaveAs(fileInfo, fileContent);
+            }
+          } else {
+            ElMessage.error('Failed to read file content');
+          }
+        }
+      });
+    },
+    
+    async performSaveAs(fileInfo, content) {
+      console.log('🔍 [DEBUG] performSaveAs called with fileInfo:', fileInfo);
+      console.log('🔍 [DEBUG] Content length:', content?.length);
+      
+      // Determine file type for proper MIME type
+      const getFileType = (fileName) => {
+        const ext = fileName.toLowerCase().split('.').pop();
+        const mimeTypes = {
+          'py': 'text/x-python',
+          'js': 'text/javascript',
+          'html': 'text/html',
+          'css': 'text/css',
+          'json': 'application/json',
+          'md': 'text/markdown',
+          'txt': 'text/plain',
+          'csv': 'text/csv',
+          'xml': 'text/xml'
+        };
+        return mimeTypes[ext] || 'text/plain';
+      };
+
+      const mimeType = getFileType(fileInfo.fileName);
+
+      // Check for File System Access API support and HTTPS requirement
+      const hasFileSystemAccess = 'showSaveFilePicker' in window;
+      const isSecureContext = window.isSecureContext;
+      
+      // Try modern File System Access API first (Chrome 86+, Edge 86+, requires HTTPS)
+      if (hasFileSystemAccess && isSecureContext) {
+        try {
+          // Configure file type options
+          const fileExtension = fileInfo.fileName.split('.').pop() || 'txt';
+          const options = {
+            suggestedName: fileInfo.fileName,
+            types: [{
+              description: `${fileExtension.toUpperCase()} files`,
+              accept: {
+                [mimeType]: ['.' + fileExtension]
+              }
+            }],
+            excludeAcceptAllOption: false // Allow "All Files" option
+          };
+
+          // Show save file picker with proper error handling
+          const fileHandle = await window.showSaveFilePicker(options);
+          
+          // Create writable stream
+          const writable = await fileHandle.createWritable();
+          
+          // Write file content with progress for large files
+          if (content.length > 1024 * 1024) { // Files larger than 1MB
+            const chunks = content.match(/.{1,65536}/g) || []; // 64KB chunks
+            for (const chunk of chunks) {
+              await writable.write(chunk);
+            }
+          } else {
+            await writable.write(content);
+          }
+          
+          // Close the stream
+          await writable.close();
+          
+          ElMessage.success(`File saved successfully as: ${fileHandle.name}`);
+          return;
+        } catch (error) {
+          // User cancelled or error occurred
+          if (error.name === 'AbortError') {
+            return; // User cancelled - no error message
+          }
+          if (error.name === 'NotAllowedError') {
+            ElMessage.warning('File access permission denied. Using fallback download method.');
+          } else {
+            console.warn('File System Access API failed:', error);
+          }
+          // Fall through to legacy method
+        }
+      } else if (hasFileSystemAccess && !isSecureContext) {
+        console.warn('File System Access API requires HTTPS. Using fallback method.');
+      }
+
+      // Fallback method for older browsers or when File System Access API fails
+      try {
+        // Create blob with proper UTF-8 encoding
+        const blob = new Blob([content], { 
+          type: mimeType + ';charset=utf-8' 
+        });
+        
+        // Check if the download attribute is supported
+        const testLink = document.createElement('a');
+        const isDownloadSupported = 'download' in testLink;
+        
+        if (isDownloadSupported) {
+          // Modern approach with download attribute
+          const url = window.URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = fileInfo.fileName;
+          
+          // Ensure link is properly configured for all browsers
+          link.style.display = 'none';
+          link.setAttribute('target', '_blank');
+          link.setAttribute('rel', 'noopener noreferrer');
+          
+          document.body.appendChild(link);
+          
+          // Trigger download with cross-browser support
+          if (typeof link.click === 'function') {
+            link.click();
+          } else {
+            // Fallback for older browsers
+            const event = new MouseEvent('click', {
+              view: window,
+              bubbles: true,
+              cancelable: true
+            });
+            link.dispatchEvent(event);
+          }
+          
+          // Cleanup with proper timing
+          setTimeout(() => {
+            if (document.body.contains(link)) {
+              document.body.removeChild(link);
+            }
+            window.URL.revokeObjectURL(url);
+          }, 150);
+          
+          ElMessage.success('File downloaded to your default downloads folder');
+        } else {
+          // Very old browser fallback - open in new window
+          const url = window.URL.createObjectURL(blob);
+          const newWindow = window.open(url, '_blank');
+          
+          if (newWindow) {
+            ElMessage.info('File opened in new window. Use browser\'s save function to download.');
+            // Cleanup after window opens
+            setTimeout(() => {
+              window.URL.revokeObjectURL(url);
+            }, 1000);
+          } else {
+            throw new Error('Popup blocked or browser not supported');
+          }
+        }
+      } catch (error) {
+        console.error('Save As failed:', error);
+        
+        // Last resort - copy to clipboard if available
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          try {
+            await navigator.clipboard.writeText(content);
+            ElMessage.warning('Could not download file. Content copied to clipboard instead.');
+          } catch (clipboardError) {
+            ElMessage.error('Failed to save file. Please try using a modern browser.');
+          }
+        } else {
+          ElMessage.error('Failed to save file. Please try using a modern browser.');
+        }
+      }
     },
     openMoveDialog(fileData) {
       this.fileBrowserMode = 'move';

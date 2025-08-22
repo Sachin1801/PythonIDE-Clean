@@ -161,9 +161,6 @@ script_globals = {}
             wrapper_code += f'''
 # Execute the user script
 script_path = r"{self.script_path}"
-print(f"Running script: {{os.path.basename(script_path)}}")
-print("=" * 50)
-sys.stdout.flush()
 
 try:
     with open(script_path, 'r') as f:
@@ -173,21 +170,11 @@ try:
     exec(compile(script_code, script_path, 'exec'), script_globals)
     
     # Script completed successfully
-    print()
-    print("=" * 50)
-    print("Script execution completed")
-    print("=" * 50)
-    sys.stdout.flush()
+    pass
     
 except Exception as e:
-    # Print error with educational formatting
-    print()
-    print("=" * 50)
-    print("ERROR in script execution:")
-    print("=" * 50)
+    # Print error
     traceback.print_exc()
-    print("=" * 50)
-    sys.stdout.flush()
     
     # Signal error to parent process
     print("__SCRIPT_ERROR__")
@@ -199,14 +186,7 @@ for key, value in script_globals.items():
     if not key.startswith('__'):
         globals()[key] = value
 
-# List available variables
-user_vars = [k for k in script_globals.keys() if not k.startswith('_')]
-if user_vars:
-    print(f"Available variables: {{', '.join(user_vars)}}")
-else:
-    print("No variables defined in script")
-print()
-sys.stdout.flush()
+# Variables are now available in REPL scope
 
 '''
         
@@ -220,8 +200,6 @@ sys.stdout.flush()
 builtins.input = _original_input
 
 # Start interactive REPL
-print("Python", sys.version)
-print('Type "help", "copyright", "credits" or "license" for more information.')
 
 # Custom REPL with better error handling
 import readline

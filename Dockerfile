@@ -1,27 +1,7 @@
-# Multi-stage build for Python IDE
-FROM node:18-alpine AS frontend-builder
-
-WORKDIR /app
-
-# Copy package files
-COPY package*.json ./
-
-# Install ALL dependencies (including devDependencies for build)
-RUN npm ci
-
-# Copy source files
-COPY babel.config.js ./
-COPY vue.config.js ./
-COPY jsconfig.json ./
-COPY public ./public
-COPY src ./src
-
-# Build the frontend
-RUN npm run build
-
-# Python backend stage
+# Production Dockerfile for Python IDE
 FROM python:3.11-slim
 
+# Set working directory
 WORKDIR /app
 
 # Install system dependencies
@@ -29,27 +9,34 @@ RUN apt-get update && apt-get install -y \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy backend requirements and install
-COPY server/requirements.txt server/
+# Copy and install Python dependencies
+COPY server/requirements.txt ./server/
 RUN pip install --no-cache-dir -r server/requirements.txt
 
-# Copy backend code
-COPY server/ server/
+# Copy server code
+COPY server/ ./server/
 
-# Make startup script executable
-RUN chmod +x server/startup.sh
-
-# Copy built frontend from previous stage
-COPY --from=frontend-builder /app/dist dist/
+# Copy frontend build (already built)
+COPY dist/ ./dist/
 
 # Create necessary directories
 RUN mkdir -p server/projects/ide/Local \
-    server/projects/ide/"Lecture Notes" \
+    "server/projects/ide/Lecture Notes" \
     server/projects/ide/Assignments \
     server/projects/ide/Tests
 
-# Expose port (Railway will override with PORT env var)
+# Set environment variables
+ENV PORT=8080
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
+
+# Expose port
 EXPOSE 8080
 
-# Start the server using the improved startup script
-CMD ["/app/server/startup.sh"]
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080').read()" || exit 1
+
+# Start the application
+WORKDIR /app/server
+CMD ["python", "server.py"]

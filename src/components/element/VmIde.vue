@@ -1166,10 +1166,7 @@ export default {
         // Entering REPL mode after script execution
         console.log('Entering REPL mode after script execution');
         this.isReplMode = true;
-        this.addReplOutput('\n═══════════════════════════════════════\n', 'system');
-        this.addReplOutput('Entering interactive REPL mode', 'system');
-        this.addReplOutput('All variables from the script are available', 'system');
-        this.addReplOutput('Type exit() or press Ctrl+D to quit\n', 'system');
+        // REPL mode starting - no extra messages needed
       } else if (dict.code === 1111 || dict.cmd === 'python_ended') {
         // REPL session ended
         this.addReplOutput('\nREPL session ended', 'system');

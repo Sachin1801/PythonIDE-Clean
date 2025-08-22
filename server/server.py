@@ -20,6 +20,7 @@ from handlers.auth_handler import LoginHandler, LogoutHandler, ValidateSessionHa
 from setup_route import SetupHandler, ResetDatabaseHandler
 from common.database import db_manager
 from health_monitor import health_monitor
+from migrations.migration_manager import run_auto_migrations
 
 # Load environment variables
 load_dotenv()
@@ -182,6 +183,18 @@ def main():
 
     # Initialize database
     logger.info("Initializing database...")
+    
+    # Run automatic migrations BEFORE starting the server
+    logger.info("Running database migrations...")
+    database_url = os.environ.get('DATABASE_URL')
+    if database_url:
+        migration_success = run_auto_migrations(database_url)
+        if not migration_success:
+            logger.error("Database migrations failed! Server startup aborted.")
+            sys.exit(1)
+        logger.info("Database migrations completed successfully")
+    else:
+        logger.warning("DATABASE_URL not set - skipping migrations")
     
     if args.num_processes >= 0:
         try:

@@ -1450,6 +1450,12 @@ export default {
     },
     
     getOrCreateFileConsole(filePath) {
+      // Safety check - ensure filePath is valid
+      if (!filePath || typeof filePath !== 'string') {
+        console.error('getOrCreateFileConsole: Invalid file path provided:', filePath);
+        return null;
+      }
+      
       // Find existing console for this file
       let fileConsole = this.ideInfo.consoleItems.find(
         item => item.path === filePath
@@ -3306,6 +3312,19 @@ export default {
       this.$forceUpdate();
     },
     runPathSelected() {
+      // Check if there's a file selected
+      const currentFilePath = this.ideInfo.currProj.pathSelected;
+      
+      if (!currentFilePath || currentFilePath === '' || currentFilePath === null) {
+        // Show notification that no script is open
+        ElMessage({
+          type: 'warning',
+          message: 'No script is open to run. Please open a Python file first.',
+          duration: 3000
+        });
+        return;
+      }
+      
       // Ensure console is expanded when running
       if (!this.consoleExpanded) {
         this.consoleExpanded = true;
@@ -3313,8 +3332,6 @@ export default {
       }
       
       // Don't create output tab in right panel anymore - console is sufficient
-      
-      const currentFilePath = this.ideInfo.currProj.pathSelected;
       
       // Get or create console for this specific file
       const fileConsole = this.getOrCreateFileConsole(currentFilePath);

@@ -183,17 +183,11 @@ class MigrationManager:
             id SERIAL PRIMARY KEY,
             user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
             path VARCHAR(500) NOT NULL,
-            filename VARCHAR(255) NOT NULL,
             size INTEGER,
-            mime_type VARCHAR(100),
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            is_submitted BOOLEAN DEFAULT false,
-            modified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         
         CREATE INDEX IF NOT EXISTS idx_files_user_path ON files(user_id, path);
-        CREATE INDEX IF NOT EXISTS idx_files_filename ON files(filename);
         """
     
     def _migration_003_sessions(self) -> str:
@@ -236,6 +230,9 @@ class MigrationManager:
                 
                 -- Make filename NOT NULL after populating
                 ALTER TABLE files ALTER COLUMN filename SET NOT NULL;
+                
+                -- Create index for filename
+                CREATE INDEX IF NOT EXISTS idx_files_filename ON files(filename);
                 
                 RAISE NOTICE 'Added filename column to files table';
             END IF;

@@ -3,7 +3,7 @@
     <div v-if="modelValue" class="modal-overlay" @click.self="close">
       <div class="modal-container">
         <div class="modal-header">
-          <h2>Keyboard Shortcuts (Universla for Mac/Windows/Linux)</h2>
+          <h2>Keyboard Shortcuts (Universal for Mac/Windows/Linux)</h2>
           <button class="close-btn" @click="close">
             <X :size="20" />
           </button>

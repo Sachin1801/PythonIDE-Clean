@@ -181,6 +181,15 @@ def main():
     # app = web.Application(handlers, **settings, autoreload=True)
     app = web.Application(handlers, **settings)
 
+    # Ensure project directories exist
+    logger.info("Ensuring project directories exist...")
+    project_base = os.path.join(os.path.dirname(__file__), 'projects', 'ide')
+    directories = ['Local', 'Lecture Notes', 'Assignments', 'Tests']
+    for dir_name in directories:
+        dir_path = os.path.join(project_base, dir_name)
+        os.makedirs(dir_path, exist_ok=True)
+        logger.info(f"Directory ensured: {dir_path}")
+    
     # Initialize database
     logger.info("Initializing database...")
     
@@ -188,13 +197,15 @@ def main():
     logger.info("Running database migrations...")
     database_url = os.environ.get('DATABASE_URL')
     if database_url:
+        logger.info("DATABASE_URL found - running migrations")
         migration_success = run_auto_migrations(database_url)
         if not migration_success:
             logger.error("Database migrations failed! Server startup aborted.")
             sys.exit(1)
         logger.info("Database migrations completed successfully")
     else:
-        logger.warning("DATABASE_URL not set - skipping migrations")
+        logger.warning("DATABASE_URL not set - using local PostgreSQL fallback")
+        logger.warning("Migrations will be skipped without DATABASE_URL")
     
     if args.num_processes >= 0:
         try:

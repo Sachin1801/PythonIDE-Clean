@@ -32,9 +32,14 @@ class DatabaseManager:
             logger.info("No DATABASE_URL found, using default local PostgreSQL")
         
         # Initialize PostgreSQL
-        logger.info(f"Connecting to PostgreSQL: {self.database_url.split('@')[1] if '@' in self.database_url else 'local'}")
-        self._init_postgres()
-        logger.info(f"Connected to PostgreSQL database")
+        try:
+            connection_info = self.database_url.split('@')[1] if '@' in self.database_url else 'local'
+            logger.info(f"Connecting to PostgreSQL: {connection_info}")
+            self._init_postgres()
+            logger.info("Connected to PostgreSQL database successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize PostgreSQL: {e}")
+            raise
     
     def _init_postgres(self):
         """Initialize PostgreSQL connection pool"""

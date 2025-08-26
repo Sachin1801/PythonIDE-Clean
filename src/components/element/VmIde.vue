@@ -175,8 +175,8 @@
             <div class="console-output-area" ref="consoleOutputArea">
               <template v-if="ideInfo.consoleSelected && ideInfo.consoleSelected.resultList">
                 <div v-for="(result, index) in ideInfo.consoleSelected.resultList" :key="index" class="console-line">
-                  <!-- Regular output -->
-                  <pre v-if="result.type === 'output' || result.type === 'text'" class="console-text">{{ result.text || result.content || result }}</pre>
+                  <!-- Regular output (filter out prompts) -->
+                  <pre v-if="(result.type === 'output' || result.type === 'text') && !isPromptOutput(result)" class="console-text">{{ result.text || result.content || result }}</pre>
                   
                   <!-- Error output -->
                   <pre v-else-if="result.type === 'error'" class="console-error">{{ result.text || result.content || result }}</pre>
@@ -193,12 +193,26 @@
                   <span v-else-if="result.type === 'repl-prompt'" class="console-repl-prompt">{{ result.text || '>>> ' }}</span>
                   
                   <!-- User input in REPL -->
-                  <pre v-else-if="result.type === 'user-input'" class="console-user-input">{{ result.text || result.content || result }}</pre>
+                  <pre v-else-if="result.type === 'user-input'" class="console-user-input" v-html="highlightPythonCode(result.text || result.content || result)"></pre>
                   
                   <!-- REPL input (properly formatted with prompt) -->
-                  <div v-else-if="result.type === 'repl-input'" class="console-repl-line">
-                    <span class="console-repl-prompt">{{ result.prompt || '>>> ' }}</span>
-                    <pre class="console-repl-input">{{ result.content || result.text || result }}</pre>
+                  <div v-else-if="result.type === 'repl-input'" class="console-repl-entry">
+                    <!-- Handle multiline input - only first line shows >>>, others have no prompt (like IDLE) -->
+                    <template v-if="isMultilineCode(result.content || result.text || result)">
+                      <div v-for="(line, index) in splitCodeLines(result.content || result.text || result)" 
+                           :key="'line-' + index" 
+                           class="console-repl-line">
+                        <!-- Only show prompt on first line, like Python IDLE -->
+                        <span v-if="index === 0" class="console-repl-prompt">{{ result.prompt || '>>> ' }}</span>
+                        <pre class="console-repl-input" :class="{ 'no-prompt': index > 0 }" v-html="highlightPythonCode(line)"></pre>
+                      </div>
+                    </template>
+                    
+                    <!-- Single line input -->
+                    <div v-else class="console-repl-line">
+                      <span class="console-repl-prompt">{{ result.prompt || '>>> ' }}</span>
+                      <pre class="console-repl-input" v-html="highlightPythonCode(result.content || result.text || result)"></pre>
+                    </div>
                   </div>
                   
                   <!-- Default fallback -->
@@ -1057,6 +1071,12 @@ export default {
     },
     
     async startReplSession() {
+      // Add welcome message for REPL-only mode
+      if (this.ideInfo.consoleSelected) {
+        this.addReplOutput('Python Interactive Shell - Enter Python code and press Enter to execute', 'system');
+        this.addReplOutput('Use Shift+Enter for multiline code', 'system');
+      }
+      
       await this.startDualModeReplSession();
     },
     
@@ -4159,6 +4179,7 @@ export default {
     
     // REPL methods
     handleReplKeydown(event) {
+      
       if (event.key === 'Enter') {
         if (event.shiftKey) {
           // Shift+Enter: new line for multi-line input
@@ -4174,9 +4195,38 @@ export default {
             this.updateReplRows();
           });
         } else {
-          // Enter without Shift: execute
+          // Enter without Shift: check if we should execute or continue multiline
           event.preventDefault();
-          this.executeReplCommand();
+          
+          // Get cursor position and current line
+          const cursorPos = event.target.selectionStart;
+          const textBeforeCursor = this.replInput.substring(0, cursorPos);
+          const lines = textBeforeCursor.split('\n');
+          const currentLine = lines[lines.length - 1];
+          
+          // Check if we're on an empty line in a multiline context
+          const isEmptyLine = currentLine.trim() === '';
+          const hasMultipleLines = this.replInput.includes('\n');
+          
+          if (isEmptyLine && hasMultipleLines) {
+            // Empty line in multiline context - execute the code
+            this.executeReplCommand();
+          } else if (this.shouldContinueMultiline(this.replInput)) {
+            // Code needs continuation - add new line
+            const start = event.target.selectionStart;
+            const end = event.target.selectionEnd;
+            const value = this.replInput;
+            this.replInput = value.substring(0, start) + '\n' + value.substring(end);
+            
+            // Move cursor after the newline
+            this.$nextTick(() => {
+              event.target.selectionStart = event.target.selectionEnd = start + 1;
+              this.updateReplRows();
+            });
+          } else {
+            // Execute the command
+            this.executeReplCommand();
+          }
         }
       } else if (event.key === 'Tab') {
         // Tab: insert 4 spaces for indentation
@@ -4228,7 +4278,20 @@ export default {
     },
     
     async executeReplCommand() {
-      const command = this.replInput;
+      // Clean up the command - remove trailing empty lines but preserve internal structure
+      let command = this.replInput;
+      
+      // Remove trailing empty lines only
+      while (command.endsWith('\n\n')) {
+        command = command.slice(0, -1);
+      }
+      
+      // Don't execute if command is empty or only whitespace
+      if (!command || !command.trim()) {
+        this.replInput = '';
+        this.replInputRows = 1;
+        return;
+      }
       
       // Check if we're in script-to-REPL mode (after script execution)
       if (this.ideInfo.consoleSelected && this.ideInfo.consoleSelected.waitingForReplInput) {
@@ -4268,6 +4331,145 @@ export default {
         // Use regular REPL mode
         await this.executeReplCommandDualMode(command);
       }
+    },
+    
+    // Check if code needs multiline continuation
+    shouldContinueMultiline(code) {
+      if (!code || !code.trim()) return false;
+      
+      const lines = code.split('\n');
+      const lastLine = lines[lines.length - 1].trim();
+      
+      // Check if last line ends with colon (def, if, for, while, try, etc.)
+      if (lastLine.endsWith(':')) {
+        return true;
+      }
+      
+      // Check if we're inside a multiline construct that needs continuation
+      const cleanCode = code.trim();
+      
+      // Count indentation levels to detect incomplete blocks
+      let openBlocks = 0;
+      let currentIndent = 0;
+      
+      for (const line of lines) {
+        if (line.trim() === '') continue;
+        
+        const lineIndent = line.search(/\S/);
+        if (lineIndent === -1) continue; // Skip empty lines
+        
+        // Check for block-starting keywords
+        const trimmedLine = line.trim();
+        if (trimmedLine.match(/^(def|class|if|elif|else|for|while|with|try|except|finally)\b.*:/)) {
+          openBlocks++;
+          currentIndent = lineIndent;
+        } else if (lineIndent <= currentIndent && openBlocks > 0 && !trimmedLine.match(/^(elif|else|except|finally)\b/)) {
+          openBlocks = Math.max(0, openBlocks - 1);
+          currentIndent = lineIndent;
+        }
+      }
+      
+      // If we have open blocks and the last line is not indented properly, continue
+      return openBlocks > 0 && !lastLine.match(/^(return|break|continue|pass|raise)\b/);
+    },
+    
+    // Syntax highlighting method for Python code in REPL
+    highlightPythonCode(code) {
+      if (!code || typeof code !== 'string') return code;
+      
+      // Use Prism.js if available
+      if (typeof Prism !== 'undefined' && Prism.languages && Prism.languages.python) {
+        try {
+          return Prism.highlight(code, Prism.languages.python, 'python');
+        } catch (error) {
+          console.warn('Prism.js highlighting failed:', error);
+          return this.simpleHighlight(code);
+        }
+      }
+      
+      // Fallback to simple highlighting
+      return this.simpleHighlight(code);
+    },
+    
+    // Check if output is just a prompt that should be filtered
+    isPromptOutput(result) {
+      const content = result.text || result.content || result;
+      if (typeof content !== 'string') return false;
+      
+      // Filter out standalone prompts
+      return (
+        content.match(/^\s*>>>\s*$/) ||              // >>> with any whitespace
+        content.match(/^\s*\.\.\.\s*$/) ||           // ... with any whitespace  
+        content.match(/^>>>\s*\n*$/) ||              // >>> with trailing newlines
+        content.match(/^\.\.\.\s*\n*$/) ||           // ... with trailing newlines
+        content.trim() === '>>>' ||                  // just ">>>"
+        content.trim() === '...' ||                  // just "..."
+        content === '>>> ' ||                        // exact prompt match
+        content === '... '                           // exact continuation match
+      );
+    },
+    
+    // Simple syntax highlighting fallback
+    simpleHighlight(code) {
+      if (!code) return code;
+      
+      let highlighted = this.escapeHtml(code);
+      
+      // Python keywords
+      const keywords = [
+        'def', 'class', 'if', 'elif', 'else', 'try', 'except', 'finally',
+        'for', 'while', 'with', 'as', 'import', 'from', 'return', 'yield',
+        'lambda', 'pass', 'break', 'continue', 'raise', 'assert', 'del',
+        'and', 'or', 'not', 'in', 'is', 'None', 'True', 'False', 'async', 'await'
+      ];
+      
+      const keywordRegex = new RegExp(`\\b(${keywords.join('|')})\\b`, 'g');
+      highlighted = highlighted.replace(keywordRegex, '<span class="python-keyword">$1</span>');
+      
+      // Strings (simple version - handles both single and double quotes)
+      highlighted = highlighted.replace(/(["'])((?:\\.|(?!\1).)*?)\1/g, 
+        '<span class="python-string">$1$2$1</span>');
+      
+      // Numbers (integers and floats)
+      highlighted = highlighted.replace(/\b(\d+\.?\d*)\b/g, 
+        '<span class="python-number">$1</span>');
+      
+      // Comments
+      highlighted = highlighted.replace(/(#.*$)/gm, 
+        '<span class="python-comment">$1</span>');
+      
+      // Built-in functions
+      const builtins = ['print', 'input', 'range', 'len', 'str', 'int', 
+                        'float', 'list', 'dict', 'set', 'tuple', 'type',
+                        'sum', 'max', 'min', 'abs', 'round', 'sorted', 'reversed'];
+      const builtinRegex = new RegExp(`\\b(${builtins.join('|')})\\b`, 'g');
+      highlighted = highlighted.replace(builtinRegex, '<span class="python-builtin">$1</span>');
+      
+      return highlighted;
+    },
+    
+    // Escape HTML to prevent XSS
+    escapeHtml(text) {
+      const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+      };
+      return text.replace(/[&<>"']/g, m => map[m]);
+    },
+    
+    // Check if code contains multiple lines (for proper REPL display)
+    isMultilineCode(code) {
+      if (!code || typeof code !== 'string') return false;
+      return code.includes('\n') && code.trim() !== '';
+    },
+    
+    // Split code into lines for multiline display
+    splitCodeLines(code) {
+      if (!code || typeof code !== 'string') return [code || ''];
+      return code.split('\n');
     },
     
     // Helper method to ensure REPL console exists
@@ -4855,6 +5057,7 @@ Advanced packages (install with micropip):
   font-size: 13px;
   line-height: 1.4;
   font-weight: 500;
+  letter-spacing: 0.02em; /* Consistent character spacing for output */
 }
 
 .console-error {
@@ -4901,14 +5104,20 @@ Advanced packages (install with micropip):
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
   font-size: 13px;
   line-height: 1.4;
+  letter-spacing: 0.02em; /* Match output character spacing for consistency */
 }
 
 /* REPL input with prompt - consistent formatting */
+.console-repl-entry {
+  margin-bottom: 4px;
+}
+
 .console-repl-line {
   display: flex;
   align-items: flex-start;
   gap: 4px;
   margin: 0;
+  line-height: 1.4;
 }
 
 .console-repl-prompt {
@@ -4930,6 +5139,81 @@ Advanced packages (install with micropip):
   line-height: 1.4;
   font-weight: 500;
   flex: 1;
+  letter-spacing: 0.02em; /* Match output character spacing for consistency */
+}
+
+/* Continuation lines without prompt - match IDLE shell behavior */
+.console-repl-input.no-prompt {
+  margin-left: 28px; /* Align with text after >>> prompt */
+}
+
+/* Syntax Highlighting Classes for Python */
+.python-keyword {
+  color: #569cd6; /* Blue for keywords */
+  font-weight: 600;
+}
+
+.python-string {
+  color: #ce9178; /* Light brown for strings */
+}
+
+.python-number {
+  color: #b5cea8; /* Light green for numbers */
+}
+
+.python-comment {
+  color: #6a9955; /* Green for comments */
+  font-style: italic;
+}
+
+.python-builtin {
+  color: #dcdcaa; /* Light yellow for built-in functions */
+  font-weight: 500;
+}
+
+/* Prism.js theme overrides for inline display in REPL */
+.console-repl-input pre[class*="language-"] {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  overflow: visible;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.console-repl-input code[class*="language-"] {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  text-shadow: none;
+  background: transparent;
+  padding: 0;
+  letter-spacing: inherit; /* Inherit consistent character spacing */
+}
+
+/* Ensure Prism tokens inherit our theme colors */
+.console-repl-input .token.keyword {
+  color: #569cd6 !important;
+  font-weight: 600 !important;
+}
+
+.console-repl-input .token.string {
+  color: #ce9178 !important;
+}
+
+.console-repl-input .token.number {
+  color: #b5cea8 !important;
+}
+
+.console-repl-input .token.comment {
+  color: #6a9955 !important;
+  font-style: italic !important;
+}
+
+.console-repl-input .token.builtin {
+  color: #dcdcaa !important;
+  font-weight: 500 !important;
 }
 
 /* Console input area when waiting for program input */

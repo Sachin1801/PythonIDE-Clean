@@ -357,14 +357,9 @@ export const DualModeREPL = {
           }
         }
         
-        // Update prompt for continuation
-        if (command.trim().endsWith(':')) {
-          this.replContinuationMode = true;
-          this.replPrompt = '... ';
-        } else {
-          this.replContinuationMode = false;
-          this.replPrompt = '>>> ';
-        }
+        // Update prompt for continuation (always use >>> per user preference)
+        this.replContinuationMode = false;
+        this.replPrompt = '>>> ';
         
       } catch (error) {
         console.error('Pyodide execution error:', error);
@@ -409,7 +404,11 @@ export const DualModeREPL = {
               output.trim() === '...' ||                  // just "..."
               output.trim() === '' ||                     // empty/whitespace only
               output === '>>> ' ||                        // exact prompt match
-              output === '... '                           // exact continuation match
+              output === '... ' ||                        // exact continuation match
+              output.match(/^\s*>>>\s*$/) ||              // >>> with any whitespace
+              output.match(/^\s*\.\.\.\s*$/) ||           // ... with any whitespace
+              output.match(/^>>>\s*\n*$/) ||              // >>> with trailing newlines
+              output.match(/^\.\.\.\s*\n*$/)              // ... with trailing newlines
             );
             
             if (!isPromptOnly && output.trim() !== '') {
@@ -421,10 +420,10 @@ export const DualModeREPL = {
           }
         }
       } else if (message.code === 2000) {
-        // REPL prompt update
+        // REPL prompt update (always use >>> per user preference)
         if (message.data?.type === 'repl_prompt') {
-          this.replPrompt = message.data.prompt || '>>> ';
-          this.replContinuationMode = this.replPrompt === '... ';
+          this.replPrompt = '>>> ';
+          this.replContinuationMode = false;
         } else if (message.data?.stdout) {
           this.addReplOutput(message.data.stdout, 'output');
         }

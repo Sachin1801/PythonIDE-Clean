@@ -85,6 +85,7 @@ class MigrationManager:
             ("003_ensure_sessions_table", self._migration_003_sessions),
             ("004_add_filename_column", self._migration_004_filename),
             ("005_add_missing_columns", self._migration_005_missing_columns),
+            ("006_fix_null_filenames", self._migration_006_fix_null_filenames),
         ]
         
         for name, migration_func in migration_definitions:
@@ -280,6 +281,21 @@ class MigrationManager:
                 RAISE NOTICE 'Added is_submitted column to files table';
             END IF;
         END $$;
+        """
+    
+    def _migration_006_fix_null_filenames(self) -> str:
+        """Fix any NULL filename values that may exist"""
+        return """
+        -- Update any NULL filename values by extracting from path
+        UPDATE files 
+        SET filename = 
+            CASE 
+                WHEN path LIKE '%/%' THEN 
+                    substring(path from '[^/]*$')
+                ELSE 
+                    path
+            END
+        WHERE filename IS NULL;
         """
 
 def run_auto_migrations(database_url: str) -> bool:

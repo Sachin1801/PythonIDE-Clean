@@ -1,3 +1,5 @@
+for i in range(4):
+    print(i)
 fruits = ["apple", "banana", "cherry"]
 for fruit in fruits:
     print(fruit)

@@ -38,10 +38,16 @@ const getters = {
 };
 
 const mutations = {
-  addConsoleOutput(state, { id, type, text }) {
+  addConsoleOutput(state, { id, type, text, prompt, content }) {
     for (let i = 0; i < state.ideInfo.consoleItems.length; i++) {
       if (state.ideInfo.consoleItems[i].id === id) {
-        state.ideInfo.consoleItems[i].resultList.push({ type, text });
+        const outputItem = { type, text };
+        // For repl-input type, also include prompt and content fields
+        if (type === 'repl-input') {
+          outputItem.prompt = prompt;
+          outputItem.content = content || text;
+        }
+        state.ideInfo.consoleItems[i].resultList.push(outputItem);
         break;
       }
     }

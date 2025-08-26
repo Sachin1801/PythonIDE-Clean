@@ -25,9 +25,9 @@
         </div>
         
         <!-- REPL prompt and input -->
-        <div v-else-if="line.type === 'repl-input'" class="repl-line">
+        <div v-else-if="line.type === 'repl-input'" class="repl-line" :class="{ 'multiline': line.multiline }">
           <span class="repl-prompt">{{ line.prompt }}</span>
-          <span class="repl-text">{{ line.content }}</span>
+          <pre class="repl-input-text" :class="{ 'multiline-content': line.multiline }">{{ line.content }}</pre>
         </div>
         
         <!-- REPL output -->
@@ -62,20 +62,34 @@
         <span class="prompt-label">{{ currentPrompt || 'Waiting for input...' }}</span>
       </div>
       
-      <!-- REPL Mode Input -->
-      <div class="input-container" :class="{ 'repl-mode': isReplMode }">
-        <span class="input-prefix">{{ isReplMode ? replPrompt : '▶' }}</span>
+      <!-- REPL Mode Input with Syntax Highlighting -->
+      <div v-if="isReplMode" class="repl-input-container">
+        <span class="repl-input-prefix">{{ replPrompt }}</span>
+        <div class="repl-editor-wrapper">
+          <Codemirror
+            v-model:value="userInput"
+            :options="replCodeMirrorOptions"
+            @keydown="handleKeyDown"
+            ref="replEditor"
+            class="repl-codemirror"
+            :placeholder="'Enter Python code...'"
+          />
+        </div>
+      </div>
+      
+      <!-- Regular Script Input Mode -->
+      <div v-else class="input-container">
+        <span class="input-prefix">▶</span>
         <textarea
           v-model="userInput"
           @keydown="handleKeyDown"
           ref="inputField"
           class="user-input-field"
-          :placeholder="isReplMode ? 'Enter Python code...' : 'Type your input and press Enter...'"
+          placeholder="Type your input and press Enter..."
           :rows="inputRows"
           autofocus
         />
         <button 
-          v-if="!isReplMode"
           class="input-btn primary" 
           @click="sendInput"
           :disabled="!userInput.trim()"
@@ -84,7 +98,6 @@
           ✓
         </button>
         <button 
-          v-if="!isReplMode"
           class="input-btn secondary" 
           @click="cancelInput"
           title="Cancel (Escape)"
@@ -92,6 +105,7 @@
           ✕
         </button>
       </div>
+      
       <div class="input-hint">
         <span v-if="isReplMode">Enter: Execute | Shift+Enter: New line | Up/Down: History</span>
         <span v-else>Press Enter to submit • Escape to cancel</span>
@@ -134,9 +148,23 @@
 <script>
 import { ref, watch, nextTick, computed } from 'vue'
 import { ElMessage } from 'element-plus'
+// CodeMirror for REPL syntax highlighting
+import Codemirror from 'codemirror-editor-vue3'
+import CodeMirror from 'codemirror'
+import 'codemirror/lib/codemirror.css'
+import 'codemirror/theme/darcula.css'
+import 'codemirror/mode/python/python'
+import 'codemirror/addon/selection/active-line'
+import 'codemirror/addon/edit/matchbrackets'
+import 'codemirror/addon/edit/closebrackets'
+import 'codemirror/addon/edit/trailingspace'
+import 'codemirror/addon/comment/comment'
 
 export default {
   name: 'HybridConsole',
+  components: {
+    Codemirror
+  },
   props: {
     item: {
       type: Object,
@@ -165,6 +193,88 @@ export default {
     // Refs
     const consoleOutput = ref(null)
     const inputField = ref(null)
+    const replEditor = ref(null)
+    
+    // CodeMirror options for REPL
+    const replCodeMirrorOptions = ref({
+      mode: {
+        name: 'python',
+        version: 3,
+        singleLineStringErrors: false,
+      },
+      theme: 'repl-theme', // Custom theme
+      lineNumbers: false,
+      smartIndent: true,
+      indentUnit: 4,
+      tabSize: 4,
+      indentWithTabs: false,
+      matchBrackets: true,
+      autoCloseBrackets: true,
+      styleActiveLine: false,
+      lineWrapping: true,
+      showCursorWhenSelecting: true,
+      viewportMargin: Infinity,
+      scrollbarStyle: null,
+      autofocus: true,
+      extraKeys: {
+        'Enter': (cm) => {
+          // Custom Enter handling for REPL
+          const cursor = cm.getCursor()
+          const line = cm.getLine(cursor.line)
+          const allCode = cm.getValue().trim()
+          
+          // Multi-line detection: check if line ends with : or has indentation
+          const needsContinuation = (
+            line.trim().endsWith(':') || 
+            line.trim().endsWith('\\') ||
+            /^\s+/.test(line) ||
+            allCode.split('\n').some((l, i) => i < cursor.line && l.trim().endsWith(':'))
+          )
+          
+          if (needsContinuation || cursor.line < cm.lastLine()) {
+            // Continue on new line
+            const indent = line.match(/^\s*/)[0]
+            const extraIndent = line.trim().endsWith(':') ? '    ' : ''
+            cm.replaceSelection('\n' + indent + extraIndent)
+          } else if (allCode) {
+            // Execute command
+            executeReplCommand()
+          } else {
+            cm.replaceSelection('\n')
+          }
+        },
+        'Shift-Enter': (cm) => {
+          const cursor = cm.getCursor()
+          const line = cm.getLine(cursor.line)
+          const indent = line.match(/^\s*/)[0]
+          cm.replaceSelection('\n' + indent)
+        },
+        'Up': (cm) => {
+          if (cm.getCursor().line === 0 && !cm.getSelection()) {
+            navigateHistory('up')
+          } else {
+            CodeMirror.commands.goLineUp(cm)
+          }
+        },
+        'Down': (cm) => {
+          if (cm.getCursor().line === cm.lastLine() && !cm.getSelection()) {
+            navigateHistory('down')
+          } else {
+            CodeMirror.commands.goLineDown(cm)
+          }
+        },
+        'Tab': (cm) => {
+          if (cm.getSelection()) {
+            cm.indentSelection('add')
+          } else {
+            cm.replaceSelection(Array(cm.getOption('indentUnit') + 1).join(' '))
+          }
+        },
+        'Shift-Tab': (cm) => {
+          cm.indentSelection('subtract')
+        }
+      }
+    })
     
     // Computed
     const currentLines = computed(() => {
@@ -192,11 +302,21 @@ export default {
     }
     
     const addReplLine = (prompt, content, type = 'repl-input') => {
+      // Enhanced multiline detection for Python constructs
+      const isMultiline = (
+        content.includes('\n') && content.trim() !== ''
+      ) || (
+        // Also detect potential multiline constructs even without newlines yet
+        content.trim().match(/^(def|class|if|for|while|with|try|except|finally)\s/) &&
+        content.trim().endsWith(':')
+      )
+      
       outputLines.value.push({
         type,
         prompt,
-        content,
-        timestamp: Date.now()
+        content: content,
+        timestamp: Date.now(),
+        multiline: isMultiline // Flag for multiline content
       })
       nextTick(() => {
         scrollToBottom()
@@ -242,11 +362,16 @@ export default {
       userInput.value = ''
       historyIndex.value = -1
       
-      // Focus input field
+      // Focus REPL editor with delay for proper initialization
       nextTick(() => {
-        if (inputField.value) {
-          inputField.value.focus()
-        }
+        setTimeout(() => {
+          if (replEditor.value?.cminstance) {
+            replEditor.value.cminstance.refresh()
+            replEditor.value.cminstance.focus()
+          } else if (inputField.value) {
+            inputField.value.focus()
+          }
+        }, 100)
       })
     }
     
@@ -287,20 +412,24 @@ export default {
     }
     
     const executeReplCommand = () => {
-      if (!userInput.value.trim()) {
+      const command = isReplMode.value ? 
+        (replEditor.value?.cminstance?.getValue() || userInput.value) : 
+        userInput.value
+      
+      if (!command.trim()) {
         // Empty input, just show new prompt
         addReplLine(replPrompt.value, '', 'repl-input')
         replPrompt.value = '>>> '
         return
       }
       
-      const command = userInput.value
+      // Add to history (only non-empty commands)
+      if (command.trim()) {
+        commandHistory.value.push(command)
+        historyIndex.value = commandHistory.value.length
+      }
       
-      // Add to history
-      commandHistory.value.push(command)
-      historyIndex.value = commandHistory.value.length
-      
-      // Echo the command
+      // Echo the command with proper formatting
       addReplLine(replPrompt.value, command, 'repl-input')
       
       // Send to backend
@@ -311,6 +440,14 @@ export default {
       })
       
       // Clear input and reset prompt
+      if (isReplMode.value && replEditor.value?.cminstance) {
+        replEditor.value.cminstance.setValue('')
+        // Refresh CodeMirror to ensure proper rendering
+        nextTick(() => {
+          replEditor.value.cminstance.refresh()
+          replEditor.value.cminstance.focus()
+        })
+      }
       userInput.value = ''
       replPrompt.value = '>>> '
       inputRows.value = 1
@@ -322,18 +459,42 @@ export default {
       if (direction === 'up') {
         if (historyIndex.value > 0) {
           historyIndex.value--
-          userInput.value = commandHistory.value[historyIndex.value]
-        } else if (historyIndex.value === -1) {
+        } else if (historyIndex.value === -1 || historyIndex.value === commandHistory.value.length) {
           historyIndex.value = commandHistory.value.length - 1
-          userInput.value = commandHistory.value[historyIndex.value]
+        }
+        
+        const historyCommand = commandHistory.value[historyIndex.value] || ''
+        if (isReplMode.value && replEditor.value?.cminstance) {
+          replEditor.value.cminstance.setValue(historyCommand)
+          // Move cursor to end
+          const doc = replEditor.value.cminstance.getDoc()
+          const lastLine = doc.lastLine()
+          const lastLineLength = doc.getLine(lastLine).length
+          doc.setCursor(lastLine, lastLineLength)
+        } else {
+          userInput.value = historyCommand
         }
       } else if (direction === 'down') {
         if (historyIndex.value < commandHistory.value.length - 1) {
           historyIndex.value++
-          userInput.value = commandHistory.value[historyIndex.value]
+          const historyCommand = commandHistory.value[historyIndex.value] || ''
+          if (isReplMode.value && replEditor.value?.cminstance) {
+            replEditor.value.cminstance.setValue(historyCommand)
+            // Move cursor to end
+            const doc = replEditor.value.cminstance.getDoc()
+            const lastLine = doc.lastLine()
+            const lastLineLength = doc.getLine(lastLine).length
+            doc.setCursor(lastLine, lastLineLength)
+          } else {
+            userInput.value = historyCommand
+          }
         } else {
           historyIndex.value = commandHistory.value.length
-          userInput.value = ''
+          if (isReplMode.value && replEditor.value?.cminstance) {
+            replEditor.value.cminstance.setValue('')
+          } else {
+            userInput.value = ''
+          }
         }
       }
     }
@@ -511,6 +672,9 @@ export default {
       // Refs
       consoleOutput,
       inputField,
+      replEditor,
+      replCodeMirrorOptions,
+      executeReplCommand,
       
       // Methods
       handleKeyDown,
@@ -594,7 +758,21 @@ export default {
   display: flex;
   align-items: center;
   margin: 2px 0;
-  color: #ce9178;
+  color: #d4d4d4; /* Changed to match console output for consistency */
+}
+
+.input-indicator {
+  color: #569cd6;
+  font-weight: bold;
+  margin-right: 6px;
+  font-size: 12px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+}
+
+.input-text {
+  margin-left: 4px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
 }
 
 .input-area {
@@ -610,6 +788,13 @@ export default {
   margin-bottom: 6px;
 }
 
+.input-prefix {
+  color: #569cd6;
+  font-weight: bold;
+  font-size: 13px; /* Fixed to match console */
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+}
+
 .user-input-field {
   flex: 1;
   background: #1e1e1e;
@@ -617,7 +802,7 @@ export default {
   color: #d4d4d4;
   padding: 6px 10px;
   border-radius: 4px;
-  font-family: inherit;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace; /* Fixed font */
   font-size: 13px;
   outline: none;
 }
@@ -719,5 +904,200 @@ export default {
   50% {
     opacity: 0.5;
   }
+}
+
+/* Custom CodeMirror theme for REPL */
+.cm-s-repl-theme.CodeMirror {
+  background: transparent !important;
+  color: #d4d4d4 !important;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace !important;
+  font-size: 13px !important;
+  line-height: 1.4 !important;
+}
+
+.cm-s-repl-theme .CodeMirror-cursor {
+  border-left: 1px solid #d4d4d4 !important;
+}
+
+.cm-s-repl-theme .CodeMirror-selected {
+  background: rgba(68, 68, 68, 0.99) !important;
+}
+
+.cm-s-repl-theme .CodeMirror-focused .CodeMirror-selected {
+  background: rgba(38, 79, 120, 0.99) !important;
+}
+
+/* Python syntax highlighting for custom theme */
+.cm-s-repl-theme .cm-keyword {
+  color: #569cd6 !important;
+  font-weight: normal !important;
+}
+
+.cm-s-repl-theme .cm-string {
+  color: #ce9178 !important;
+}
+
+.cm-s-repl-theme .cm-string-2 {
+  color: #ce9178 !important;
+}
+
+.cm-s-repl-theme .cm-number {
+  color: #b5cea8 !important;
+}
+
+.cm-s-repl-theme .cm-comment {
+  color: #6a9955 !important;
+  font-style: italic !important;
+}
+
+.cm-s-repl-theme .cm-def {
+  color: #dcdcaa !important;
+}
+
+.cm-s-repl-theme .cm-builtin {
+  color: #4fc1ff !important;
+}
+
+.cm-s-repl-theme .cm-operator {
+  color: #d4d4d4 !important;
+}
+
+.cm-s-repl-theme .cm-variable {
+  color: #9cdcfe !important;
+}
+
+.cm-s-repl-theme .cm-variable-2 {
+  color: #9cdcfe !important;
+}
+
+.cm-s-repl-theme .cm-variable-3 {
+  color: #4fc1ff !important;
+}
+
+.cm-s-repl-theme .cm-property {
+  color: #9cdcfe !important;
+}
+
+.cm-s-repl-theme .cm-bracket {
+  color: #ffd700 !important;
+}
+
+.cm-s-repl-theme .cm-tag {
+  color: #569cd6 !important;
+}
+
+.cm-s-repl-theme .cm-attribute {
+  color: #9cdcfe !important;
+}
+
+/* CodeMirror wrapper styles for REPL */
+.repl-codemirror {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace !important;
+  font-size: 13px !important;
+  width: 100% !important;
+  border: none !important;
+}
+
+.repl-codemirror .CodeMirror {
+  background: transparent !important;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace !important;
+  font-size: 13px !important;
+  color: #d4d4d4 !important;
+  height: auto !important;
+  min-height: 20px !important;
+  max-height: 200px !important;
+  border: none !important;
+  line-height: 1.4 !important;
+}
+
+.repl-codemirror .CodeMirror-scroll {
+  min-height: 20px !important;
+  max-height: 200px !important;
+  overflow: auto !important;
+}
+
+.repl-codemirror .CodeMirror-lines {
+  padding: 2px 0 !important;
+}
+
+.repl-codemirror .CodeMirror-line {
+  line-height: 1.4 !important;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace !important;
+  font-size: 13px !important;
+}
+
+.repl-codemirror .CodeMirror-gutters {
+  display: none !important;
+}
+
+.repl-codemirror .CodeMirror-sizer {
+  margin-left: 0 !important;
+}
+
+/* Ensure consistent font rendering for all CodeMirror content */
+.repl-codemirror *,
+.repl-codemirror .CodeMirror *,
+.repl-codemirror .CodeMirror-line *,
+.repl-codemirror span {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace !important;
+  font-size: 13px !important;
+  line-height: 1.4 !important;
+}
+
+/* Force consistent fonts and fix existing styles */
+.repl-line,
+.repl-prompt,
+.repl-input-text,
+.repl-text,
+.repl-output,
+.output-text {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace !important;
+  font-size: 13px !important;
+  line-height: 1.4 !important;
+}
+
+/* Multiline REPL content */
+.repl-line.multiline {
+  align-items: flex-start !important;
+  flex-direction: column;
+}
+
+.repl-line.multiline .repl-prompt {
+  align-self: flex-start;
+  margin-bottom: 0;
+}
+
+.repl-line.multiline .repl-input-text {
+  margin-left: 0;
+  padding-left: 24px; /* Indent to match prompt */
+}
+
+.repl-line .multiline-content,
+.repl-line.multiline .repl-input-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace !important;
+  font-size: 13px !important;
+  line-height: 1.4 !important;
+  display: block;
+  width: 100%;
+}
+
+/* For proper indentation preservation in multiline code */
+.repl-input-text.multiline-content {
+  padding-left: 0; /* Remove extra padding for multiline that's already indented */
+}
+
+/* Fix color consistency */
+.repl-input-text,
+.repl-text,
+.repl-output {
+  color: #d4d4d4 !important;
+}
+
+.repl-prompt {
+  color: #4a9eff !important;
+  font-weight: bold !important;
 }
 </style>

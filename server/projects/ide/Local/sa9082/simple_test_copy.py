@@ -1,3 +1,6 @@
+def add(a, b):
+    return a + b
+print(add(5, 3))  # Output: 8
 #!/usr/bin/env python3
 """Simple test for hybrid REPL"""
 

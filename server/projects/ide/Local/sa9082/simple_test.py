@@ -1,3 +1,5 @@
+for i in range(4):
+    print(i)
 #!/usr/bin/env python3
 """Simple test for hybrid REPL"""
 

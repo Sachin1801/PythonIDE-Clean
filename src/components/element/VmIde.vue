@@ -195,6 +195,12 @@
                   <!-- User input in REPL -->
                   <pre v-else-if="result.type === 'user-input'" class="console-user-input">{{ result.text || result.content || result }}</pre>
                   
+                  <!-- REPL input (properly formatted with prompt) -->
+                  <div v-else-if="result.type === 'repl-input'" class="console-repl-line">
+                    <span class="console-repl-prompt">{{ result.prompt || '>>> ' }}</span>
+                    <pre class="console-repl-input">{{ result.content || result.text || result }}</pre>
+                  </div>
+                  
                   <!-- Default fallback -->
                   <pre v-else class="console-text">{{ typeof result === 'object' ? (result.text || result.content || JSON.stringify(result)) : result }}</pre>
                 </div>
@@ -4845,6 +4851,10 @@ Advanced packages (install with micropip):
   margin: 0;
   white-space: pre-wrap;
   word-wrap: break-word;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.4;
+  font-weight: 500;
 }
 
 .console-error {
@@ -4855,10 +4865,13 @@ Advanced packages (install with micropip):
 }
 
 .console-input-prompt {
-  color: var(--info-color, #3794FF);
+  color: var(--text-primary, #CCCCCC);
   display: flex;
   align-items: flex-start;
   gap: 8px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .prompt-arrow {
@@ -4880,11 +4893,43 @@ Advanced packages (install with micropip):
 }
 
 .console-user-input {
-  color: var(--info-color, #3794FF);
+  color: var(--text-primary, #CCCCCC);
   margin: 0;
   white-space: pre-wrap;
   word-wrap: break-word;
   font-weight: 500;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* REPL input with prompt - consistent formatting */
+.console-repl-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  margin: 0;
+}
+
+.console-repl-prompt {
+  color: var(--accent-color, #007ACC);
+  font-weight: bold;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+
+.console-repl-input {
+  color: var(--text-primary, #CCCCCC);
+  margin: 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.4;
+  font-weight: 500;
+  flex: 1;
 }
 
 /* Console input area when waiting for program input */

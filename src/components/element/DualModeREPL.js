@@ -50,7 +50,7 @@ export const DualModeREPL = {
     // Start backend REPL via WebSocket
     async startBackendRepl() {
       console.log('🔌 [REPL] Starting backend REPL...');
-      this.addReplOutput('Connecting to backend Python REPL...', 'system');
+      // Removed startup messages per user request
       
       try {
         // Send start command via WebSocket
@@ -73,8 +73,7 @@ export const DualModeREPL = {
         if (this.wsInfo.rws && this.wsInfo.rws.readyState === WebSocket.OPEN) {
           this.wsInfo.rws.send(JSON.stringify(startMsg));
           console.log('✅ [REPL] Start message sent successfully');
-          this.addReplOutput('Backend Python REPL connected', 'system');
-          this.addReplOutput('Type Python code and press Enter to execute', 'system');
+          // Removed startup messages per user request
         } else {
           throw new Error(`WebSocket not connected: readyState=${this.wsInfo.rws?.readyState}`);
         }
@@ -204,8 +203,15 @@ export const DualModeREPL = {
       this.replInput = '';
       this.replInputRows = 1;
       
-      // Echo command
-      this.addReplOutput(this.replPrompt + command, 'input');
+      // Echo command with proper REPL input format
+      if (this.ideInfo.consoleSelected && this.ideInfo.consoleSelected.id) {
+        this.$store.commit('ide/addConsoleOutput', {
+          id: this.ideInfo.consoleSelected.id,
+          type: 'repl-input',
+          text: command,
+          prompt: this.replPrompt
+        });
+      }
       
       // Determine execution mode
       const useBackend = this.wsInfo?.connected && this.replSessionId && this.replMode !== 'pyodide';
@@ -392,9 +398,21 @@ export const DualModeREPL = {
         // Output from REPL
         if (message.data) {
           if (message.data.stdout) {
-            // Filter prompts we already show
+            // Filter out prompts and continuation markers  
             const output = message.data.stdout;
-            if (!output.match(/^(>>>|\.\.\.)\\s*$/)) {
+            // Don't show standalone prompts, "..." continuation lines, or lines starting with "..."
+            // More comprehensive filtering for all prompt variations
+            const isPromptOnly = (
+              output.match(/^(>>>|\.\.\.)\s*$/) ||        // ">>> " or "... " 
+              output.match(/^(>>>|\.\.\.)\s*\n*$/) ||     // with optional newlines
+              output.trim() === '>>>' ||                  // just ">>>"
+              output.trim() === '...' ||                  // just "..."
+              output.trim() === '' ||                     // empty/whitespace only
+              output === '>>> ' ||                        // exact prompt match
+              output === '... '                           // exact continuation match
+            );
+            
+            if (!isPromptOnly && output.trim() !== '') {
               this.addReplOutput(output, 'output');
             }
           }

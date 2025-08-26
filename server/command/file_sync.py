@@ -91,13 +91,14 @@ class FileSync:
                 self.db.execute_query(update_query, 
                     (size, user_id, relative_path))
             else:
-                # Create new record
+                # Create new record with filename extracted from path
+                filename = os.path.basename(relative_path)
                 insert_query = """
-                    INSERT INTO files (user_id, path, size, created_at, modified_at)
-                    VALUES (%s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    INSERT INTO files (user_id, path, filename, size, created_at, modified_at)
+                    VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 """
                 self.db.execute_query(insert_query,
-                    (user_id, relative_path, size))
+                    (user_id, relative_path, filename, size))
         except Exception as e:
             print(f"Error updating file record for {relative_path}: {e}")
     

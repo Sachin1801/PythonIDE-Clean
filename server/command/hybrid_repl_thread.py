@@ -222,60 +222,47 @@ import readline
 import rlcompleter
 readline.parse_and_bind("tab: complete")
 
+# Simple REPL - let frontend handle multiline logic  
 while True:
     try:
-        # Multi-line input support
-        lines = []
-        prompt = ">>> "
+        # Single input per iteration - frontend sends complete multiline code
+        line = input(">>> ")
         
-        while True:
+        if line.strip():
+            # Execute the code with script globals merged
             try:
-                line = input(prompt)
-                lines.append(line)
+                # Merge script variables into current execution context
+                exec_globals = globals().copy()
+                exec_globals.update(script_globals)
                 
-                # Check if we need more lines
-                code_str = '\\n'.join(lines)
+                # Try to compile as 'single' first (for expressions that return values)
                 try:
-                    compile(code_str, '<stdin>', 'single')
-                    break  # Code is complete
-                except SyntaxError as e:
-                    error_msg = str(e).lower()
-                    if ('unexpected eof' in error_msg or 
-                        'incomplete' in error_msg or
-                        'expected an indented block' in error_msg or
-                        'incomplete input' in error_msg):
-                        prompt = "... "  # Continue on next line
-                        continue
-                    else:
-                        # Real syntax error - let it execute to show the error
-                        break
-            except EOFError:
-                print()
-                sys.exit(0)
-        
-        # Execute the complete code with script globals merged
-        code_str = '\\n'.join(lines)
-        if code_str.strip():
-            # Merge script variables into current execution context
-            exec_globals = globals().copy()
-            exec_globals.update(script_globals)
-            exec(compile(code_str, '<stdin>', 'single'), exec_globals)
-            
-            # CRITICAL FIX: Update script_globals with new variables for persistence
-            # This ensures REPL assignments persist across commands (like IDLE)
-            for k, v in exec_globals.items():
-                if not k.startswith('__') and not k.startswith('_'):
-                    script_globals[k] = v
-            
-            # Update current globals with any new variables from execution
-            globals().update({k: v for k, v in exec_globals.items() if not k.startswith('__')})
+                    compiled = compile(line, '<stdin>', 'single')
+                    result = eval(compiled, exec_globals)
+                    if result is not None:
+                        print(repr(result))
+                except:
+                    # If that fails, try as 'exec' (for statements)
+                    exec(compile(line, '<stdin>', 'exec'), exec_globals)
+                
+                # Update script_globals with new variables for persistence
+                for k, v in exec_globals.items():
+                    if not k.startswith('__') and not k.startswith('_'):
+                        script_globals[k] = v
+                
+                # Update current globals with any new variables from execution
+                globals().update({k: v for k, v in exec_globals.items() if not k.startswith('__')})
+                
+            except Exception:
+                traceback.print_exc()
             
     except SystemExit:
         break
     except KeyboardInterrupt:
         print("\\nKeyboardInterrupt")
-    except Exception:
-        traceback.print_exc()
+    except EOFError:
+        print()
+        sys.exit(0)
     
     sys.stdout.flush()
 '''

@@ -286,7 +286,13 @@ while True:
                             print(repr(result))
                     except SyntaxError:
                         # If eval fails, try exec for statements
-                        exec(compiled, exec_globals)
+                        try:
+                            exec(compiled, exec_globals)
+                        except Exception:
+                            traceback.print_exc()
+                    except Exception:
+                        # Handle runtime errors (NameError, ValueError, etc.)
+                        traceback.print_exc()
                     
                     # Update script_globals with new variables for persistence
                     for k, v in exec_globals.items():

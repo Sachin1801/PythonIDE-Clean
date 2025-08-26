@@ -486,22 +486,49 @@ export default {
         this.redo();
         return;
       }
-      // Ctrl+X - Cut
+      // Ctrl+X - Cut (but allow native cut in REPL input)
       if (e.ctrlKey && !e.shiftKey && e.key === 'x') {
+        // Check if the focused element is the REPL input
+        const activeElement = document.activeElement;
+        const isReplInput = activeElement && activeElement.classList.contains('repl-input');
+        
+        if (isReplInput) {
+          // Let the REPL input handle cut naturally
+          return;
+        }
+        
         e.preventDefault();
         e.stopPropagation();
         this.cut();
         return;
       }
-      // Ctrl+C - Copy
+      // Ctrl+C - Copy (but allow native copy in REPL input)
       if (e.ctrlKey && !e.shiftKey && e.key === 'c') {
+        // Check if the focused element is the REPL input
+        const activeElement = document.activeElement;
+        const isReplInput = activeElement && activeElement.classList.contains('repl-input');
+        
+        if (isReplInput) {
+          // Let the REPL input handle copy naturally
+          return;
+        }
+        
         e.preventDefault();
         e.stopPropagation();
         this.copy();
         return;
       }
-      // Ctrl+V - Paste
+      // Ctrl+V - Paste (but allow native paste in REPL input)
       if (e.ctrlKey && !e.shiftKey && e.key === 'v') {
+        // Check if the focused element is the REPL input
+        const activeElement = document.activeElement;
+        const isReplInput = activeElement && activeElement.classList.contains('repl-input');
+        
+        if (isReplInput) {
+          // Let the REPL input handle paste naturally
+          return;
+        }
+        
         e.preventDefault();
         e.stopPropagation();
         this.paste();

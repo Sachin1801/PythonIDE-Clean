@@ -14,7 +14,7 @@ class WebSocketKeepaliveMixin:
         """Initialize keepalive mechanism"""
         self.last_pong_time = time.time()
         self.keepalive_ping_interval = 45  # Send ping every 45 seconds (less aggressive)
-        self.keepalive_pong_timeout = 120  # Close connection if no pong in 120 seconds (more lenient)
+        self.keepalive_pong_timeout = 900  # Close connection if no pong in 15 minutes (900 seconds)
         
         # Start periodic ping
         self.ping_callback = PeriodicCallback(

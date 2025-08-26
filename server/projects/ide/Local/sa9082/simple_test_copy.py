@@ -1,3 +1,9 @@
+def greet(name):
+    print("Hello,", name)
+greet("Alice")  # Output: Hello, Alice
+def square(x):
+    return x * x
+print(square(6))  # Output: 36
 def add(a, b):
     return a + b
 print(add(5, 3))  # Output: 8

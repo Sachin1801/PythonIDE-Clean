@@ -395,7 +395,7 @@ print("="*50)
         
         if os.path.exists(file_path) and os.path.isfile(file_path) and file_path.endswith('.py'):
             if use_hybrid:
-                # Use hybrid REPL thread for script + REPL mode
+                # Use hybrid REPL thread for script + REPL mode  
                 print(f"[BACKEND-DEBUG] Using HybridREPLThread for Python execution with REPL")
                 thread = HybridREPLThread(cmd_id, client, asyncio.get_event_loop(), script_path=file_path)
             else:

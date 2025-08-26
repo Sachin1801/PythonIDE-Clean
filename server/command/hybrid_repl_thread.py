@@ -69,8 +69,11 @@ class HybridREPLThread(threading.Thread):
             except:
                 pass
     
+    
     def send_input(self, user_input):
         """Queue user input to be sent to the program or REPL"""
+        print(f"[HYBRID-REPL] Received input from queue: {repr(user_input)}")
+        print(f"[HYBRID-REPL] REPL mode: {self.repl_mode}, Process alive: {self.is_alive()}")
         self.input_queue.put(user_input)
         return True
     
@@ -215,51 +218,99 @@ sys.stdout.flush()
 # Restore original input for REPL
 builtins.input = _original_input
 
-# Start interactive REPL
+# Start interactive REPL with proper multiline handling
 
-# Custom REPL with better error handling
+# Custom REPL using InteractiveInterpreter-like logic
 import readline
 import rlcompleter
+import code
 readline.parse_and_bind("tab: complete")
 
-# Simple REPL - let frontend handle multiline logic  
+# Multiline input buffer and state
+multiline_buffer = []
+in_multiline = False
+
+def execute_code_block(source, exec_globals):
+    """Execute a complete code block and handle both expressions and statements"""
+    try:
+        # Try to compile and execute as 'single' mode first (for expressions)
+        try:
+            compiled = compile(source, '<stdin>', 'single')
+            result = eval(compiled, exec_globals)
+            if result is not None:
+                print(repr(result))
+        except SyntaxError:
+            # If single mode fails, try exec mode (for statements)
+            exec(compile(source, '<stdin>', 'exec'), exec_globals)
+    except Exception:
+        traceback.print_exc()
+
+# Interactive REPL loop with proper multiline support
 while True:
     try:
-        # Single input per iteration - frontend sends complete multiline code
-        line = input(">>> ")
+        # Always use >>> prompt (user doesn't want ... continuation prompts)
+        prompt = ">>> "
+        line = input(prompt)
         
-        if line.strip():
-            # Execute the code with script globals merged
-            try:
-                # Merge script variables into current execution context
-                exec_globals = globals().copy()
-                exec_globals.update(script_globals)
+        # Add current line to buffer
+        if in_multiline:
+            multiline_buffer.append(line)
+        else:
+            multiline_buffer = [line]
+        
+        # Join all lines to form complete source
+        complete_source = '\\n'.join(multiline_buffer)
+        
+        # Use compile_command to check if code is complete
+        try:
+            compiled = code.compile_command(complete_source)
+            
+            if compiled is None:
+                # Code is incomplete, need more input
+                in_multiline = True
+                continue
+            else:
+                # Code is complete, execute it
+                in_multiline = False
                 
-                # Try to compile as 'single' first (for expressions that return values)
-                try:
-                    compiled = compile(line, '<stdin>', 'single')
-                    result = eval(compiled, exec_globals)
-                    if result is not None:
-                        print(repr(result))
-                except:
-                    # If that fails, try as 'exec' (for statements)
-                    exec(compile(line, '<stdin>', 'exec'), exec_globals)
+                # Only execute if there's actual code (not just empty lines)
+                if complete_source.strip():
+                    # Merge script variables into current execution context
+                    exec_globals = globals().copy()
+                    exec_globals.update(script_globals)
+                    
+                    # Execute the compiled code
+                    try:
+                        result = eval(compiled, exec_globals)
+                        if result is not None:
+                            print(repr(result))
+                    except SyntaxError:
+                        # If eval fails, try exec for statements
+                        exec(compiled, exec_globals)
+                    
+                    # Update script_globals with new variables for persistence
+                    for k, v in exec_globals.items():
+                        if not k.startswith('__') and not k.startswith('_'):
+                            script_globals[k] = v
+                    
+                    # Update current globals with any new variables from execution
+                    globals().update({k: v for k, v in exec_globals.items() if not k.startswith('__')})
                 
-                # Update script_globals with new variables for persistence
-                for k, v in exec_globals.items():
-                    if not k.startswith('__') and not k.startswith('_'):
-                        script_globals[k] = v
+                # Reset buffer after successful execution
+                multiline_buffer = []
                 
-                # Update current globals with any new variables from execution
-                globals().update({k: v for k, v in exec_globals.items() if not k.startswith('__')})
-                
-            except Exception:
-                traceback.print_exc()
+        except (SyntaxError, OverflowError, ValueError) as e:
+            # Code has syntax error, report it and reset
+            print(f"SyntaxError: {e}")
+            in_multiline = False
+            multiline_buffer = []
             
     except SystemExit:
         break
     except KeyboardInterrupt:
         print("\\nKeyboardInterrupt")
+        in_multiline = False
+        multiline_buffer = []
     except EOFError:
         print()
         sys.exit(0)
@@ -492,15 +543,17 @@ while True:
                 
                 # In REPL mode, check for prompt patterns
                 elif self.repl_mode:
-                    # Check for various prompt patterns
+                    # Check for various prompt patterns - FILTER THEM OUT, don't send to frontend
                     if buffer.endswith('>>> ') or buffer.endswith('... '):
-                        print(f"[HYBRID-REPL] REPL prompt detected: {repr(buffer)}")
-                        self.response_to_client(0, {'stdout': buffer})
+                        print(f"[HYBRID-REPL] REPL prompt detected and filtered: {repr(buffer)}")
+                        # DON'T send prompts to frontend - they create unwanted arrows in console
+                        # self.response_to_client(0, {'stdout': buffer})  # REMOVED - this was causing the bug
                         buffer = ""
-                    # CRITICAL FIX: Flush output that ends with >>> without space  
+                    # CRITICAL FIX: Also filter prompts without space  
                     elif buffer.endswith('>>>'):
-                        print(f"[HYBRID-REPL] REPL prompt detected (no space): {repr(buffer)}")
-                        self.response_to_client(0, {'stdout': buffer + ' '})
+                        print(f"[HYBRID-REPL] REPL prompt detected and filtered (no space): {repr(buffer)}")
+                        # DON'T send prompts to frontend - they create unwanted arrows in console
+                        # self.response_to_client(0, {'stdout': buffer + ' '})  # REMOVED - this was causing the bug
                         buffer = ""
                     # CRITICAL FIX: In REPL mode, send output lines that don't end with newline
                     # after a short delay to catch expression results like 'Sachin'

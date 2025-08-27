@@ -533,7 +533,7 @@ while True:
                     
                     # Entering REPL mode
                     self.repl_mode = True
-                    buffer = buffer[buffer.index("__REPL_MODE_START__") + len("__REPL_MODE_START__"):]
+                    buffer = buffer[buffer.index("__REPL_MODE_START__") + len("__REPL_MODE_START__"):].lstrip()
                     # Signal REPL mode to client
                     self.response_to_client(5000, {'mode': 'repl'})
                 
@@ -542,24 +542,34 @@ while True:
                     lines = buffer.split('\n')
                     # Send all complete lines
                     for line in lines[:-1]:
-                        print(f"[HYBRID-REPL] Sending line: {repr(line)}")
-                        self.response_to_client(0, {'stdout': line})
+                        # Strip trailing whitespace only, preserve intentional leading spaces
+                        clean_line = line.rstrip()
+                        print(f"[HYBRID-REPL] Sending line: {repr(clean_line)}")
+                        self.response_to_client(0, {'stdout': clean_line})
                     # Keep the incomplete line in buffer
                     buffer = lines[-1]
                 
                 # In REPL mode, check for prompt patterns
                 elif self.repl_mode:
-                    # Check for various prompt patterns - FILTER THEM OUT, don't send to frontend
-                    if buffer.endswith('>>> ') or buffer.endswith('... '):
-                        print(f"[HYBRID-REPL] REPL prompt detected and filtered: {repr(buffer)}")
-                        # DON'T send prompts to frontend - they create unwanted arrows in console
-                        # self.response_to_client(0, {'stdout': buffer})  # REMOVED - this was causing the bug
-                        buffer = ""
-                    # CRITICAL FIX: Also filter prompts without space  
-                    elif buffer.endswith('>>>'):
-                        print(f"[HYBRID-REPL] REPL prompt detected and filtered (no space): {repr(buffer)}")
-                        # DON'T send prompts to frontend - they create unwanted arrows in console
-                        # self.response_to_client(0, {'stdout': buffer + ' '})  # REMOVED - this was causing the bug
+                    # Simple approach: if buffer contains prompts, remove them and keep clean content
+                    original_buffer = buffer
+                    
+                    # Remove all variations of prompts and clean up
+                    if '>>> ' in buffer:
+                        # Replace '>>> ' with newline to separate content, then clean up
+                        buffer = buffer.replace('>>> ', '\n').strip()
+                    elif ' >>>' in buffer:
+                        # Replace ' >>>' with newline to separate content, then clean up  
+                        buffer = buffer.replace(' >>>', '\n').strip()
+                    elif '>>>' in buffer:
+                        # Replace '>>>' with newline to separate content, then clean up
+                        buffer = buffer.replace('>>>', '\n').strip()
+                    
+                    if buffer != original_buffer:
+                        print(f"[HYBRID-REPL] Cleaned prompt from buffer: {repr(original_buffer)} -> {repr(buffer)}")
+                    
+                    # Filter out empty or whitespace-only buffers after cleaning
+                    if not buffer or buffer.isspace():
                         buffer = ""
                     # CRITICAL FIX: In REPL mode, send output lines that don't end with newline
                     # after a short delay to catch expression results like 'Sachin'

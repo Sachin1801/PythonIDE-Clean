@@ -1073,8 +1073,7 @@ export default {
     async startReplSession() {
       // Add welcome message for REPL-only mode
       if (this.ideInfo.consoleSelected) {
-        this.addReplOutput('Python Interactive Shell - Enter Python code and press Enter to execute', 'system');
-        this.addReplOutput('Use Shift+Enter for multiline code', 'system');
+        this.addReplOutput('Type Python code and press Enter to execute', 'system');
       }
       
       await this.startDualModeReplSession();

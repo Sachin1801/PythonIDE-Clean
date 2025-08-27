@@ -109,9 +109,7 @@ export const DualModeREPL = {
       
       if (this.pyodideReady) {
         console.log('✅ [REPL] Pyodide ready for use');
-        this.addReplOutput('Python 3.11 (Pyodide) REPL', 'system');
-        this.addReplOutput('Running in browser - no backend required!', 'system');
-        this.addReplOutput('Type Python code and press Enter to execute', 'system');
+        // Welcome message already added by startReplSession()
       } else {
         console.log('❌ [REPL] Failed to initialize Pyodide');
         this.addReplOutput('Failed to initialize browser Python', 'error');
@@ -133,7 +131,7 @@ export const DualModeREPL = {
       }
       
       this.pyodideLoading = true;
-      this.addReplOutput('Loading Python in browser...', 'system');
+      // Removed loading message for cleaner startup
       
       try {
         // Check if Pyodide script is loaded

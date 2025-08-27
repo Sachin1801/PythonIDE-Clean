@@ -12,9 +12,7 @@ export default {
 </script>
 
 <style>
-* {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-}
+/* Removed global * selector to prevent font conflicts */
 
 /* Reset body and html for proper scaling */
 body, html {
@@ -44,7 +42,20 @@ body, html, input, textarea, select, button {
 }
 
 /* Preserve monospace font for code editor and console */
-.CodeMirror, .CodeMirror *, .cm-editor, .cm-editor *, pre, code, .console-output, .console-input {
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace !important;
+/* Force Consolas first for all console and code elements */
+.CodeMirror, .CodeMirror *, .cm-editor, .cm-editor *, pre, code, .console-output, .console-input,
+.editor-content, .vue-codemirror, .codemirror-container, .codemirror-container *,
+.console-user-input, .console-text, .token {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace !important;
+}
+
+/* Ultra-high specificity override for all console elements */
+.console-output-area, .console-output-area *,
+.console-user-input, .console-user-input *,
+.console-text, .console-text *,
+pre[class*="language-"], pre[class*="language-"] *,
+code[class*="language-"], code[class*="language-"] *,
+.token, .token *, [class*="token"], [class*="token"] * {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace !important;
 }
 </style>

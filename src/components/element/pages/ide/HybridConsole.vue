@@ -860,7 +860,7 @@ export default {
 
 .repl-prompt {
   color: #4a9eff;
-  font-weight: bold;
+  font-weight: 500;
   margin-right: 8px;
   white-space: pre;
 }
@@ -930,7 +930,7 @@ export default {
 /* Python syntax highlighting for custom theme */
 .cm-s-repl-theme .cm-keyword {
   color: #569cd6 !important;
-  font-weight: normal !important;
+  font-weight: 400 !important;
 }
 
 .cm-s-repl-theme .cm-string {
@@ -952,42 +952,52 @@ export default {
 
 .cm-s-repl-theme .cm-def {
   color: #dcdcaa !important;
+  font-weight: 400 !important;
 }
 
 .cm-s-repl-theme .cm-builtin {
   color: #4fc1ff !important;
+  font-weight: 400 !important;
 }
 
 .cm-s-repl-theme .cm-operator {
   color: #d4d4d4 !important;
+  font-weight: 400 !important;
 }
 
 .cm-s-repl-theme .cm-variable {
   color: #9cdcfe !important;
+  font-weight: 400 !important;
 }
 
 .cm-s-repl-theme .cm-variable-2 {
   color: #9cdcfe !important;
+  font-weight: 400 !important;
 }
 
 .cm-s-repl-theme .cm-variable-3 {
   color: #4fc1ff !important;
+  font-weight: 400 !important;
 }
 
 .cm-s-repl-theme .cm-property {
   color: #9cdcfe !important;
+  font-weight: 400 !important;
 }
 
 .cm-s-repl-theme .cm-bracket {
   color: #ffd700 !important;
+  font-weight: 400 !important;
 }
 
 .cm-s-repl-theme .cm-tag {
   color: #569cd6 !important;
+  font-weight: 400 !important;
 }
 
 .cm-s-repl-theme .cm-attribute {
   color: #9cdcfe !important;
+  font-weight: 400 !important;
 }
 
 /* CodeMirror wrapper styles for REPL */
@@ -1098,6 +1108,6 @@ export default {
 
 .repl-prompt {
   color: #4a9eff !important;
-  font-weight: bold !important;
+  font-weight: 400 !important;
 }
 </style>

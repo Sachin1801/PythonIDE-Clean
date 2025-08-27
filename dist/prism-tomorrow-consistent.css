@@ -1,0 +1,234 @@
+/*
+ * Custom Prism Tomorrow Theme with Consistent Font Weight 500
+ * Based on: prism-tomorrow.min.css
+ * Modified: All tokens use font-weight: 500 for consistent typography
+ */
+
+/* Base styles */
+code[class*="language-"],
+pre[class*="language-"] {
+	color: #ccc;
+	background: none;
+	font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+	font-size: 1em;
+	text-align: left;
+	white-space: pre;
+	word-spacing: normal;
+	word-break: normal;
+	word-wrap: normal;
+	line-height: 1.5;
+	-moz-tab-size: 4;
+	-o-tab-size: 4;
+	tab-size: 4;
+	-webkit-hyphens: none;
+	-moz-hyphens: none;
+	-ms-hyphens: none;
+	hyphens: none;
+	/* Ensure consistent font-weight for base */
+	font-weight: 400 !important;
+}
+
+/* Code blocks */
+pre[class*="language-"] {
+	padding: 1em;
+	margin: .5em 0;
+	overflow: auto;
+	border-radius: 0.3em;
+}
+
+:not(pre) > code[class*="language-"],
+pre[class*="language-"] {
+	background: #2d2d2d;
+}
+
+/* Inline code */
+:not(pre) > code[class*="language-"] {
+	padding: .1em;
+	border-radius: .3em;
+	white-space: normal;
+}
+
+/* COMPREHENSIVE TOKEN OVERRIDES - Force font-weight: 500 on ALL tokens */
+
+/* Universal token override - catch all */
+.token {
+	font-weight: 400 !important;
+}
+
+/* All possible token types with font-weight override */
+.token.comment,
+.token.block-comment,
+.token.prolog,
+.token.doctype,
+.token.cdata,
+.token.punctuation,
+.token.tag,
+.token.attr-name,
+.token.namespace,
+.token.deleted,
+.token.function-name,
+.token.boolean,
+.token.number,
+.token.function,
+.token.property,
+.token.class-name,
+.token.constant,
+.token.symbol,
+.token.selector,
+.token.important,
+.token.atrule,
+.token.keyword,
+.token.builtin,
+.token.string,
+.token.char,
+.token.attr-value,
+.token.regex,
+.token.variable,
+.token.operator,
+.token.entity,
+.token.url,
+.token.bold,
+.token.italic,
+.token.inserted,
+.token.parameter,
+.token.interpolation,
+.token.interpolation-punctuation,
+.token.template-punctuation,
+.token.template-string,
+.token.literal-property,
+.token.string-property,
+.token.function-variable,
+.token.class-keyword,
+.token.generic-function,
+.token.method,
+.token.decorator,
+.token.annotation {
+	font-weight: 400 !important;
+}
+
+/* Specific color assignments with forced font-weight */
+.token.comment,
+.token.block-comment,
+.token.prolog,
+.token.doctype,
+.token.cdata {
+	color: #999 !important;
+	font-weight: 400 !important;
+	font-style: italic;
+}
+
+.token.punctuation {
+	color: #ccc !important;
+	font-weight: 400 !important;
+}
+
+.token.tag,
+.token.attr-name,
+.token.namespace,
+.token.deleted {
+	color: #e2777a !important;
+	font-weight: 400 !important;
+}
+
+.token.function-name {
+	color: #6196cc !important;
+	font-weight: 400 !important;
+}
+
+.token.boolean,
+.token.number,
+.token.function {
+	color: #f08d49 !important;
+	font-weight: 400 !important;
+}
+
+.token.property,
+.token.class-name,
+.token.constant,
+.token.symbol {
+	color: #f8c555 !important;
+	font-weight: 400 !important;
+}
+
+.token.selector,
+.token.important,
+.token.atrule,
+.token.keyword,
+.token.builtin {
+	color: #cc99cd !important;
+	font-weight: 400 !important;
+}
+
+.token.string,
+.token.char,
+.token.attr-value,
+.token.regex,
+.token.variable {
+	color: #7ec699 !important;
+	font-weight: 400 !important;
+}
+
+.token.operator,
+.token.entity,
+.token.url {
+	color: #67cdcc !important;
+	font-weight: 400 !important;
+}
+
+.token.inserted {
+	color: green !important;
+	font-weight: 400 !important;
+}
+
+/* Language-specific overrides */
+.language-python .token.keyword,
+.language-python .token.builtin,
+.language-python .token.function,
+.language-python .token.string,
+.language-python .token.number,
+.language-python .token.comment,
+.language-python .token.operator,
+.language-python .token.punctuation {
+	font-weight: 400 !important;
+}
+
+/* Nested token overrides */
+.token .token {
+	font-weight: 400 !important;
+}
+
+.token span {
+	font-weight: 400 !important;
+}
+
+.token * {
+	font-weight: 400 !important;
+}
+
+/* Code element overrides */
+code .token {
+	font-weight: 400 !important;
+}
+
+pre .token {
+	font-weight: 400 !important;
+}
+
+/* Class-based overrides for any remaining cases */
+[class*="token"] {
+	font-weight: 400 !important;
+}
+
+/* Override any possible bold or weight variations */
+.token.bold,
+.token.strong,
+.token.keyword.bold,
+.token.important.bold {
+	font-weight: 400 !important;
+	font-style: normal;
+}
+
+.token.italic {
+	font-weight: 400 !important;
+	font-style: italic;
+}

@@ -5037,7 +5037,7 @@ Advanced packages (install with micropip):
   overflow-x: hidden;
   background: var(--bg-primary, #1E1E1E);
   padding: 12px;
-  font-family: 'Courier New', Consolas, monospace;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
   font-size: 13px;
   line-height: 1.4;
   min-height: 0; /* Important for flexbox overflow to work properly */
@@ -5056,7 +5056,7 @@ Advanced packages (install with micropip):
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
   font-size: 13px;
   line-height: 1.4;
-  font-weight: 500;
+  font-weight: 400;
   letter-spacing: 0.02em; /* Consistent character spacing for output */
 }
 
@@ -5122,7 +5122,7 @@ Advanced packages (install with micropip):
 
 .console-repl-prompt {
   color: var(--accent-color, #007ACC);
-  font-weight: bold;
+  font-weight: 500;
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
   font-size: 13px;
   line-height: 1.4;
@@ -5147,28 +5147,45 @@ Advanced packages (install with micropip):
   margin-left: 28px; /* Align with text after >>> prompt */
 }
 
-/* Syntax Highlighting Classes for Python */
-.python-keyword {
-  color: #569cd6; /* Blue for keywords */
-  font-weight: 600;
+/* Fallback Syntax Highlighting Classes - Maximum specificity */
+.ide-wrapper .console-section .console-body .console-output-area .console-line .python-keyword,
+.ide-wrapper .console-output-area .console-line .python-keyword,
+body .console-output-area .console-line .python-keyword {
+  color: #569cd6 !important; /* Blue for keywords */
+  font-weight: 400 !important;
+  font-style: normal !important;
 }
 
-.python-string {
-  color: #ce9178; /* Light brown for strings */
+.ide-wrapper .console-section .console-body .console-output-area .console-line .python-string,
+.ide-wrapper .console-output-area .console-line .python-string,
+body .console-output-area .console-line .python-string {
+  color: #ce9178 !important; /* Light brown for strings */
+  font-weight: 400 !important;
+  font-style: normal !important;
 }
 
-.python-number {
-  color: #b5cea8; /* Light green for numbers */
+.ide-wrapper .console-section .console-body .console-output-area .console-line .python-number,
+.ide-wrapper .console-output-area .console-line .python-number,
+body .console-output-area .console-line .python-number {
+  color: #b5cea8 !important; /* Light green for numbers */
+  font-weight: 400 !important;
+  font-style: normal !important;
 }
 
-.python-comment {
-  color: #6a9955; /* Green for comments */
-  font-style: italic;
+.ide-wrapper .console-section .console-body .console-output-area .console-line .python-comment,
+.ide-wrapper .console-output-area .console-line .python-comment,
+body .console-output-area .console-line .python-comment {
+  color: #6a9955 !important; /* Green for comments */
+  font-style: italic !important;
+  font-weight: 400 !important;
 }
 
-.python-builtin {
-  color: #dcdcaa; /* Light yellow for built-in functions */
-  font-weight: 500;
+.ide-wrapper .console-section .console-body .console-output-area .console-line .python-builtin,
+.ide-wrapper .console-output-area .console-line .python-builtin,
+body .console-output-area .console-line .python-builtin {
+  color: #dcdcaa !important; /* Light yellow for built-in functions */
+  font-weight: 400 !important;
+  font-style: normal !important;
 }
 
 /* Prism.js theme overrides for inline display in REPL */
@@ -5192,28 +5209,69 @@ Advanced packages (install with micropip):
   letter-spacing: inherit; /* Inherit consistent character spacing */
 }
 
-/* Ensure Prism tokens inherit our theme colors */
-.console-repl-input .token.keyword {
+/* MAXIMUM SPECIFICITY: Override ALL external CSS libraries (Prism.js, CodeMirror, etc.) */
+.ide-wrapper .console-section .console-body .console-output-area .console-line .console-repl-input .token.keyword,
+.ide-wrapper .console-output-area .console-line .console-repl-input .token.keyword,
+body .console-output-area .console-line .console-repl-input .token.keyword {
   color: #569cd6 !important;
-  font-weight: 600 !important;
+  font-weight: 400 !important;
+  font-style: normal !important;
 }
 
-.console-repl-input .token.string {
+.ide-wrapper .console-section .console-body .console-output-area .console-line .console-repl-input .token.string,
+.ide-wrapper .console-output-area .console-line .console-repl-input .token.string,
+body .console-output-area .console-line .console-repl-input .token.string {
   color: #ce9178 !important;
+  font-weight: 400 !important;
+  font-style: normal !important;
 }
 
-.console-repl-input .token.number {
+.ide-wrapper .console-section .console-body .console-output-area .console-line .console-repl-input .token.number,
+.ide-wrapper .console-output-area .console-line .console-repl-input .token.number,
+body .console-output-area .console-line .console-repl-input .token.number {
   color: #b5cea8 !important;
+  font-weight: 400 !important;
+  font-style: normal !important;
 }
 
-.console-repl-input .token.comment {
+.ide-wrapper .console-section .console-body .console-output-area .console-line .console-repl-input .token.comment,
+.ide-wrapper .console-output-area .console-line .console-repl-input .token.comment,
+body .console-output-area .console-line .console-repl-input .token.comment {
   color: #6a9955 !important;
+  font-weight: 400 !important;
   font-style: italic !important;
 }
 
-.console-repl-input .token.builtin {
+.ide-wrapper .console-section .console-body .console-output-area .console-line .console-repl-input .token.builtin,
+.ide-wrapper .console-output-area .console-line .console-repl-input .token.builtin,
+body .console-output-area .console-line .console-repl-input .token.builtin {
   color: #dcdcaa !important;
-  font-weight: 500 !important;
+  font-weight: 400 !important;
+  font-style: normal !important;
+}
+
+.ide-wrapper .console-section .console-body .console-output-area .console-line .console-repl-input .token.punctuation,
+.ide-wrapper .console-output-area .console-line .console-repl-input .token.punctuation,
+body .console-output-area .console-line .console-repl-input .token.punctuation {
+  color: #d4d4d4 !important;
+  font-weight: 400 !important;
+  font-style: normal !important;
+}
+
+.ide-wrapper .console-section .console-body .console-output-area .console-line .console-repl-input .token.operator,
+.ide-wrapper .console-output-area .console-line .console-repl-input .token.operator,
+body .console-output-area .console-line .console-repl-input .token.operator {
+  color: #d4d4d4 !important;
+  font-weight: 400 !important;
+  font-style: normal !important;
+}
+
+/* Nuclear option: Override ALL tokens and spans in REPL input */
+.ide-wrapper .console-output-area .console-line .console-repl-input .token,
+body .console-output-area .console-line .console-repl-input .token,
+.ide-wrapper .console-output-area .console-line .console-repl-input span,
+body .console-output-area .console-line .console-repl-input span {
+  font-weight: 400 !important;
 }
 
 /* Console input area when waiting for program input */

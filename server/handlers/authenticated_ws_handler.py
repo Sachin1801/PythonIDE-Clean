@@ -503,6 +503,20 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler, WebSocketKeepali
         
         logger.info(f"Save result: {result}")
         
+        # If saving a Python file, terminate any existing REPL to ensure fresh execution
+        if result['success'] and full_path.endswith('.py'):
+            try:
+                from command.repl_registry import repl_registry
+                # Convert relative path to absolute path for REPL registry
+                import os
+                from common.config import Config
+                abs_path = os.path.normpath(os.path.join(Config.PROJECTS, 'ide', full_path))
+                terminated = repl_registry.terminate_repl(self.username, abs_path)
+                if terminated:
+                    logger.info(f"Terminated existing REPL for {abs_path} after file save")
+            except Exception as e:
+                logger.warning(f"Failed to terminate REPL for {full_path}: {e}")
+        
         return {
             'code': 0 if result['success'] else -1,
             'msg': result.get('error', 'File saved') if not result['success'] else 'File saved',

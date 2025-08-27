@@ -380,6 +380,7 @@ print("="*50)
         prj_name = data.get('projectName')
         file_path_input = data.get('filePath', '')
         use_hybrid = data.get('hybrid', True)  # Default to hybrid mode
+        username = data.get('username', 'unknown')  # Get username from authenticated handler
         
         # Handle case where filePath already includes the project name
         if file_path_input.startswith(prj_name + '/'):
@@ -395,7 +396,22 @@ print("="*50)
         
         if os.path.exists(file_path) and os.path.isfile(file_path) and file_path.endswith('.py'):
             if use_hybrid:
-                # Use hybrid REPL thread for script + REPL mode  
+                # Terminate existing REPL for this file to ensure fresh execution with updated code
+                try:
+                    from .repl_registry import repl_registry
+                    # Normalize path to match the format used in save handler
+                    normalized_path = os.path.normpath(file_path)
+                    terminated = repl_registry.terminate_repl(username, normalized_path)
+                    if terminated:
+                        print(f"[BACKEND-DEBUG] Terminated existing REPL for {normalized_path} before new execution")
+                        # Small delay to ensure process cleanup completes
+                        import time
+                        time.sleep(0.1)
+                except Exception as e:
+                    print(f"[BACKEND-DEBUG] Failed to terminate REPL: {e}")
+                    pass  # Continue even if termination fails
+                
+                # Always create a new HybridREPLThread (threads cannot be reused)
                 print(f"[BACKEND-DEBUG] Using HybridREPLThread for Python execution with REPL")
                 thread = HybridREPLThread(cmd_id, client, asyncio.get_event_loop(), script_path=file_path)
             else:

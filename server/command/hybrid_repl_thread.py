@@ -26,12 +26,13 @@ from command.response import response
 class HybridREPLThread(threading.Thread):
     """Thread for running Python scripts then transitioning to REPL mode"""
     
-    def __init__(self, cmd_id, client, event_loop, script_path=None):
+    def __init__(self, cmd_id, client, event_loop, script_path=None, registry_callback=None):
         super().__init__()
         self.cmd_id = cmd_id
         self.client = client
         self.event_loop = event_loop
         self.script_path = script_path
+        self.registry_callback = registry_callback
         self.alive = True
         self.p = None
         self.error_handler = EducationalErrorHandler()
@@ -69,6 +70,12 @@ class HybridREPLThread(threading.Thread):
             except:
                 pass
     
+    
+    def update_client(self, client, cmd_id):
+        """Update client reference for reconnections"""
+        print(f"[HYBRID-REPL] Updating client reference: old_cmd_id={self.cmd_id}, new_cmd_id={cmd_id}")
+        self.client = client
+        self.cmd_id = cmd_id
     
     def send_input(self, user_input):
         """Queue user input to be sent to the program or REPL"""

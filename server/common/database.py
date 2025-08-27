@@ -47,9 +47,12 @@ class DatabaseManager:
             # Parse database URL
             url = urlparse(self.database_url)
             
-            # Create connection pool with keepalive settings
+            # Create connection pool with keepalive settings - using config values
+            from ..config import config as app_config
+            min_conn = getattr(app_config, 'DB_POOL_MIN', 5)
+            max_conn = getattr(app_config, 'DB_POOL_MAX', 25)
             self.connection_pool = psycopg2.pool.ThreadedConnectionPool(
-                2, 10,  # reduced from 5,20 to save memory on Railway
+                min_conn, max_conn,  # increased from 2,10 to support 40+ concurrent students
                 host=url.hostname,
                 port=url.port or 5432,
                 database=url.path[1:],

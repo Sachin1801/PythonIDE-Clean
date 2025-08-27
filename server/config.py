@@ -15,8 +15,8 @@ class Config:
     
     # Database settings
     DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5432/pythonide')
-    DB_POOL_MIN = int(os.getenv('DB_POOL_MIN', 2))
-    DB_POOL_MAX = int(os.getenv('DB_POOL_MAX', 10))
+    DB_POOL_MIN = int(os.getenv('DB_POOL_MIN', 5))
+    DB_POOL_MAX = int(os.getenv('DB_POOL_MAX', 25))
     DB_KEEPALIVE_IDLE = int(os.getenv('DB_KEEPALIVE_IDLE', 30))
     DB_KEEPALIVE_INTERVAL = int(os.getenv('DB_KEEPALIVE_INTERVAL', 10))
     DB_KEEPALIVE_COUNT = int(os.getenv('DB_KEEPALIVE_COUNT', 5))
@@ -28,6 +28,7 @@ class Config:
     
     # Resource limits
     MAX_CONCURRENT_EXECUTIONS = int(os.getenv('MAX_CONCURRENT_EXECUTIONS', 60))
+    MAX_PROCESSES_PER_USER = int(os.getenv('MAX_PROCESSES_PER_USER', 2))  # Max 2 processes per user
     EXECUTION_TIMEOUT = int(os.getenv('EXECUTION_TIMEOUT', 30))  # seconds
     MEMORY_LIMIT_MB = int(os.getenv('MEMORY_LIMIT_MB', 128))
     MAX_PROCESS_AGE = int(os.getenv('MAX_PROCESS_AGE', 1800))  # 30 minutes
@@ -61,6 +62,7 @@ class Config:
         logger.info(f"  Environment: {'Production' if cls.IS_PRODUCTION else 'Development'}")
         logger.info(f"  Port: {cls.PORT}")
         logger.info(f"  Max concurrent executions: {cls.MAX_CONCURRENT_EXECUTIONS}")
+        logger.info(f"  Max processes per user: {cls.MAX_PROCESSES_PER_USER}")
         logger.info(f"  Execution timeout: {cls.EXECUTION_TIMEOUT}s")
         logger.info(f"  Memory limit: {cls.MEMORY_LIMIT_MB}MB")
         logger.info(f"  WebSocket ping interval: {cls.WS_PING_INTERVAL}s")

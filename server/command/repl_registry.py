@@ -9,6 +9,7 @@ import logging
 from typing import Dict, Optional, Tuple
 from datetime import datetime, timedelta
 from .hybrid_repl_thread import HybridREPLThread
+from ..config import config
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,9 @@ class REPLRegistry:
             
         Returns:
             HybridREPLThread instance (existing or new)
+            
+        Raises:
+            RuntimeError: If user has reached maximum process limit
         """
         with self._process_lock:
             # Use file_path or 'empty_repl' as key
@@ -92,8 +96,16 @@ class REPLRegistry:
                     logger.info(f"Removing dead REPL process: user={username}, file={repl_key}")
                     del user_repls[repl_key]
             
+            # Check per-user process limit before creating new process
+            active_count = sum(1 for repl, _ in user_repls.values() if repl.is_alive())
+            max_per_user = config.MAX_PROCESSES_PER_USER
+            
+            if active_count >= max_per_user:
+                logger.warning(f"User {username} has reached max process limit ({active_count}/{max_per_user})")
+                raise RuntimeError(f"Maximum processes per user exceeded ({active_count}/{max_per_user}). Please close other running processes first.")
+            
             # Create new REPL process
-            logger.info(f"Creating new REPL process: user={username}, file={repl_key}")
+            logger.info(f"Creating new REPL process: user={username}, file={repl_key} ({active_count + 1}/{max_per_user})")
             new_repl = HybridREPLThread(
                 cmd_id=cmd_id,
                 client=client,
@@ -223,16 +235,22 @@ class REPLRegistry:
         with self._process_lock:
             total_processes = sum(len(user_repls) for user_repls in self._processes.values())
             active_processes = 0
+            user_process_counts = {}
             
-            for user_repls in self._processes.values():
+            for username, user_repls in self._processes.items():
+                active_count = 0
                 for repl_thread, _ in user_repls.values():
                     if repl_thread.is_alive():
                         active_processes += 1
+                        active_count += 1
+                user_process_counts[username] = active_count
             
             return {
                 'total_users': len(self._processes),
                 'total_processes': total_processes,
                 'active_processes': active_processes,
+                'max_processes_per_user': config.MAX_PROCESSES_PER_USER,
+                'user_process_counts': user_process_counts,
                 'cleanup_interval': self._cleanup_interval,
                 'max_idle_time': self._max_idle_time
             }

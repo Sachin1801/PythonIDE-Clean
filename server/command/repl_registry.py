@@ -9,7 +9,15 @@ import logging
 from typing import Dict, Optional, Tuple
 from datetime import datetime, timedelta
 from .hybrid_repl_thread import HybridREPLThread
-from ..config import config
+try:
+    from config import Config
+    config = Config()
+except ImportError:
+    # Fallback if config module not available
+    import os
+    class FallbackConfig:
+        MAX_PROCESSES_PER_USER = int(os.getenv('MAX_PROCESSES_PER_USER', 2))
+    config = FallbackConfig()
 
 logger = logging.getLogger(__name__)
 

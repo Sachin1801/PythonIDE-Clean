@@ -48,9 +48,14 @@ class DatabaseManager:
             url = urlparse(self.database_url)
             
             # Create connection pool with keepalive settings - using config values
-            from ..config import config as app_config
-            min_conn = getattr(app_config, 'DB_POOL_MIN', 5)
-            max_conn = getattr(app_config, 'DB_POOL_MAX', 25)
+            try:
+                from config import Config
+                min_conn = Config.DB_POOL_MIN
+                max_conn = Config.DB_POOL_MAX
+            except ImportError:
+                # Fallback to direct environment variables if config module not available
+                min_conn = int(os.getenv('DB_POOL_MIN', 5))
+                max_conn = int(os.getenv('DB_POOL_MAX', 25))
             self.connection_pool = psycopg2.pool.ThreadedConnectionPool(
                 min_conn, max_conn,  # increased from 2,10 to support 40+ concurrent students
                 host=url.hostname,

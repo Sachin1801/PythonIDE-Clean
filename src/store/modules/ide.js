@@ -624,6 +624,11 @@ const mutations = {
   setNodeSelected(state, selected) {
     state.ideInfo.nodeSelected = selected;
   },
+  updateCodeItem(state, {index, updates}) {
+    if (index >= 0 && index < state.ideInfo.codeItems.length) {
+      Object.assign(state.ideInfo.codeItems[index], updates);
+    }
+  },
   setPathSelected(state, selected) {
     state.ideInfo.currProj.pathSelected = selected;
   },

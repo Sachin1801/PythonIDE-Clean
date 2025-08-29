@@ -397,6 +397,7 @@ export default {
     document.addEventListener('click', this.closeDropdowns);
     
     // Add keyboard shortcuts
+    console.log('🎹 TwoHeaderMenu - Adding keyboard shortcut listener');
     document.addEventListener('keydown', this.handleKeyboardShortcuts);
   },
   beforeUnmount() {

@@ -5,7 +5,7 @@
     width="600px"
     :close-on-click-modal="false"
     @close="handleClose"
-    class="file-browser-dialog"
+    class="file-browser-dialog custom-dialog"
   >
     <div class="file-browser-content">
       <div class="current-path">
@@ -75,6 +75,10 @@ export default {
     fileToMove: {
       type: Object,
       default: null
+    },
+    currentUser: {
+      type: Object,
+      default: null
     }
   },
   data() {
@@ -119,11 +123,28 @@ export default {
     },
     treeData() {
       // Use multi-root data if available, otherwise fall back to single project
+      let data;
       if (this.ideInfo.multiRootData && this.ideInfo.multiRootData.children.length > 0) {
-        return this.mode === 'move' ? this.filterOutFile(this.ideInfo.multiRootData.children) : this.ideInfo.multiRootData.children;
+        data = this.ideInfo.multiRootData.children;
+      } else {
+        data = this.ideInfo.currProj.data ? [this.ideInfo.currProj.data] : [];
       }
-      const data = this.ideInfo.currProj.data ? [this.ideInfo.currProj.data] : [];
-      return this.mode === 'move' ? this.filterOutFile(data) : data;
+      
+      // Filter data based on mode and permissions
+      if (this.mode === 'move') {
+        data = this.filterOutFile(data);
+        data = this.filterByPermissions(data);
+      }
+      
+      return data;
+    },
+    isStudent() {
+      // Only return true if we have clear student role - don't assume
+      return this.currentUser && this.currentUser.role === 'student';
+    },
+    studentDirectory() {
+      if (!this.isStudent || !this.currentUser?.username) return null;
+      return `Local/${this.currentUser.username}`;
     }
   },
   methods: {
@@ -159,6 +180,11 @@ export default {
         }
       } else if (this.mode === 'move') {
         if (data.type === 'dir' || data.type === 'folder') {
+          // Check if student can access this folder - only if we have user data
+          if (this.currentUser && this.isStudent && !this.canAccessPath(data.path)) {
+            this.$message.warning('You can only move files within your personal directory');
+            return;
+          }
           this.selectedFolder = data;
           this.currentPath = data.path;
         }
@@ -176,17 +202,49 @@ export default {
       }
     },
     handleConfirm() {
+      console.log('[DialogFileBrowser] handleConfirm called:', {
+        mode: this.mode,
+        selectedFile: this.selectedFile,
+        selectedFolder: this.selectedFolder,
+        fileToMove: this.fileToMove
+      });
+      
       if (this.mode === 'open' && this.selectedFile) {
+        console.log('[DialogFileBrowser] Opening file:', this.selectedFile.path);
         this.$emit('open-file', this.selectedFile.path);
         this.handleClose();
       } else if (this.mode === 'move' && this.selectedFolder && this.fileToMove) {
-        const newPath = this.selectedFolder.path + '/' + this.getFileName(this.fileToMove.path);
+        const fileName = this.getFileName(this.fileToMove.path);
+        // Ensure path doesn't have double slashes
+        const newPath = this.selectedFolder.path.endsWith('/') 
+          ? this.selectedFolder.path + fileName 
+          : this.selectedFolder.path + '/' + fileName;
+        
+        console.log('[DialogFileBrowser] Moving file - DETAILED DEBUG:', {
+          mode: this.mode,
+          oldPath: this.fileToMove.path,
+          newPath: newPath,
+          selectedFolderPath: this.selectedFolder.path,
+          fileName: fileName,
+          fileToMove: this.fileToMove,
+          selectedFolder: this.selectedFolder,
+          projectName: this.fileToMove.projectName || this.ideInfo.currProj?.data?.name
+        });
+        
         this.$emit('move-file', {
           oldPath: this.fileToMove.path,
           newPath: newPath,
           projectName: this.fileToMove.projectName || this.ideInfo.currProj?.data?.name
         });
         this.handleClose();
+      } else {
+        console.log('[DialogFileBrowser] Cannot confirm - missing requirements:', {
+          mode: this.mode,
+          hasSelectedFile: !!this.selectedFile,
+          hasSelectedFolder: !!this.selectedFolder,
+          hasFileToMove: !!this.fileToMove,
+          canConfirm: this.canConfirm
+        });
       }
     },
     handleClose() {
@@ -220,6 +278,39 @@ export default {
         }
         return item;
       }).filter(Boolean);
+    },
+    filterByPermissions(treeData) {
+      if (!this.isStudent) {
+        // Professors can access all directories
+        return treeData;
+      }
+      
+      // Students can only access their Local/{username} directory
+      return treeData.map(item => {
+        if (this.canAccessPath(item.path)) {
+          if (item.children && item.children.length > 0) {
+            return {
+              ...item,
+              children: this.filterByPermissions(item.children)
+            };
+          }
+          return item;
+        }
+        return null;
+      }).filter(Boolean);
+    },
+    canAccessPath(path) {
+      if (!this.isStudent) {
+        return true; // Professors can access everything
+      }
+      
+      if (!path || !this.studentDirectory) {
+        return false;
+      }
+      
+      // Students can only access their personal directory
+      return path === this.studentDirectory || 
+             path.startsWith(this.studentDirectory + '/');
     }
   },
   watch: {
@@ -247,11 +338,58 @@ export default {
 };
 </script>
 
-<style scoped>
+<style>
 .file-browser-dialog {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
+/* Improved styling for Move File modal - using CSS variables that adapt to themes */
+.custom-dialog .el-dialog {
+  background: var(--bg-primary, #303030) !important;
+  border: 1px solid var(--border-color, #464647) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4) !important;
+}
+
+/* Override Element Plus dialog background variable to prevent conflicts */
+.custom-dialog {
+  --el-dialog-bg-color: unset !important;
+}
+
+.custom-dialog .el-dialog__header {
+  background: var(--bg-secondary, #3F4955) !important;
+  padding: 16px 24px !important;
+  border-bottom: 1px solid var(--border-color, #464647) !important;
+}
+
+.custom-dialog .el-dialog__title {
+  color: var(--text-primary, #FFFFFF) !important;
+  font-size: 18px !important;
+  font-weight: 500 !important;
+}
+
+.custom-dialog .el-dialog__headerbtn {
+  color: var(--text-primary, #FFFFFF) !important;
+  top: 16px !important;
+  right: 20px !important;
+}
+
+.custom-dialog .el-dialog__headerbtn:hover {
+  color: var(--btn-primary-bg, #4fc08d) !important;
+}
+
+.custom-dialog .el-dialog__body {
+  background: var(--bg-primary, #303030) !important;
+  color: var(--text-primary, #CCCCCC) !important;
+  padding: 20px !important;
+}
+
+.custom-dialog .el-dialog__footer {
+  background: var(--bg-primary, #303030) !important;
+  border-top: 1px solid var(--border-color, #464647) !important;
+  padding: 16px 20px !important;
+}
+
+/* Enhanced content styling */
 .file-browser-content {
   display: flex;
   flex-direction: column;
@@ -259,34 +397,36 @@ export default {
 }
 
 .current-path {
-  padding: 8px 12px;
-  background: var(--bg-secondary, #f5f5f5);
+  padding: 10px 12px;
+  background: var(--bg-secondary, #252526);
   border-radius: 4px;
   display: flex;
   align-items: center;
   gap: 8px;
+  border: 1px solid var(--border-color, #464647);
 }
 
 .path-label,
 .selected-label {
   font-weight: 500;
-  color: var(--text-secondary, #666);
+  color: var(--text-secondary, #969696);
+  font-size: 14px;
 }
 
 .path-value,
 .selected-value {
-  color: var(--text-primary, #333);
+  color: var(--text-primary, #cccccc);
   font-family: 'Monaco', 'Consolas', monospace;
   font-size: 13px;
 }
 
 .file-tree-container {
-  border: 1px solid var(--border-color, #e0e0e0);
+  border: 1px solid var(--border-color, #464647);
   border-radius: 4px;
   padding: 8px;
-  max-height: 400px;
+  max-height: 300px;
   overflow-y: auto;
-  background: var(--bg-primary, #fff);
+  background: var(--bg-primary, #1e1e1e);
 }
 
 .node-item {
@@ -303,44 +443,92 @@ export default {
 
 .node-label {
   font-size: 14px;
-  color: var(--text-primary, #333);
+  color: var(--text-primary, #cccccc);
 }
 
 .selected-file {
-  padding: 8px 12px;
-  background: var(--bg-accent, #e3f2fd);
+  padding: 10px 12px;
+  background: var(--active-bg, #094771);
   border-radius: 4px;
   display: flex;
   align-items: center;
   gap: 8px;
+  border: 1px solid var(--border-color, #464647);
 }
 
 .dialog-footer {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 12px;
 }
 
-/* Dark theme support */
-[data-theme="dark"] .current-path,
-[data-theme="dark"] .file-tree-container {
-  background: #1e1e1e;
-  border-color: #464647;
+/* Improved button styling */
+.custom-dialog .el-button {
+  background: var(--btn-secondary-bg, #484848) !important;
+  border: 1px solid var(--border-color, #464647) !important;
+  color: var(--text-primary, #cccccc) !important;
+  font-size: 14px !important;
+  padding: 8px 20px !important;
+  height: auto !important;
+  min-height: 36px !important;
+  border-radius: 4px !important;
+  font-weight: 500 !important;
 }
 
-[data-theme="dark"] .path-label,
-[data-theme="dark"] .selected-label {
-  color: #969696;
+.custom-dialog .el-button:hover {
+  background: var(--hover-bg, #5a5a5a) !important;
+  border-color: var(--border-color, #464647) !important;
 }
 
-[data-theme="dark"] .path-value,
-[data-theme="dark"] .selected-value,
-[data-theme="dark"] .node-label {
-  color: #cccccc;
+.custom-dialog .el-button--primary {
+  background: var(--btn-primary-bg, #007acc) !important;
+  border-color: var(--btn-primary-bg, #007acc) !important;
+  color: #FFFFFF !important;
 }
 
-[data-theme="dark"] .selected-file {
-  background: #094771;
+.custom-dialog .el-button--primary:hover {
+  background: var(--btn-primary-hover, #005a9e) !important;
+  border-color: var(--btn-primary-hover, #005a9e) !important;
+}
+
+.custom-dialog .el-button--primary.is-disabled {
+  background: var(--btn-primary-bg, #007acc) !important;
+  border-color: var(--btn-primary-bg, #007acc) !important;
+  opacity: 0.5 !important;
+  color: #FFFFFF !important;
+}
+
+/* Tree styling improvements */
+.file-browser-dialog .el-tree {
+  background: transparent !important;
+  color: var(--text-primary, #CCCCCC) !important;
+}
+
+.file-browser-dialog .el-tree-node__content {
+  background: transparent !important;
+  color: var(--text-primary, #CCCCCC) !important;
+  border: none !important;
+  padding: 4px 8px !important;
+  border-radius: 4px !important;
+  margin: 2px 0 !important;
+}
+
+.file-browser-dialog .el-tree-node__content:hover {
+  background: var(--hover-bg, #2a2d2e) !important;
+  color: var(--text-primary, #FFFFFF) !important;
+}
+
+.file-browser-dialog .el-tree-node.is-current > .el-tree-node__content {
+  background: var(--active-bg, #094771) !important;
+  color: var(--text-primary, #FFFFFF) !important;
+}
+
+.file-browser-dialog .el-tree-node__expand-icon {
+  color: var(--text-secondary, #969696) !important;
+}
+
+.file-browser-dialog .el-tree-node__expand-icon.is-leaf {
+  color: transparent !important;
 }
 
 /* Scrollbar styling */
@@ -350,19 +538,13 @@ export default {
 }
 
 .file-tree-container::-webkit-scrollbar-thumb {
-  background: #c0c0c0;
+  background: var(--scrollbar-thumb, #545a5e);
   border-radius: 4px;
 }
 
 .file-tree-container::-webkit-scrollbar-track {
-  background: #f0f0f0;
+  background: var(--scrollbar-track, #2f2f2f);
 }
 
-[data-theme="dark"] .file-tree-container::-webkit-scrollbar-thumb {
-  background: #545a5e;
-}
 
-[data-theme="dark"] .file-tree-container::-webkit-scrollbar-track {
-  background: #2f2f2f;
-}
 </style>

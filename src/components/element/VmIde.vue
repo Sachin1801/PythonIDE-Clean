@@ -358,6 +358,7 @@
       v-model="showFileBrowserDialog" 
       :mode="fileBrowserMode"
       :fileToMove="fileToMove"
+      :currentUser="currentUser"
       @open-file="handleOpenFile"
       @move-file="handleMoveFile"
     />
@@ -682,6 +683,18 @@ export default {
     },
     ideInfo() {
       return this.$store.state.ide.ideInfo;
+    },
+    currentUser() {
+      // Simple fallback that doesn't interfere with existing auth system
+      const storeUser = this.$store.state.ide.currentUser;
+      if (storeUser) return storeUser;
+      
+      try {
+        const userData = localStorage.getItem('user');
+        return userData ? JSON.parse(userData) : null;
+      } catch (e) {
+        return null;
+      }
     },
     isMarkdown() {
       if (this.ideInfo.codeSelected.path)
@@ -1746,21 +1759,69 @@ export default {
     },
     refreshProjectTree() {
       // Refresh the project tree by re-fetching the project data
+      this.refreshProjectTreeWithCallback(null);
+    },
+    
+    refreshProjectTreeWithCallback(callback) {
+      // Refresh the project tree by re-fetching the project data with callback support
       const self = this;
-      if (this.ideInfo.currProj && this.ideInfo.currProj.data) {
+      
+      // For multi-root projects, refresh all projects
+      if (self.ideInfo.multiRootData && self.ideInfo.multiRootData.children.length > 0) {
+        console.log('[VmIde] Refreshing multi-root project tree');
+        let refreshCount = 0;
+        const totalProjects = self.ideInfo.multiRootData.children.length;
+        
+        self.ideInfo.multiRootData.children.forEach(project => {
+          self.$store.dispatch(`ide/${types.IDE_GET_PROJECT}`, {
+            projectName: project.name,
+            callback: (dict) => {
+              if (dict.code == 0) {
+                self.$store.commit('ide/handleProject', dict.data);
+                refreshCount++;
+                
+                // If all projects are refreshed, call the callback
+                if (refreshCount === totalProjects) {
+                  console.log('[VmIde] All projects refreshed');
+                  if (callback) {
+                    callback();
+                  }
+                }
+              } else {
+                console.error('[VmIde] Failed to refresh project:', project.name, dict);
+                refreshCount++;
+                if (refreshCount === totalProjects && callback) {
+                  callback();
+                }
+              }
+            }
+          });
+        });
+      } else if (this.ideInfo.currProj && this.ideInfo.currProj.data) {
+        // Single project refresh
+        console.log('[VmIde] Refreshing single project tree');
         this.$store.dispatch(`ide/${types.IDE_GET_PROJECT}`, {
           projectName: this.ideInfo.currProj.data.name,
           callback: (dict) => {
             if (dict.code == 0) {
               self.$store.commit('ide/handleProject', dict.data);
-              ElMessage({
-                type: 'success',
-                message: 'Project tree refreshed successfully',
-                duration: 2000
-              });
+              console.log('[VmIde] Single project refreshed successfully');
+            } else {
+              console.error('[VmIde] Failed to refresh project:', dict);
+            }
+            
+            // Always call callback, even on error
+            if (callback) {
+              callback();
             }
           }
         });
+      } else {
+        // No project to refresh, call callback immediately
+        console.warn('[VmIde] No project to refresh');
+        if (callback) {
+          callback();
+        }
       }
     },
     inputIsLegal(text, callback) {
@@ -2484,7 +2545,57 @@ export default {
       // Toggle comment in the active editor
       const activeEditor = this.getActiveCodeMirrorInstance();
       if (activeEditor) {
-        activeEditor.toggleComment();
+        try {
+          // Manual Python comment toggle
+          const cursor = activeEditor.getCursor();
+          const line = activeEditor.getLine(cursor.line);
+          let newCursorPos = cursor.ch;
+          
+          if (line.trim().startsWith('# ')) {
+            // Uncomment: remove "# " from start
+            const newLine = line.replace(/^(\s*)# /, '$1');
+            activeEditor.replaceRange(newLine, {line: cursor.line, ch: 0}, {line: cursor.line, ch: line.length});
+            // Adjust cursor position (move back 2 chars for "# ")
+            newCursorPos = Math.max(0, cursor.ch - 2);
+          } else if (line.trim().startsWith('#')) {
+            // Uncomment: remove "#" from start
+            const newLine = line.replace(/^(\s*)#/, '$1');
+            activeEditor.replaceRange(newLine, {line: cursor.line, ch: 0}, {line: cursor.line, ch: line.length});
+            // Adjust cursor position (move back 1 char for "#")
+            newCursorPos = Math.max(0, cursor.ch - 1);
+          } else if (line.trim() !== '') {
+            // Comment: add "# " at beginning of content (after indentation)
+            const match = line.match(/^(\s*)(.*)/);
+            const indent = match[1] || '';
+            const content = match[2] || '';
+            const newLine = indent + '# ' + content;
+            activeEditor.replaceRange(newLine, {line: cursor.line, ch: 0}, {line: cursor.line, ch: line.length});
+            // Adjust cursor position (move forward 2 chars for "# ")
+            newCursorPos = cursor.ch + 2;
+          }
+          
+          // Restore cursor position and refresh display
+          activeEditor.setCursor(cursor.line, newCursorPos);
+          activeEditor.focus();
+          activeEditor.refresh();
+
+          // Force Vue reactivity update by updating the store
+          const updatedContent = activeEditor.getValue();
+          if (this.ideInfo.codeSelectedIndex !== undefined) {
+            this.$store.commit('ide/setCodeItemContent', {
+              index: this.ideInfo.codeSelectedIndex,
+              content: updatedContent
+            });
+          }
+
+          // Additional refresh after store update
+          setTimeout(() => {
+            activeEditor.refresh();
+          }, 10);
+          
+        } catch (error) {
+          console.error('Comment toggle error:', error);
+        }
       }
     },
     getActiveCodeMirrorInstance() {
@@ -2493,6 +2604,28 @@ export default {
       if (activeEditorElement && activeEditorElement.CodeMirror) {
         return activeEditorElement.CodeMirror;
       }
+      
+      // Alternative: try to get from the active code editor component
+      const codeEditorComponents = document.querySelectorAll('.code-editor-container');
+      for (let i = 0; i < codeEditorComponents.length; i++) {
+        const codeEditor = codeEditorComponents[i];
+        if (codeEditor.offsetParent !== null) { // Check if visible
+          const cmElement = codeEditor.querySelector('.CodeMirror');
+          if (cmElement && cmElement.CodeMirror) {
+            return cmElement.CodeMirror;
+          }
+        }
+      }
+      
+      // Try all visible CodeMirror instances
+      const allCodeMirrors = document.querySelectorAll('.CodeMirror');
+      for (let i = 0; i < allCodeMirrors.length; i++) {
+        const cm = allCodeMirrors[i];
+        if (cm.CodeMirror && cm.offsetParent !== null) {
+          return cm.CodeMirror;
+        }
+      }
+      
       return null;
     },
     // View menu handlers
@@ -2938,63 +3071,270 @@ export default {
       }
     },
     openMoveDialog(fileData) {
+      console.log('[VmIde] openMoveDialog called with:', fileData);
+      
+      // Ensure we have the most current path data
+      // If the fileData path doesn't exist in the current tree, try to find the file by name
+      const self = this;
+      const originalPath = fileData.path || fileData.filePath;
+      
+      // Try to find the file in the current project tree to get fresh path data
+      const findFileInTree = (node, targetName) => {
+        if (node.type === 'file' && node.name === fileData.name) {
+          return node;
+        }
+        if (node.children) {
+          for (const child of node.children) {
+            const result = findFileInTree(child, targetName);
+            if (result) return result;
+          }
+        }
+        return null;
+      };
+      
+      let freshFileData = fileData;
+      
+      // Search in multi-root projects
+      if (this.ideInfo.multiRootData && this.ideInfo.multiRootData.children.length > 0) {
+        for (const project of this.ideInfo.multiRootData.children) {
+          const foundFile = findFileInTree(project, fileData.name);
+          if (foundFile) {
+            console.log('[VmIde] Found fresh file data in tree:', foundFile.path);
+            freshFileData = {
+              ...fileData,
+              path: foundFile.path,
+              filePath: foundFile.path
+            };
+            break;
+          }
+        }
+      } else if (this.ideInfo.currProj && this.ideInfo.currProj.data) {
+        // Single project search
+        const foundFile = findFileInTree(this.ideInfo.currProj.data, fileData.name);
+        if (foundFile) {
+          console.log('[VmIde] Found fresh file data in single project:', foundFile.path);
+          freshFileData = {
+            ...fileData,
+            path: foundFile.path,
+            filePath: foundFile.path
+          };
+        }
+      }
+      
       this.fileBrowserMode = 'move';
-      this.fileToMove = fileData;
+      this.fileToMove = freshFileData;
       this.showFileBrowserDialog = true;
+      console.log('[VmIde] Move dialog opened with fresh data, mode:', this.fileBrowserMode, 'fileToMove:', this.fileToMove);
     },
     handleMoveFile(data) {
+      console.log('[VmIde] handleMoveFile called with data:', data);
       const { oldPath, newPath, projectName } = data;
       const self = this;
       
-      // First get the file content
+      // CRITICAL FIX: Normalize paths to be relative to project root
+      const normalizePathForProject = (path, projName) => {
+        if (!path || !projName) return path;
+        // Remove project name prefix if it exists
+        const prefix = projName + '/';
+        if (path.startsWith(prefix)) {
+          return path.substring(prefix.length);
+        }
+        return path;
+      };
+      
+      const normalizedOldPath = normalizePathForProject(oldPath, projectName);
+      const normalizedNewPath = normalizePathForProject(newPath, projectName);
+      
+      console.log('[VmIde] Path normalization:', {
+        originalOldPath: oldPath,
+        normalizedOldPath: normalizedOldPath,
+        originalNewPath: newPath, 
+        normalizedNewPath: normalizedNewPath,
+        projectName: projectName
+      });
+      
+      console.log('[VmIde] Move parameters:', {
+        oldPath: oldPath,
+        newPath: newPath,
+        projectName: projectName,
+        currentUser: this.currentUser
+      });
+      
+      // Basic permission validation - only if user data is available
+      if (this.currentUser && this.currentUser.username && this.currentUser.role === 'student') {
+        const studentDir = `Local/${this.currentUser.username}`;
+        console.log('[VmIde] Student permission check:', {
+          studentDir: studentDir,
+          oldPathValid: oldPath.startsWith(studentDir + '/') || normalizedOldPath.startsWith(studentDir.replace('Local/', '') + '/'),
+          newPathValid: newPath.startsWith(studentDir + '/') || normalizedNewPath.startsWith(studentDir.replace('Local/', '') + '/'),
+          oldPath: oldPath,
+          newPath: newPath,
+          normalizedOldPath: normalizedOldPath,
+          normalizedNewPath: normalizedNewPath
+        });
+        
+        // Check both original and normalized paths for student permissions
+        const oldPathAllowed = oldPath.startsWith(studentDir + '/') || normalizedOldPath.startsWith(studentDir.replace('Local/', '') + '/');
+        const newPathAllowed = newPath.startsWith(studentDir + '/') || normalizedNewPath.startsWith(studentDir.replace('Local/', '') + '/');
+        
+        if (!oldPathAllowed || !newPathAllowed) {
+          console.error('[VmIde] Permission denied for student move');
+          ElMessage.error('Students can only move files within their personal directory');
+          this.showFileBrowserDialog = false;
+          return;
+        }
+      }
+      
+      // Validate paths using normalized paths
+      if (normalizedOldPath === normalizedNewPath) {
+        console.error('[VmIde] Same source and destination path');
+        ElMessage.warning('Source and destination paths are the same');
+        this.showFileBrowserDialog = false;
+        return;
+      }
+      
+      if (normalizedNewPath.startsWith(normalizedOldPath + '/')) {
+        console.error('[VmIde] Attempting to move file into its subdirectory');
+        ElMessage.error('Cannot move a file into its own subdirectory');
+        this.showFileBrowserDialog = false;
+        return;
+      }
+      
+      console.log('[VmIde] Starting move operation - getting file content');
+      
+      // First get the file content using normalized path
       this.$store.dispatch(`ide/${types.IDE_GET_FILE}`, {
         projectName: projectName,
-        filePath: oldPath,
+        filePath: normalizedOldPath,
         callback: (dict) => {
-          if (dict.code == 0) {
-            const content = dict.data.content || dict.data;
+          console.log('[VmIde] GET_FILE response:', dict);
+          if (dict.code == 0 && dict.data) {
+            const content = dict.data.content || dict.data || '';
+            console.log('[VmIde] File content retrieved, length:', content ? content.length : 0);
             
             // Create file at new location
+            console.log('[VmIde] Creating file at new location');
+            
+            // Extract parent path and filename from normalized newPath
+            const lastSlash = normalizedNewPath.lastIndexOf('/');
+            const parentPath = lastSlash > 0 ? normalizedNewPath.substring(0, lastSlash) : '/';
+            const fileName = lastSlash >= 0 ? normalizedNewPath.substring(lastSlash + 1) : normalizedNewPath;
+            
+            console.log('[VmIde] Create file params:', {
+              projectName: projectName,
+              parentPath: parentPath,
+              fileName: fileName
+            });
+            
             self.$store.dispatch(`ide/${types.IDE_CREATE_FILE}`, {
               projectName: projectName,
-              filePath: newPath,
-              content: content,
+              parentPath: parentPath,
+              fileName: fileName,
               callback: (createDict) => {
+                console.log('[VmIde] CREATE_FILE response:', createDict);
                 if (createDict.code == 0) {
-                  // Delete the original file
-                  self.$store.dispatch(`ide/${types.IDE_DEL_FILE}`, {
+                  console.log('[VmIde] File created successfully, now writing content');
+                  
+                  // Write the content to the newly created file
+                  self.$store.dispatch(`ide/${types.IDE_WRITE_FILE}`, {
                     projectName: projectName,
-                    filePath: oldPath,
-                    callback: (delDict) => {
-                      if (delDict.code == 0) {
-                        ElMessage.success('File moved successfully');
-                        self.refreshProjectTree();
+                    filePath: fileName, // Use just the filename for write
+                    fileData: content,
+                    complete: true,
+                    callback: (writeDict) => {
+                      console.log('[VmIde] WRITE_FILE response:', writeDict);
+                      if (writeDict.code == 0) {
+                        console.log('[VmIde] Content written successfully, deleting original file');
                         
-                        // If the moved file was open, update its path
-                        const openFile = self.ideInfo.codeItems.find(item => 
-                          item.filePath === oldPath && item.projectName === projectName
-                        );
-                        if (openFile) {
-                          openFile.filePath = newPath;
-                          openFile.fileName = newPath.substring(newPath.lastIndexOf('/') + 1);
-                        }
+                        // Now delete the original file using normalized path
+                        self.$store.dispatch(`ide/${types.IDE_DEL_FILE}`, {
+                          projectName: projectName,
+                          filePath: normalizedOldPath,
+                          callback: (delDict) => {
+                            console.log('[VmIde] DEL_FILE response:', delDict);
+                            if (delDict.code == 0) {
+                              console.log('[VmIde] Move completed successfully');
+                              ElMessage.success('File moved successfully');
+                              
+                              // Refresh project tree and wait for completion
+                              self.refreshProjectTreeWithCallback(() => {
+                                console.log('[VmIde] Tree refresh completed after move');
+                                
+                                // Update nodeSelected to reflect the new path if it was the moved file
+                                if (self.ideInfo.nodeSelected && self.ideInfo.nodeSelected.path === oldPath) {
+                                  console.log('[VmIde] Updating nodeSelected to new path:', newPath);
+                                  const updatedNode = {
+                                    ...self.ideInfo.nodeSelected,
+                                    path: newPath,
+                                    filePath: newPath,
+                                    fileName: newPath.substring(newPath.lastIndexOf('/') + 1),
+                                    name: newPath.substring(newPath.lastIndexOf('/') + 1),
+                                    label: newPath.substring(newPath.lastIndexOf('/') + 1)
+                                  };
+                                  self.$store.commit('ide/setNodeSelected', updatedNode);
+                                }
+                                
+                                // Reset file browser dialog state to pick up new tree data
+                                self.fileToMove = null;
+                                self.showFileBrowserDialog = false;
+                              });
+                              
+                              // If the moved file was open, update its path
+                              const openFile = self.ideInfo.codeItems.find(item => 
+                                item.filePath === oldPath && item.projectName === projectName
+                              );
+                              if (openFile) {
+                                console.log('[VmIde] Updating open file reference');
+                                openFile.filePath = newPath;
+                                openFile.fileName = newPath.substring(newPath.lastIndexOf('/') + 1);
+                                openFile.path = newPath; // Also update path property
+                                
+                                // Update the store
+                                self.$store.commit('ide/updateCodeItem', {
+                                  index: self.ideInfo.codeItems.indexOf(openFile),
+                                  updates: {
+                                    filePath: newPath,
+                                    fileName: openFile.fileName,
+                                    path: newPath
+                                  }
+                                });
+                              }
+                              
+                              // Update console states if they exist
+                              if (self.fileConsoleStates && self.fileConsoleStates[oldPath]) {
+                                console.log('[VmIde] Updating console states');
+                                self.fileConsoleStates[newPath] = self.fileConsoleStates[oldPath];
+                                delete self.fileConsoleStates[oldPath];
+                              }
+                              
+                              console.log('[VmIde] File moved successfully from', oldPath, 'to', newPath);
+                            } else {
+                              console.error('[VmIde] Failed to delete original file:', delDict);
+                              ElMessage.error('Failed to delete original file after move');
+                            }
+                          }
+                        });
                       } else {
-                        ElMessage.error('Failed to delete original file after move');
+                        console.error('[VmIde] Failed to write file content:', writeDict);
+                        ElMessage.error('Failed to write content to new file');
                       }
                     }
                   });
                 } else {
+                  console.error('[VmIde] Failed to create file:', createDict);
                   ElMessage.error('Failed to create file at new location');
                 }
               }
             });
           } else {
-            ElMessage.error('Failed to read file for moving');
+            console.error('[VmIde] Failed to read file:', dict);
+            ElMessage.error(dict.message || 'Failed to read file for moving');
           }
         }
       });
       
-      this.showFileBrowserDialog = false;
+      // Note: Dialog will be closed by refreshProjectTreeWithCallback after tree refresh
+      console.log('[VmIde] Move operation initiated, dialog will close after tree refresh');
     },
     deleteFileFromMenu(data) {
       // Delete file from File menu

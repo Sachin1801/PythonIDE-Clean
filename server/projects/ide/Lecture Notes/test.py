@@ -1,1 +1,5 @@
-what do you mean 
+print("Sachin")
+
+age = input("Enter your age")
+
+print(age)

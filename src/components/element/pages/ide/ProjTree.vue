@@ -186,10 +186,10 @@ export default {
                 // When all projects are refreshed, update the multi-root view
                 if (refreshCount === projectsToRefresh.length) {
                   self.$store.commit('ide/handleMultipleProjects', refreshedProjects);
-                  // Update current project if it was refreshed
+                  // Update current project if it was refreshed (use refreshProject to preserve state)
                   const currentProjData = refreshedProjects.find(p => p.name === self.ideInfo.currProj.data.name);
                   if (currentProjData) {
-                    self.$store.commit('ide/handleProject', currentProjData);
+                    self.$store.commit('ide/refreshProject', currentProjData);
                   }
                   ElMessage({
                     type: 'success',
@@ -207,7 +207,7 @@ export default {
           projectName: this.ideInfo.currProj.data.name,
           callback: (dict) => {
             if (dict.code == 0) {
-              self.$store.commit('ide/handleProject', dict.data);
+              self.$store.commit('ide/refreshProject', dict.data);
               ElMessage({
                 type: 'success',
                 message: 'Project tree refreshed',
@@ -492,16 +492,7 @@ export default {
     defaultExpandedKeys() {
       const expandedKeys = [];
       
-      // Always expand root folders in multi-root mode
-      if (this.ideInfo.multiRootData && this.ideInfo.multiRootData.children.length > 0) {
-        this.ideInfo.multiRootData.children.forEach(project => {
-          if (project.uuid) {
-            expandedKeys.push(project.uuid);
-          }
-        });
-      }
-      
-      // Also process existing expanded keys
+      // Only process existing expanded keys - don't auto-expand all root folders
       if (this.expandedKeys !== undefined && Array.isArray(this.expandedKeys)) {
         for (let i = 0; i < this.expandedKeys.length; i++) {
           // Skip null or undefined values

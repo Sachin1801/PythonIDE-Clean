@@ -89,7 +89,7 @@
         <button 
           class="btn-create" 
           @click="onCreate"
-          :disabled="!fileName || !!fileNameError || creating"
+          :disabled="!fileName || (!!fileNameError && !fileNameError.includes('already exists')) || creating"
         >
           {{ creating ? 'Creating...' : 'Create File' }}
         </button>
@@ -101,7 +101,7 @@
 <script>
 import { X, FolderOpen, Folder, ChevronRight, ChevronDown, FileText, Home } from 'lucide-vue-next';
 import * as types from '../../../../../store/mutation-types';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 
 export default {
   props: {
@@ -290,6 +290,14 @@ export default {
         return;
       }
       
+      // Check if file already exists
+      const projectName = this.currentProject || this.ideInfo.currProj?.data?.name || this.ideInfo.currProj?.config?.name;
+      const existingFile = this.checkFileExists(this.fileName, this.currentPath, projectName);
+      if (existingFile) {
+        this.fileNameError = 'A file with this name already exists (keep a unique file name)';
+        return;
+      }
+      
       // Warn if no extension
       if (!this.fileExtension) {
         this.fileNameError = 'Consider adding a file extension (e.g., .py, .txt)';
@@ -323,20 +331,79 @@ export default {
       };
       return types[ext] || 'File';
     },
+    checkFileExists(fileName, currentPath, projectName) {
+      // Helper function to recursively search for file in directory structure
+      const findFile = (node, targetPath, targetName) => {
+        if (!node || !node.children) return null;
+        
+        // Check if current node matches the target path
+        if (node.path === targetPath) {
+          // Look for file in this directory's children
+          return node.children.find(child => 
+            child.type === 'file' && 
+            (child.label === targetName || child.name === targetName)
+          );
+        }
+        
+        // Recursively search children
+        for (let child of node.children) {
+          const found = findFile(child, targetPath, targetName);
+          if (found) return found;
+        }
+        
+        return null;
+      };
+
+      // Search in multi-root mode
+      if (this.ideInfo.multiRootData && this.ideInfo.multiRootData.children.length > 0) {
+        for (let project of this.ideInfo.multiRootData.children) {
+          if (project.name === projectName || project.label === projectName) {
+            return findFile(project, currentPath, fileName);
+          }
+        }
+      } 
+      // Search in single project mode
+      else if (this.ideInfo.currProj && this.ideInfo.currProj.data) {
+        return findFile(this.ideInfo.currProj.data, currentPath, fileName);
+      }
+      
+      return null;
+    },
     async onCreate() {
       if (!this.fileName || this.fileNameError) return;
+      
+      const fileName = this.fileName;
+      const parentPath = this.currentPath;
+      const projectName = this.currentProject || this.ideInfo.currProj?.data?.name || this.ideInfo.currProj?.config?.name;
+      
+      // Check if file already exists
+      const existingFile = this.checkFileExists(fileName, parentPath, projectName);
+      if (existingFile) {
+        try {
+          await ElMessageBox.confirm(
+            `A file named "${fileName}" already exists in this directory. Creating this file will replace the existing file.`,
+            'File Already Exists',
+            {
+              confirmButtonText: 'Replace File',
+              cancelButtonText: 'Cancel',
+              type: 'warning',
+              confirmButtonClass: 'el-button--danger'
+            }
+          );
+        } catch {
+          // User cancelled - don't create file
+          return;
+        }
+      }
       
       this.creating = true;
       
       try {
-        const fileName = this.fileName;
-        const parentPath = this.currentPath;
-        const projectName = this.currentProject || this.ideInfo.currProj?.data?.name || this.ideInfo.currProj?.config?.name;
-        
         console.log('[DialogNewFile] Creating file:', {
           fileName,
           parentPath,
-          projectName
+          projectName,
+          replaceExisting: !!existingFile
         });
         
         // Default content based on extension

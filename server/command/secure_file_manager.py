@@ -70,7 +70,8 @@ class SecureFileManager:
         
         # Check permissions based on role and path
         if role == 'professor':
-            return True  # Professors can access everything
+            logger.info(f"Professor access granted for: {requested_path}")
+            return True  # Professors have full access to everything
         
         # For students, check different directory permissions
         # 1. Full access to their own directory

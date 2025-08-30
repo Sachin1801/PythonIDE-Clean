@@ -152,7 +152,10 @@ const mutations = {
     
     // Don't clear codeItems to preserve open tabs across project switches
     // state.ideInfo.codeItems = [];
-    state.ideInfo.currProj.expandedKeys = [];
+    
+    // Preserve current expanded keys during refresh
+    const currentExpandedKeys = [...(state.ideInfo.currProj.expandedKeys || [])];
+    
     state.ideInfo.currProj.config = data.config || {};
     
     // Ensure the data has proper label and uuid properties
@@ -160,12 +163,48 @@ const mutations = {
     state.ideInfo.currProj.data = data;
     
     state.ideInfo.currProj.pathSelected = state.ideInfo.currProj.config.selectFilePath;
+    
+    // Use server config expanded keys if available, otherwise preserve current UI state
     if (data.config !== undefined && data.config.expendKeys !== undefined) {
       state.ideInfo.currProj.expandedKeys = data.config.expendKeys.filter(key => key !== null);
       state.ideInfo.currProj.expandedKeys.sort();
+    } else {
+      // Preserve current expanded state during refresh
+      state.ideInfo.currProj.expandedKeys = currentExpandedKeys;
     }
     if (state.ideInfo.currProj.pathSelected && state.ideInfo.treeRef) {
       state.ideInfo.nodeSelected = state.ideInfo.treeRef.getCurrentNode();
+    }
+  },
+  refreshProject(state, data) {
+    // Function to ensure label and uuid exist in the tree
+    const ensureNodeProperties = (node) => {
+      if (!node.label && node.name) {
+        node.label = node.name;
+      }
+      if (!node.uuid) {
+        node.uuid = node.path || node.name || Math.random().toString(36);
+      }
+      if (node.children) {
+        node.children.forEach(child => ensureNodeProperties(child));
+      }
+    };
+    
+    // Preserve current UI state during refresh
+    const currentExpandedKeys = [...(state.ideInfo.currProj.expandedKeys || [])];
+    const currentSelectedPath = state.ideInfo.currProj.pathSelected;
+    
+    // Update project data with new structure
+    ensureNodeProperties(data);
+    state.ideInfo.currProj.data = data;
+    
+    // Preserve expanded state and selected path
+    state.ideInfo.currProj.expandedKeys = currentExpandedKeys;
+    state.ideInfo.currProj.pathSelected = currentSelectedPath;
+    
+    // Update config if available but don't override UI state
+    if (data.config) {
+      state.ideInfo.currProj.config = { ...state.ideInfo.currProj.config, ...data.config };
     }
   },
   handleMultipleProjects(state, projects) {
@@ -291,14 +330,14 @@ const mutations = {
       isMedia: isMedia || false,
     });
     
-    if (save !== false || state.ideInfo.currProj.pathSelected === filePath) {
-      state.ideInfo.currProj.pathSelected = filePath;
-      state.ideInfo.codeSelected = state.ideInfo.codeItems[state.ideInfo.codeItems.length - 1];
-      // self.saveProject();
-      if (state.ideInfo.treeRef) {
-        state.ideInfo.treeRef.setCurrentKey(state.ideInfo.currProj.pathSelected);
-        state.ideInfo.nodeSelected = state.ideInfo.treeRef.getCurrentNode();
-      }
+    // Always make the opened file active, regardless of save flag
+    state.ideInfo.currProj.pathSelected = filePath;
+    state.ideInfo.codeSelected = state.ideInfo.codeItems[state.ideInfo.codeItems.length - 1];
+    
+    // Update tree selection to reflect the opened file
+    if (state.ideInfo.treeRef) {
+      state.ideInfo.treeRef.setCurrentKey(state.ideInfo.currProj.pathSelected);
+      state.ideInfo.nodeSelected = state.ideInfo.treeRef.getCurrentNode();
     }
   },
   handleDelFile(state, {parentData, filePath}) {
@@ -624,6 +663,11 @@ const mutations = {
   setNodeSelected(state, selected) {
     state.ideInfo.nodeSelected = selected;
   },
+  updateCodeItem(state, {index, updates}) {
+    if (index >= 0 && index < state.ideInfo.codeItems.length) {
+      Object.assign(state.ideInfo.codeItems[index], updates);
+    }
+  },
   setPathSelected(state, selected) {
     state.ideInfo.currProj.pathSelected = selected;
   },
@@ -846,6 +890,18 @@ const actions = {
       callback: callback,
     }, { root: true });
   },
+  [types.IDE_MOVE_FILE](context, { wsKey, projectName, oldPath, newPath, callback }) {
+    context.dispatch('websocket/sendCmd', {
+      wsKey: wsKey,
+      cmd: types.IDE_MOVE_FILE,
+      data: {
+        projectName: projectName || context.state.ideInfo.currProj.data.name,
+        oldPath: oldPath,
+        newPath: newPath,
+      }, 
+      callback: callback,
+    }, { root: true });
+  },
   [types.IDE_CREATE_FOLDER](context, { wsKey, projectName, parentPath, folderName, callback }) {
     // Construct the full folder path
     let folderPath = '';
@@ -884,6 +940,18 @@ const actions = {
         projectName: projectName || context.state.ideInfo.currProj.data.name,
         oldPath: oldPath || context.state.ideInfo.nodeSelected.path,
         newName: folderName,
+      }, 
+      callback: callback,
+    }, { root: true });
+  },
+  [types.IDE_MOVE_FOLDER](context, { wsKey, projectName, oldPath, newPath, callback }) {
+    context.dispatch('websocket/sendCmd', {
+      wsKey: wsKey,
+      cmd: types.IDE_MOVE_FOLDER,
+      data: {
+        projectName: projectName || context.state.ideInfo.currProj.data.name,
+        oldPath: oldPath,
+        newPath: newPath,
       }, 
       callback: callback,
     }, { root: true });

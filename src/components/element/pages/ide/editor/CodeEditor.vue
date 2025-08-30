@@ -157,11 +157,6 @@ export default {
 
           // Ctrl+/: Comment with Line Comment
           'Ctrl-/': 'toggleComment',
-          // 'Ctrl-/': (cm) => {
-          //   // 'Ctrl-/': 'toggleCommentIndented',  // sublime.js
-          //   // 'Ctrl-/': 'toggleComment',  // comment.js
-          //   cm.toggleComment({ indent: true });
-          // },
 
           // Ctrl+D: Duplicate Line or Selection
           'Ctrl-D': 'duplicateLine',
@@ -210,6 +205,7 @@ export default {
         }, 100);
       }
     });
+    
     
     // Listen for theme changes
     const observer = new MutationObserver(() => {

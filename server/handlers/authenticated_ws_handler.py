@@ -339,7 +339,17 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler, WebSocketKeepali
             self._run_callback(req_put, self, message_with_auth)
         
         else:
-            self.write_error(f"Unknown command: {cmd}")
+            # Pass unrecognized commands to legacy handler (for ide_move_file, ide_move_folder, etc.)
+            actual_data = data.get('data', {})
+            actual_data['username'] = self.username
+            actual_data['role'] = self.role
+            
+            message_with_auth = json.dumps({
+                'cmd': cmd, 
+                'cmd_id': data.get('cmd_id', data.get('id', 0)),
+                'data': actual_data
+            })
+            self._run_callback(req_put, self, message_with_auth)
     
     def handle_list_projects(self, data):
         """Handle ide_list_projects command - returns available projects for user"""

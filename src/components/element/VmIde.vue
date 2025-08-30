@@ -358,6 +358,7 @@
       v-model="showFileBrowserDialog" 
       :mode="fileBrowserMode"
       :fileToMove="fileToMove"
+      :currentUser="currentUser"
       @open-file="handleOpenFile"
       @move-file="handleMoveFile"
     />
@@ -440,7 +441,6 @@ export default {
       contextMenuTarget: null,
       windowWidth: window.innerWidth,  // Track window width for responsive behavior
       leftSidebarVisible: true,
-      currentUser: null,
       
       dialogType: '',
       dialogTitle: '',
@@ -573,12 +573,8 @@ export default {
     
     if (sessionId && username) {
       console.log('🔑 [VmIde] Found existing session for:', username);
-      this.currentUser = {
-        username: username,
-        role: localStorage.getItem('role'),
-        full_name: localStorage.getItem('full_name'),
-        session_id: sessionId
-      };
+      // currentUser is now a computed property based on localStorage
+      // so no need to set it here
       
       // Initialize WebSocket only if logged in
       try {
@@ -682,6 +678,28 @@ export default {
     },
     ideInfo() {
       return this.$store.state.ide.ideInfo;
+    },
+    currentUser() {
+      // Check store first (for future compatibility)
+      const storeUser = this.$store.state.ide.currentUser;
+      if (storeUser) return storeUser;
+      
+      // Construct user object from localStorage items
+      const sessionId = localStorage.getItem('session_id');
+      const username = localStorage.getItem('username');
+      const role = localStorage.getItem('role');
+      const fullName = localStorage.getItem('full_name');
+      
+      if (sessionId && username) {
+        return {
+          session_id: sessionId,
+          username: username,
+          role: role,
+          full_name: fullName
+        };
+      }
+      
+      return null;
     },
     isMarkdown() {
       if (this.ideInfo.codeSelected.path)
@@ -1746,21 +1764,69 @@ export default {
     },
     refreshProjectTree() {
       // Refresh the project tree by re-fetching the project data
+      this.refreshProjectTreeWithCallback(null);
+    },
+    
+    refreshProjectTreeWithCallback(callback) {
+      // Refresh the project tree by re-fetching the project data with callback support
       const self = this;
-      if (this.ideInfo.currProj && this.ideInfo.currProj.data) {
+      
+      // For multi-root projects, refresh all projects
+      if (self.ideInfo.multiRootData && self.ideInfo.multiRootData.children.length > 0) {
+        console.log('[VmIde] Refreshing multi-root project tree');
+        let refreshCount = 0;
+        const totalProjects = self.ideInfo.multiRootData.children.length;
+        
+        self.ideInfo.multiRootData.children.forEach(project => {
+          self.$store.dispatch(`ide/${types.IDE_GET_PROJECT}`, {
+            projectName: project.name,
+            callback: (dict) => {
+              if (dict.code == 0) {
+                self.$store.commit('ide/handleProject', dict.data);
+                refreshCount++;
+                
+                // If all projects are refreshed, call the callback
+                if (refreshCount === totalProjects) {
+                  console.log('[VmIde] All projects refreshed');
+                  if (callback) {
+                    callback();
+                  }
+                }
+              } else {
+                console.error('[VmIde] Failed to refresh project:', project.name, dict);
+                refreshCount++;
+                if (refreshCount === totalProjects && callback) {
+                  callback();
+                }
+              }
+            }
+          });
+        });
+      } else if (this.ideInfo.currProj && this.ideInfo.currProj.data) {
+        // Single project refresh
+        console.log('[VmIde] Refreshing single project tree');
         this.$store.dispatch(`ide/${types.IDE_GET_PROJECT}`, {
           projectName: this.ideInfo.currProj.data.name,
           callback: (dict) => {
             if (dict.code == 0) {
               self.$store.commit('ide/handleProject', dict.data);
-              ElMessage({
-                type: 'success',
-                message: 'Project tree refreshed successfully',
-                duration: 2000
-              });
+              console.log('[VmIde] Single project refreshed successfully');
+            } else {
+              console.error('[VmIde] Failed to refresh project:', dict);
+            }
+            
+            // Always call callback, even on error
+            if (callback) {
+              callback();
             }
           }
         });
+      } else {
+        // No project to refresh, call callback immediately
+        console.warn('[VmIde] No project to refresh');
+        if (callback) {
+          callback();
+        }
       }
     },
     inputIsLegal(text, callback) {
@@ -1897,25 +1963,36 @@ export default {
       console.log('🚀 [loadAllDefaultProjects] Starting to load default projects');
       const self = this;
       
-      // Get current username from localStorage
+      // Get current username and role from localStorage
       const username = localStorage.getItem('username');
+      const role = localStorage.getItem('role');
       
       // Build list of projects to load - use actual project names from the server
       const projectsToLoad = [];
       
-      // Check for user's personal directory (e.g., "Local/sa9082")
-      const userProject = this.ideInfo.projList.find(p => p.name === `Local/${username}`);
-      if (userProject) {
-        projectsToLoad.push(userProject.name);
-      }
-      
-      // Add other standard projects if they exist
-      const standardProjects = ['Lecture Notes', 'Assignments', 'Tests'];
-      standardProjects.forEach(proj => {
-        if (this.ideInfo.projList.some(p => p.name === proj)) {
-          projectsToLoad.push(proj);
+      if (role === 'professor') {
+        // Professor: Load all main folders including Local for full access
+        const professorProjects = ['Local', 'Lecture Notes', 'Assignments', 'Tests'];
+        professorProjects.forEach(proj => {
+          if (this.ideInfo.projList.some(p => p.name === proj)) {
+            projectsToLoad.push(proj);
+          }
+        });
+      } else {
+        // Student: Load user's personal directory and standard folders
+        const userProject = this.ideInfo.projList.find(p => p.name === `Local/${username}`);
+        if (userProject) {
+          projectsToLoad.push(userProject.name);
         }
-      });
+        
+        // Add other standard projects if they exist
+        const standardProjects = ['Lecture Notes', 'Assignments', 'Tests'];
+        standardProjects.forEach(proj => {
+          if (this.ideInfo.projList.some(p => p.name === proj)) {
+            projectsToLoad.push(proj);
+          }
+        });
+      }
       
       console.log('📋 [loadAllDefaultProjects] Projects to load:', projectsToLoad);
       console.log('📋 [loadAllDefaultProjects] Available projects:', this.ideInfo.projList);
@@ -1943,13 +2020,26 @@ export default {
               if (loadCount === projectsToLoad.length) {
                 console.log('✅ [loadAllDefaultProjects] All projects loaded:', loadedProjects);
                 self.$store.commit('ide/handleMultipleProjects', loadedProjects);
-                // Also set the user's project as current
-                const userProjectData = loadedProjects.find(p => p.name === `Local/${username}`);
-                if (userProjectData) {
-                  self.$store.commit('ide/handleProject', userProjectData);
-                } else if (loadedProjects.length > 0) {
-                  // Fallback to first project if user project not found
-                  self.$store.commit('ide/handleProject', loadedProjects[0]);
+                
+                // Set current project based on role
+                if (role === 'professor') {
+                  // Professor: Set Local as default project for full student directory access
+                  const localProjectData = loadedProjects.find(p => p.name === 'Local');
+                  if (localProjectData) {
+                    self.$store.commit('ide/handleProject', localProjectData);
+                  } else if (loadedProjects.length > 0) {
+                    // Fallback to first project
+                    self.$store.commit('ide/handleProject', loadedProjects[0]);
+                  }
+                } else {
+                  // Student: Set their personal project as current
+                  const userProjectData = loadedProjects.find(p => p.name === `Local/${username}`);
+                  if (userProjectData) {
+                    self.$store.commit('ide/handleProject', userProjectData);
+                  } else if (loadedProjects.length > 0) {
+                    // Fallback to first project if user project not found
+                    self.$store.commit('ide/handleProject', loadedProjects[0]);
+                  }
                 }
               }
             } else {
@@ -2356,7 +2446,8 @@ export default {
       
       // Handle successful login
       if (userData) {
-        this.currentUser = userData;
+        // currentUser is now a computed property based on localStorage
+        // so no need to set it here
         
         // Show success message using ElMessage
         ElMessage.success(`Welcome, ${userData.full_name || userData.username}!`);
@@ -2484,7 +2575,57 @@ export default {
       // Toggle comment in the active editor
       const activeEditor = this.getActiveCodeMirrorInstance();
       if (activeEditor) {
-        activeEditor.toggleComment();
+        try {
+          // Manual Python comment toggle
+          const cursor = activeEditor.getCursor();
+          const line = activeEditor.getLine(cursor.line);
+          let newCursorPos = cursor.ch;
+          
+          if (line.trim().startsWith('# ')) {
+            // Uncomment: remove "# " from start
+            const newLine = line.replace(/^(\s*)# /, '$1');
+            activeEditor.replaceRange(newLine, {line: cursor.line, ch: 0}, {line: cursor.line, ch: line.length});
+            // Adjust cursor position (move back 2 chars for "# ")
+            newCursorPos = Math.max(0, cursor.ch - 2);
+          } else if (line.trim().startsWith('#')) {
+            // Uncomment: remove "#" from start
+            const newLine = line.replace(/^(\s*)#/, '$1');
+            activeEditor.replaceRange(newLine, {line: cursor.line, ch: 0}, {line: cursor.line, ch: line.length});
+            // Adjust cursor position (move back 1 char for "#")
+            newCursorPos = Math.max(0, cursor.ch - 1);
+          } else if (line.trim() !== '') {
+            // Comment: add "# " at beginning of content (after indentation)
+            const match = line.match(/^(\s*)(.*)/);
+            const indent = match[1] || '';
+            const content = match[2] || '';
+            const newLine = indent + '# ' + content;
+            activeEditor.replaceRange(newLine, {line: cursor.line, ch: 0}, {line: cursor.line, ch: line.length});
+            // Adjust cursor position (move forward 2 chars for "# ")
+            newCursorPos = cursor.ch + 2;
+          }
+          
+          // Restore cursor position and refresh display
+          activeEditor.setCursor(cursor.line, newCursorPos);
+          activeEditor.focus();
+          activeEditor.refresh();
+
+          // Force Vue reactivity update by updating the store
+          const updatedContent = activeEditor.getValue();
+          if (this.ideInfo.codeSelectedIndex !== undefined) {
+            this.$store.commit('ide/setCodeItemContent', {
+              index: this.ideInfo.codeSelectedIndex,
+              content: updatedContent
+            });
+          }
+
+          // Additional refresh after store update
+          setTimeout(() => {
+            activeEditor.refresh();
+          }, 10);
+          
+        } catch (error) {
+          console.error('Comment toggle error:', error);
+        }
       }
     },
     getActiveCodeMirrorInstance() {
@@ -2493,6 +2634,28 @@ export default {
       if (activeEditorElement && activeEditorElement.CodeMirror) {
         return activeEditorElement.CodeMirror;
       }
+      
+      // Alternative: try to get from the active code editor component
+      const codeEditorComponents = document.querySelectorAll('.code-editor-container');
+      for (let i = 0; i < codeEditorComponents.length; i++) {
+        const codeEditor = codeEditorComponents[i];
+        if (codeEditor.offsetParent !== null) { // Check if visible
+          const cmElement = codeEditor.querySelector('.CodeMirror');
+          if (cmElement && cmElement.CodeMirror) {
+            return cmElement.CodeMirror;
+          }
+        }
+      }
+      
+      // Try all visible CodeMirror instances
+      const allCodeMirrors = document.querySelectorAll('.CodeMirror');
+      for (let i = 0; i < allCodeMirrors.length; i++) {
+        const cm = allCodeMirrors[i];
+        if (cm.CodeMirror && cm.offsetParent !== null) {
+          return cm.CodeMirror;
+        }
+      }
+      
       return null;
     },
     // View menu handlers
@@ -2667,40 +2830,71 @@ export default {
     
     async getExistingFilesInDirectory(directoryPath, projectName) {
       return new Promise((resolve) => {
-        // Get the current project tree data
-        const projectData = this.ideInfo.currProj?.data;
-        if (!projectData) {
-          console.log('🔍 [DEBUG] No project data available');
-          resolve([]);
-          return;
-        }
-        
-        // Find the target directory in the tree
-        const findDirectory = (node, targetPath) => {
-          if (node.path === targetPath && node.type === 'dir') {
-            return node;
+        try {
+          // Get the current project tree data
+          const projectData = this.ideInfo.currProj?.data;
+          if (!projectData) {
+            console.log('🔍 [DEBUG] No project data available');
+            resolve([]);
+            return;
           }
-          if (node.children) {
-            for (const child of node.children) {
-              const result = findDirectory(child, targetPath);
-              if (result) return result;
+          
+          // Find the target directory in the tree
+          const findDirectory = (node, targetPath) => {
+            try {
+              if (!node || typeof node !== 'object') {
+                return null;
+              }
+              if (node.path === targetPath && node.type === 'dir') {
+                return node;
+              }
+              if (node.children && Array.isArray(node.children)) {
+                for (const child of node.children) {
+                  if (!child || typeof child !== 'object') {
+                    continue; // Skip invalid children
+                  }
+                  const result = findDirectory(child, targetPath);
+                  if (result) return result;
+                }
+              }
+              return null;
+            } catch (err) {
+              console.warn('🔍 [DEBUG] Error in findDirectory:', err);
+              return null;
             }
+          };
+          
+          const targetDir = findDirectory(projectData, directoryPath);
+          console.log('🔍 [DEBUG] Found target directory:', targetDir);
+          
+          if (targetDir && targetDir.children && Array.isArray(targetDir.children)) {
+            // Extract filenames from the directory with robust null/undefined handling
+            const filenames = targetDir.children
+              .filter(child => {
+                try {
+                  return child && typeof child === 'object' && child.type === 'file' && (child.label || child.name);
+                } catch (e) {
+                  console.warn('🔍 [DEBUG] Invalid child node, skipping:', child, e);
+                  return false;
+                }
+              })
+              .map(child => {
+                try {
+                  return child.label || child.name || 'unnamed';
+                } catch (e) {
+                  console.warn('🔍 [DEBUG] Error extracting child name:', e);
+                  return 'unnamed';
+                }
+              })
+              .filter(name => name && name !== 'unnamed'); // Remove any invalid names
+            console.log('🔍 [DEBUG] Extracted filenames:', filenames);
+            resolve(filenames);
+          } else {
+            console.log('🔍 [DEBUG] Directory not found or has no children');
+            resolve([]);
           }
-          return null;
-        };
-        
-        const targetDir = findDirectory(projectData, directoryPath);
-        console.log('🔍 [DEBUG] Found target directory:', targetDir);
-        
-        if (targetDir && targetDir.children) {
-          // Extract filenames from the directory
-          const filenames = targetDir.children
-            .filter(child => child.type === 'file')
-            .map(child => child.label || child.name);
-          console.log('🔍 [DEBUG] Extracted filenames:', filenames);
-          resolve(filenames);
-        } else {
-          console.log('🔍 [DEBUG] Directory not found or has no children');
+        } catch (error) {
+          console.warn('🔍 [DEBUG] Error in getExistingFilesInDirectory:', error);
           resolve([]);
         }
       });
@@ -2938,63 +3132,162 @@ export default {
       }
     },
     openMoveDialog(fileData) {
+      console.log('[VmIde] openMoveDialog called with:', fileData);
+      
+      // Ensure we have the most current path data
+      // If the fileData path doesn't exist in the current tree, try to find the file by name
+      const self = this;
+      const originalPath = fileData.path || fileData.filePath;
+      
+      // Try to find the file in the current project tree to get fresh path data
+      const findFileInTree = (node, targetName) => {
+        if (node.type === 'file' && node.name === fileData.name) {
+          return node;
+        }
+        if (node.children) {
+          for (const child of node.children) {
+            const result = findFileInTree(child, targetName);
+            if (result) return result;
+          }
+        }
+        return null;
+      };
+      
+      let freshFileData = fileData;
+      
+      // Search in multi-root projects
+      if (this.ideInfo.multiRootData && this.ideInfo.multiRootData.children.length > 0) {
+        for (const project of this.ideInfo.multiRootData.children) {
+          const foundFile = findFileInTree(project, fileData.name);
+          if (foundFile) {
+            console.log('[VmIde] Found fresh file data in tree:', foundFile.path);
+            freshFileData = {
+              ...fileData,
+              path: foundFile.path,
+              filePath: foundFile.path
+            };
+            break;
+          }
+        }
+      } else if (this.ideInfo.currProj && this.ideInfo.currProj.data) {
+        // Single project search
+        const foundFile = findFileInTree(this.ideInfo.currProj.data, fileData.name);
+        if (foundFile) {
+          console.log('[VmIde] Found fresh file data in single project:', foundFile.path);
+          freshFileData = {
+            ...fileData,
+            path: foundFile.path,
+            filePath: foundFile.path
+          };
+        }
+      }
+      
       this.fileBrowserMode = 'move';
-      this.fileToMove = fileData;
+      this.fileToMove = freshFileData;
       this.showFileBrowserDialog = true;
-    },
-    handleMoveFile(data) {
+      console.log('[VmIde] Move dialog opened with fresh data, mode:', this.fileBrowserMode, 'fileToMove:', this.fileToMove);
+    },    handleMoveFile(data) {
+      console.log('[VmIde] handleMoveFile called with data:', data);
       const { oldPath, newPath, projectName } = data;
       const self = this;
       
-      // First get the file content
-      this.$store.dispatch(`ide/${types.IDE_GET_FILE}`, {
+      // Normalize paths to be relative to project root
+      const normalizePathForProject = (path, projName) => {
+        if (!path || !projName) return path;
+        // Remove project name prefix if it exists
+        const prefix = projName + '/';
+        if (path.startsWith(prefix)) {
+          return path.substring(prefix.length);
+        }
+        return path;
+      };
+      
+      const normalizedOldPath = normalizePathForProject(oldPath, projectName);
+      const normalizedNewPath = normalizePathForProject(newPath, projectName);
+      
+      console.log('[VmIde] Normalized paths:', {
+        originalOldPath: oldPath,
+        normalizedOldPath: normalizedOldPath,
+        originalNewPath: newPath, 
+        normalizedNewPath: normalizedNewPath,
+        projectName: projectName
+      });
+      
+      // Basic validation
+      if (normalizedOldPath === normalizedNewPath) {
+        ElMessage.warning('Source and destination paths are the same');
+        this.showFileBrowserDialog = false;
+        return;
+      }
+      
+      if (normalizedNewPath.startsWith(normalizedOldPath + '/')) {
+        ElMessage.error('Cannot move a file into its own subdirectory');
+        this.showFileBrowserDialog = false;
+        return;
+      }
+      
+      // Use the new move command - determine if it's a file or folder
+      const isFolder = this.ideInfo.nodeSelected?.isLeaf === false;
+      const moveCommand = isFolder ? types.IDE_MOVE_FOLDER : types.IDE_MOVE_FILE;
+      
+      console.log('[VmIde] Using move command:', moveCommand);
+      
+      this.$store.dispatch(`ide/${moveCommand}`, {
+        wsKey: this.wsKey,
         projectName: projectName,
-        filePath: oldPath,
-        callback: (dict) => {
-          if (dict.code == 0) {
-            const content = dict.data.content || dict.data;
+        oldPath: normalizedOldPath,
+        newPath: normalizedNewPath,
+        callback: (result) => {
+          console.log('[VmIde] Move result:', result);
+          if (result.code === 0) {
+            ElMessage.success(`${isFolder ? 'Folder' : 'File'} moved successfully`);
             
-            // Create file at new location
-            self.$store.dispatch(`ide/${types.IDE_CREATE_FILE}`, {
-              projectName: projectName,
-              filePath: newPath,
-              content: content,
-              callback: (createDict) => {
-                if (createDict.code == 0) {
-                  // Delete the original file
-                  self.$store.dispatch(`ide/${types.IDE_DEL_FILE}`, {
-                    projectName: projectName,
-                    filePath: oldPath,
-                    callback: (delDict) => {
-                      if (delDict.code == 0) {
-                        ElMessage.success('File moved successfully');
-                        self.refreshProjectTree();
-                        
-                        // If the moved file was open, update its path
-                        const openFile = self.ideInfo.codeItems.find(item => 
-                          item.filePath === oldPath && item.projectName === projectName
-                        );
-                        if (openFile) {
-                          openFile.filePath = newPath;
-                          openFile.fileName = newPath.substring(newPath.lastIndexOf('/') + 1);
-                        }
-                      } else {
-                        ElMessage.error('Failed to delete original file after move');
-                      }
-                    }
-                  });
-                } else {
-                  ElMessage.error('Failed to create file at new location');
+            // Update selected node and open tabs if necessary
+            if (self.ideInfo.nodeSelected && self.ideInfo.nodeSelected.path === oldPath) {
+              const updatedNode = {
+                ...self.ideInfo.nodeSelected,
+                path: newPath,
+                filePath: newPath,
+                fileName: newPath.substring(newPath.lastIndexOf('/') + 1),
+                name: newPath.substring(newPath.lastIndexOf('/') + 1),
+                label: newPath.substring(newPath.lastIndexOf('/') + 1)
+              };
+              self.$store.commit('ide/setNodeSelected', updatedNode);
+              
+              // Update open file tabs if it's a file
+              if (!isFolder && self.ideInfo.openList.length > 0) {
+                const openFileIndex = self.ideInfo.openList.findIndex(f => f.path === oldPath);
+                if (openFileIndex !== -1) {
+                  const updatedOpenList = [...self.ideInfo.openList];
+                  updatedOpenList[openFileIndex] = {
+                    ...updatedOpenList[openFileIndex],
+                    path: newPath,
+                    filePath: newPath,
+                    fileName: newPath.substring(newPath.lastIndexOf('/') + 1),
+                    name: newPath.substring(newPath.lastIndexOf('/') + 1),
+                    label: newPath.substring(newPath.lastIndexOf('/') + 1)
+                  };
+                  self.$store.commit('ide/setOpenList', updatedOpenList);
+                  
+                  if (self.ideInfo.selectFilePath === oldPath) {
+                    self.$store.commit('ide/setSelectFilePath', newPath);
+                  }
                 }
               }
+            }
+            
+            // Refresh the project tree
+            self.refreshProjectTreeWithCallback(() => {
+              console.log('[VmIde] Tree refresh completed after move');
+              self.showFileBrowserDialog = false;
             });
           } else {
-            ElMessage.error('Failed to read file for moving');
+            console.error('[VmIde] Move failed:', result);
+            ElMessage.error(result.msg || `Failed to move ${isFolder ? 'folder' : 'file'}`);
+            self.showFileBrowserDialog = false;
           }
         }
       });
-      
-      this.showFileBrowserDialog = false;
     },
     deleteFileFromMenu(data) {
       // Delete file from File menu

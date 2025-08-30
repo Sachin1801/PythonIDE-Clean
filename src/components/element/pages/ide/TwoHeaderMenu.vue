@@ -397,6 +397,7 @@ export default {
     document.addEventListener('click', this.closeDropdowns);
     
     // Add keyboard shortcuts
+    console.log('🎹 TwoHeaderMenu - Adding keyboard shortcut listener');
     document.addEventListener('keydown', this.handleKeyboardShortcuts);
   },
   beforeUnmount() {
@@ -874,10 +875,11 @@ export default {
       this.$emit('show-keyboard-shortcuts');
     },
     handleLogout() {
-      // Clear session data
+      // Clear all session data
       localStorage.removeItem('session_id');
       localStorage.removeItem('username');
       localStorage.removeItem('role');
+      localStorage.removeItem('full_name');
       
       // Emit logout event
       this.$emit('logout');

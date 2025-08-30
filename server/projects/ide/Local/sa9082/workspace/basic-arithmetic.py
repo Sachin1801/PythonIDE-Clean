@@ -8,5 +8,8 @@ print("Aman")
 age = 20*20
 print(age)
 
-name = "Barkha"
+name = "Rakesh"
 print(name)
+
+for i in range(6):
+     print(i)

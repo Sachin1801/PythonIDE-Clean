@@ -633,24 +633,43 @@ print("="*50)
         
         if os.path.exists(file_path) and os.path.isfile(file_path) and file_path.endswith('.py'):
             if use_hybrid:
-                # Terminate existing REPL for this file to ensure fresh execution with updated code
-                try:
-                    from .repl_registry import repl_registry
-                    # Normalize path to match the format used in save handler
-                    normalized_path = os.path.normpath(file_path)
-                    terminated = repl_registry.terminate_repl(username, normalized_path)
-                    if terminated:
-                        print(f"[BACKEND-DEBUG] Terminated existing REPL for {normalized_path} before new execution")
-                        # Small delay to ensure process cleanup completes
-                        import time
-                        time.sleep(0.1)
-                except Exception as e:
-                    print(f"[BACKEND-DEBUG] Failed to terminate REPL: {e}")
-                    pass  # Continue even if termination fails
+                # Use execution lock manager to prevent race conditions
+                from .execution_lock_manager import execution_lock_manager
                 
-                # Always create a new HybridREPLThread (threads cannot be reused)
-                print(f"[BACKEND-DEBUG] Using HybridREPLThread for Python execution with REPL")
-                thread = HybridREPLThread(cmd_id, client, asyncio.get_event_loop(), script_path=file_path)
+                # Try to acquire execution lock for this user+file
+                lock_acquired = execution_lock_manager.acquire_execution_lock(username, file_path, cmd_id, timeout=2.0)
+                if not lock_acquired:
+                    print(f"[BACKEND-DEBUG] Could not acquire execution lock for user {username}, file {file_path}, cmd_id: {cmd_id}")
+                    await response(client, cmd_id, -1, 'You already have this file running. Please wait for it to complete.')
+                    return
+                
+                try:
+                    # First stop any existing subprocess for this cmd_id to prevent duplicates
+                    print(f"[BACKEND-DEBUG] Stopping existing subprocess for cmd_id: {cmd_id}")
+                    client.handler_info.stop_subprogram(cmd_id)
+                    
+                    # Terminate existing REPL for this file to ensure fresh execution with updated code
+                    try:
+                        from .repl_registry import repl_registry
+                        # Normalize path to match the format used in save handler
+                        normalized_path = os.path.normpath(file_path)
+                        terminated = repl_registry.terminate_repl(username, normalized_path)
+                        if terminated:
+                            print(f"[BACKEND-DEBUG] Terminated existing REPL for {normalized_path} before new execution")
+                            # Brief delay to ensure complete process cleanup
+                            import time
+                            time.sleep(0.1)
+                    except Exception as e:
+                        print(f"[BACKEND-DEBUG] Failed to terminate REPL: {e}")
+                        pass  # Continue even if termination fails
+                    
+                    # Always create a new HybridREPLThread (threads cannot be reused)
+                    print(f"[BACKEND-DEBUG] Using HybridREPLThread for Python execution with REPL")
+                    thread = HybridREPLThread(cmd_id, client, asyncio.get_event_loop(), script_path=file_path, lock_manager=execution_lock_manager, username=username)
+                except Exception as e:
+                    # If anything fails, release the lock
+                    execution_lock_manager.release_execution_lock(username, file_path, cmd_id)
+                    raise e
             else:
                 # Use the working implementation with byte-by-byte reading
                 cmd = [Config.PYTHON, '-u', file_path]
@@ -658,8 +677,10 @@ print("="*50)
                 thread = WorkingSimpleThread(cmd, cmd_id, client, asyncio.get_event_loop())
             
             print(f"[BACKEND-DEBUG] Thread created for cmd_id: {cmd_id}")
+            # Ensure clean state before setting new subprogram
             client.handler_info.set_subprogram(cmd_id, thread)
             await response(client, cmd_id, 0, None)
+            print(f"[BACKEND-DEBUG] Starting new subprocess for cmd_id: {cmd_id}")
             client.handler_info.start_subprogram(cmd_id)
         else:
             await response(client, cmd_id, 1111, 'File can not run')

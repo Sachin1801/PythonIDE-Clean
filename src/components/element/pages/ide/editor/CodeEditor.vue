@@ -351,19 +351,28 @@ export default {
         clearTimeout(this.writeTimeout);
       }
       
-      this.writeTimeout = setTimeout(() => {
-        // Write file without autocomplete
-        this.$store.dispatch(`ide/${types.IDE_WRITE_FILE}`, {
-          filePath: this.codeItem.path,
-          fileData: value,
-          complete: false, // Autocomplete disabled
-          line: 0,
-          column: 0,
-          callback: (dict) => {
-            // No autocomplete callback needed
-          }
-        });
-      }, 500); // Debounce for 500ms
+      // Only auto-save on character change if auto-save is disabled in settings
+      // When auto-save is enabled, the time-based system handles saving
+      const autoSaveEnabled = this.$store.state.ide.ideInfo?.autoSave || false;
+      
+      if (!autoSaveEnabled) {
+        this.writeTimeout = setTimeout(() => {
+          // Write file without autocomplete (character-based save when auto-save is off)
+          console.log('[CHARACTER-SAVE] Saving due to character change (auto-save disabled)');
+          this.$store.dispatch(`ide/${types.IDE_WRITE_FILE}`, {
+            filePath: this.codeItem.path,
+            fileData: value,
+            complete: false, // Autocomplete disabled
+            line: 0,
+            column: 0,
+            callback: (dict) => {
+              // No autocomplete callback needed
+            }
+          });
+        }, 500); // Debounce for 500ms
+      } else {
+        console.log('[CHARACTER-SAVE] Skipping character-based save (auto-save enabled)');
+      }
     },
     anywordHint(editor, options) {
       var WORD = /[\w$]+/, RANGE = 500;

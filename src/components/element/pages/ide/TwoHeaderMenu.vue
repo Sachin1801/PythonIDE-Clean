@@ -641,7 +641,10 @@ export default {
     saveFile() {
       this.closeDropdowns();
       if (this.ideInfo.codeSelected) {
-        this.$store.dispatch('ide/saveFile', this.ideInfo.codeSelected);
+        this.$store.dispatch('ide/saveFile', { 
+          codeItem: this.ideInfo.codeSelected, 
+          isAutoSave: false 
+        });
         ElMessage.success('File saved');
       }
     },

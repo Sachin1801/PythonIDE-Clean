@@ -161,6 +161,32 @@ class UserManager:
             print(f"Logout error: {e}")
             return False
     
+    def renew_session(self, token):
+        """Extend session expiration by 24 hours (sliding window)"""
+        try:
+            # First validate the session is still active
+            session = self.validate_session(token)
+            if not session:
+                return {'success': False, 'error': 'Invalid session'}
+            
+            # Extend expiration by 24 hours from now
+            new_expires_at = datetime.now() + timedelta(hours=24)
+            
+            query = "UPDATE sessions SET expires_at = %s WHERE token = %s AND is_active = true" if self.db.is_postgres else \
+                    "UPDATE sessions SET expires_at = ? WHERE token = ? AND is_active = 1"
+            
+            self.db.execute_query(query, (new_expires_at, token))
+            
+            return {
+                'success': True,
+                'expires_at': new_expires_at.isoformat(),
+                'message': 'Session renewed for 24 hours'
+            }
+            
+        except Exception as e:
+            print(f"Session renewal error: {e}")
+            return {'success': False, 'error': 'Failed to renew session'}
+    
     def change_password(self, username, old_password, new_password):
         """Change user password"""
         try:

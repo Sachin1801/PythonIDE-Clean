@@ -44,6 +44,7 @@
       @update-word-wrap="updateWordWrap"
       @update-auto-save="updateAutoSave"
       @update-auto-save-interval="updateAutoSaveInterval"
+      @update-auto-save-notifications="updateAutoSaveNotifications"
     />
     
     <!-- Keyboard Shortcuts Modal -->
@@ -406,6 +407,7 @@ import DialogUpload from './pages/ide/dialog/DialogUpload';
 import DialogNewFile from './pages/ide/dialog/DialogNewFile';
 import DialogNewFolder from './pages/ide/dialog/DialogNewFolder';
 import DialogFileBrowser from './pages/ide/dialog/DialogFileBrowser';
+import sessionManager from '../../utils/sessionManager';
 import CsvViewer from './pages/ide/CsvViewer';
 import MediaViewer from './pages/ide/editor/MediaViewer';
 import SettingsModal from './pages/ide/SettingsModal';
@@ -567,6 +569,9 @@ export default {
     this.throttledHandleResizeLeft = this.throttle(this.handleResizeLeft, 16); // ~60fps
     this.throttledHandleResizeRight = this.throttle(this.handleResizeRight, 16);
     this.throttledHandleResizeConsole = this.throttle(this.handleResizeConsole, 16);
+    
+    // Initialize auto-save settings from localStorage
+    this.initializeAutoSave();
 
     // Check if user is already logged in
     const sessionId = localStorage.getItem('session_id');
@@ -576,6 +581,10 @@ export default {
       console.log('🔑 [VmIde] Found existing session for:', username);
       // currentUser is now a computed property based on localStorage
       // so no need to set it here
+      
+      // Initialize session manager for auto-renewal
+      console.log('🔄 [VmIde] Starting session manager for auto-renewal...');
+      sessionManager.startTracking();
       
       // Initialize WebSocket only if logged in
       try {
@@ -590,9 +599,10 @@ export default {
         console.error('❌ [VmIde] Error initializing WebSocket:', error);
       }
     } else {
-      console.log('🔒 [VmIde] No session found, user needs to login');
+      console.log('🔒 [VmIde] No session found, auto-opening login modal...');
+      // Auto-open login modal when no user is logged in
+      this.showLoginModal = true;
       // Don't initialize WebSocket until after login
-      // User will click Sign In button to show login modal
       return;
     }
 
@@ -979,16 +989,51 @@ export default {
     },
     updateAutoSaveInterval(value) {
       this.$store.commit('ide/setAutoSaveInterval', value);
-      if (this.$store.state.ide.autoSave) {
+      if (this.$store.state.ide.ideInfo.autoSave) {
         this.stopAutoSave();
         this.startAutoSave();
       }
+    },
+    updateAutoSaveNotifications(value) {
+      this.$store.commit('ide/setAutoSaveNotifications', value);
+    },
+    initializeAutoSave() {
+      // Load auto-save settings from localStorage and initialize the store
+      const savedAutoSave = localStorage.getItem('autoSave');
+      const savedAutoSaveInterval = localStorage.getItem('autoSaveInterval');
+      const savedAutoSaveNotifications = localStorage.getItem('autoSaveNotifications');
+      
+      // Set store values
+      if (savedAutoSave !== null) {
+        const autoSaveEnabled = savedAutoSave === 'true';
+        this.$store.commit('ide/setAutoSave', autoSaveEnabled);
+        
+        if (autoSaveEnabled) {
+          console.log('[AUTO-SAVE] Auto-save is enabled in settings, starting timer');
+          this.startAutoSave();
+        }
+      }
+      
+      if (savedAutoSaveInterval) {
+        this.$store.commit('ide/setAutoSaveInterval', parseInt(savedAutoSaveInterval));
+      }
+      
+      if (savedAutoSaveNotifications !== null) {
+        this.$store.commit('ide/setAutoSaveNotifications', savedAutoSaveNotifications === 'true');
+      }
+      
+      console.log('[AUTO-SAVE] Initialized auto-save settings:', {
+        enabled: this.$store.state.ide.ideInfo.autoSave,
+        interval: this.$store.state.ide.ideInfo.autoSaveInterval,
+        notifications: this.$store.state.ide.ideInfo.autoSaveNotifications
+      });
     },
     startAutoSave() {
       if (this.autoSaveTimer) {
         clearInterval(this.autoSaveTimer);
       }
-      const interval = this.$store.state.ide.autoSaveInterval || 60;
+      const interval = this.$store.state.ide.ideInfo.autoSaveInterval || 60;
+      console.log(`[AUTO-SAVE] Starting auto-save timer with ${interval}s interval`);
       this.autoSaveTimer = setInterval(() => {
         this.saveAllFiles();
       }, interval * 1000);
@@ -997,14 +1042,44 @@ export default {
       if (this.autoSaveTimer) {
         clearInterval(this.autoSaveTimer);
         this.autoSaveTimer = null;
+        console.log(`[AUTO-SAVE] Auto-save timer stopped`);
       }
     },
     saveAllFiles() {
-      // Auto-save all open files
-      this.ideInfo.codeItems.forEach(item => {
-        if (item.changed) {
-          this.saveFile(item);
-        }
+      // Auto-save all open files that have been modified
+      const filesToSave = this.ideInfo.codeItems.filter(item => item.content);
+      
+      if (filesToSave.length === 0) {
+        console.log(`[AUTO-SAVE] No files to auto-save`);
+        return;
+      }
+
+      console.log(`[AUTO-SAVE] Auto-saving ${filesToSave.length} files`);
+      let savedCount = 0;
+      
+      filesToSave.forEach(item => {
+        // Emit activity for session renewal
+        sessionManager.constructor.emitIDEActivity('file-save', { filename: item.fileName });
+        
+        this.$store.dispatch('ide/saveFile', { 
+          codeItem: item, 
+          isAutoSave: true 
+        }).then(() => {
+          savedCount++;
+          if (savedCount === filesToSave.length) {
+            // All files saved, show notification if enabled
+            if (this.$store.state.ide.ideInfo.autoSaveNotifications) {
+              ElMessage({
+                message: `Auto-saved ${savedCount} file${savedCount > 1 ? 's' : ''}`,
+                type: 'info',
+                duration: 2000,
+                showClose: false
+              });
+            }
+          }
+        }).catch(error => {
+          console.error(`[AUTO-SAVE] Failed to auto-save ${item.path}:`, error);
+        });
       });
     },
     toggleConsoleExpand() {
@@ -2447,6 +2522,10 @@ export default {
       
       // Handle successful login
       if (userData) {
+        // Start session manager immediately after login
+        console.log('🔄 [VmIde] Starting session manager after login...');
+        sessionManager.startTracking();
+        
         // currentUser is now a computed property based on localStorage
         // so no need to set it here
         
@@ -3777,6 +3856,9 @@ export default {
         this.saveFileConsoleState(previousFile.path);
       }
       
+      // Emit activity for session renewal when opening/switching files
+      sessionManager.constructor.emitIDEActivity('file-open', { filename: item.fileName });
+      
       // Update store first to ensure tab switches properly
       this.$store.commit('ide/setPathSelected', item.path);
       this.$store.commit('ide/setCodeSelected', item);
@@ -3959,6 +4041,9 @@ export default {
       this.$forceUpdate();
     },
     runPathSelected() {
+      // Emit activity for session renewal
+      sessionManager.constructor.emitIDEActivity('code-run');
+      
       // Check if there's a file selected
       const currentFilePath = this.ideInfo.currProj.pathSelected;
       

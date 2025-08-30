@@ -240,3 +240,52 @@ class ChangePasswordHandler(tornado.web.RequestHandler):
                 'success': False,
                 'error': str(e)
             }))
+
+
+class RenewSessionHandler(tornado.web.RequestHandler):
+    """Renew/extend session expiration (sliding window)"""
+    
+    def initialize(self):
+        self.user_manager = UserManager()
+    
+    def set_default_headers(self):
+        """Set CORS headers"""
+        self.set_header("Access-Control-Allow-Origin", "*")
+        self.set_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+        self.set_header("Access-Control-Allow-Headers", "Content-Type")
+    
+    def options(self):
+        """Handle preflight requests"""
+        self.set_status(204)
+        self.finish()
+    
+    def post(self):
+        """Extend session by 24 hours from now"""
+        try:
+            data = json.loads(self.request.body)
+            session_id = data.get('session_id')  # This is actually the token
+            
+            if not session_id:
+                self.set_status(400)
+                self.write(json.dumps({
+                    'success': False,
+                    'error': 'Session ID required'
+                }))
+                return
+            
+            # Renew the session
+            result = self.user_manager.renew_session(session_id)
+            
+            if result['success']:
+                self.set_status(200)
+            else:
+                self.set_status(400)
+            
+            self.write(json.dumps(result))
+                
+        except Exception as e:
+            self.set_status(500)
+            self.write(json.dumps({
+                'success': False,
+                'error': str(e)
+            }))

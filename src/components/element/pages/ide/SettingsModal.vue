@@ -57,6 +57,15 @@
           </select>
         </div>
         
+        <div class="setting-item" v-if="localSettings.autoSave">
+          <label>Auto-save Notifications</label>
+          <div class="switch-container" @click="toggleAutoSaveNotifications">
+            <div class="switch" :class="{ 'switch-on': localSettings.autoSaveNotifications }">
+              <div class="switch-handle"></div>
+            </div>
+          </div>
+        </div>
+        
         <div class="settings-footer">
           <button class="close-button" @click="handleClose">Close</button>
         </div>
@@ -86,7 +95,8 @@ export default {
         fontSize: '14',
         showLineNumbers: true,
         autoSave: false,
-        autoSaveInterval: '60'
+        autoSaveInterval: '60',
+        autoSaveNotifications: true
       }
     }
   },
@@ -135,6 +145,12 @@ export default {
         this.localSettings.autoSaveInterval = savedAutoSaveInterval
       }
       
+      // Load auto-save notifications preference
+      const savedAutoSaveNotifications = localStorage.getItem('autoSaveNotifications')
+      if (savedAutoSaveNotifications !== null) {
+        this.localSettings.autoSaveNotifications = savedAutoSaveNotifications === 'true'
+      }
+      
       // Apply the saved theme
       document.documentElement.setAttribute('data-theme', this.localSettings.theme)
     },
@@ -158,6 +174,10 @@ export default {
       localStorage.setItem('autoSaveInterval', value)
       this.$emit('update-auto-save-interval', value)
     },
+    updateAutoSaveNotifications(value) {
+      localStorage.setItem('autoSaveNotifications', value)
+      this.$emit('update-auto-save-notifications', value)
+    },
     toggleLineNumbers() {
       this.localSettings.showLineNumbers = !this.localSettings.showLineNumbers;
       this.updateLineNumbers(this.localSettings.showLineNumbers);
@@ -165,6 +185,10 @@ export default {
     toggleAutoSave() {
       this.localSettings.autoSave = !this.localSettings.autoSave;
       this.updateAutoSave(this.localSettings.autoSave);
+    },
+    toggleAutoSaveNotifications() {
+      this.localSettings.autoSaveNotifications = !this.localSettings.autoSaveNotifications;
+      this.updateAutoSaveNotifications(this.localSettings.autoSaveNotifications);
     },
     handleClose() {
       this.visible = false

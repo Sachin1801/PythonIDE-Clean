@@ -270,6 +270,11 @@
           <Square :size="20" />
         </div>
 
+        <!-- Save Button -->
+        <div class="icon-btn save-btn" @click="saveFile()" title="Save (Ctrl+S)">
+          <Save :size="20" />
+        </div>
+
         <!-- Delete Button -->
         <div 
           class="icon-btn delete-btn" 
@@ -304,7 +309,7 @@
 </template>
 
 <script>
-import { Upload, Play, Square, Settings, Share2, Trash2, UserCircle } from 'lucide-vue-next';
+import { Upload, Play, Square, Settings, Share2, Trash2, UserCircle, Save } from 'lucide-vue-next';
 import { ElMessageBox, ElMessage } from 'element-plus';
 import UserProfileModal from '../../UserProfileModal.vue';
 
@@ -386,6 +391,7 @@ export default {
     Share2,
     Trash2,
     UserCircle,
+    Save,
     UserProfileModal,
   },
   mounted() {
@@ -1122,9 +1128,9 @@ export default {
 
 /* Icon Button Styles */
 .icon-btn {
-  padding: 6px;
-  width: 32px;
-  height: 32px;
+  padding: 5px;
+  width: 28px;
+  height: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1175,6 +1181,15 @@ export default {
 
 .stop-btn:hover {
   background: var(--danger-hover, #c82333);
+}
+
+.save-btn {
+  background: var(--info-color, #17a2b8);
+  color: white;
+}
+
+.save-btn:hover {
+  background: var(--info-hover, #138496);
 }
 
 /* Theme-specific adjustments */
@@ -1231,5 +1246,16 @@ export default {
 [data-theme="light"] .stop-btn:hover {
   background: #c82333;
   box-shadow: 0 2px 4px rgba(220, 53, 69, 0.2);
+}
+
+[data-theme="light"] .save-btn {
+  background: #17a2b8;
+  color: white;
+  border: 1px solid #138496;
+}
+
+[data-theme="light"] .save-btn:hover {
+  background: #138496;
+  box-shadow: 0 2px 4px rgba(23, 162, 184, 0.2);
 }
 </style>

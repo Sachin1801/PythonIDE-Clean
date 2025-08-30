@@ -123,6 +123,16 @@ export default {
     ideInfo() {
       return this.$store.state.ide.ideInfo;
     },
+    currentUser() {
+      const sessionId = localStorage.getItem('session_id');
+      const username = localStorage.getItem('username');
+      const role = localStorage.getItem('role');
+      const fullName = localStorage.getItem('full_name');
+      if (sessionId && username) {
+        return { session_id: sessionId, username: username, role: role, full_name: fullName };
+      }
+      return null;
+    },
     fileExtension() {
       if (!this.fileName) return '';
       const lastDot = this.fileName.lastIndexOf('.');
@@ -146,6 +156,17 @@ export default {
     });
   },
   methods: {
+    isDirectoryVisibleToStudent(path) {
+      if (!this.currentUser || this.currentUser.role !== 'student') {
+        return true; // Show all directories to professors and when not logged in
+      }
+      
+      const userPath = `Local/${this.currentUser.username}`;
+      
+      // Show only the student's own Local/{username}/ directory and its subdirectories
+      return path === '/' || path.startsWith(userPath);
+    },
+    
     loadDirectoryStructure() {
       // Get directory structure from all projects (multi-root mode)
       if (this.ideInfo.multiRootData && this.ideInfo.multiRootData.children.length > 0) {
@@ -176,6 +197,16 @@ export default {
         // Default to current project root
         this.currentProject = this.ideInfo.currProj?.data?.name || this.ideInfo.currProj?.config?.name;
       }
+      
+      // For students, default to their Local directory if no specific path is set
+      if (this.currentUser && this.currentUser.role === 'student' && this.currentPath === '/') {
+        const userPath = `Local/${this.currentUser.username}`;
+        // Check if the user's directory exists in the directories list
+        const userDir = this.directories.find(dir => dir.path === userPath);
+        if (userDir) {
+          this.currentPath = userPath;
+        }
+      }
     },
     buildDirectoryTree(node, level = 0, projectName = null) {
       let dirs = [];
@@ -197,18 +228,21 @@ export default {
       if (node.children) {
         node.children.forEach(child => {
           if (child.type === 'dir' || child.type === 'folder') {
-            dirs.push({
-              name: child.label,
-              displayName: child.label,
-              path: child.path,
-              level: level + 1,
-              isRoot: false,
-              projectName: projectName || child.projectName,
-              fullPath: projectName ? `${projectName}${child.path}` : child.path
-            });
-            // Recursively add subdirectories
-            if (child.children) {
-              dirs = dirs.concat(this.buildDirectoryTree(child, level + 1, projectName));
+            // Check if this directory should be visible to the current user
+            if (this.isDirectoryVisibleToStudent(child.path)) {
+              dirs.push({
+                name: child.label,
+                displayName: child.label,
+                path: child.path,
+                level: level + 1,
+                isRoot: false,
+                projectName: projectName || child.projectName,
+                fullPath: projectName ? `${projectName}${child.path}` : child.path
+              });
+              // Recursively add subdirectories
+              if (child.children) {
+                dirs = dirs.concat(this.buildDirectoryTree(child, level + 1, projectName));
+              }
             }
           }
         });
@@ -769,5 +803,116 @@ export default {
 .directory-tree::-webkit-scrollbar-thumb:hover,
 .dialog-body::-webkit-scrollbar-thumb:hover {
   background: var(--scrollbar-thumb-hover, #5a5a5a);
+}
+
+/* Light Theme Support */
+[data-theme="light"] .dialog-overlay {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="light"] .dialog-content {
+  background: #ffffff;
+  border-color: #d0d0d0;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+}
+
+[data-theme="light"] .dialog-header {
+  background: #ffffff;
+  border-bottom-color: #e0e0e0;
+}
+
+[data-theme="light"] .dialog-header h3 {
+  color: #333333;
+}
+
+[data-theme="light"] .close-btn {
+  color: rgba(0, 0, 0, 0.6);
+}
+
+[data-theme="light"] .close-btn:hover {
+  color: rgba(0, 0, 0, 0.9);
+  background: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .current-path {
+  background: #f8f8f8;
+  border-color: #d0d0d0;
+  color: #333333;
+}
+
+[data-theme="light"] .current-path:hover {
+  background: #f0f0f0;
+  border-color: #1890ff;
+}
+
+[data-theme="light"] .directory-dropdown {
+  background: #ffffff;
+  border-color: #d0d0d0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+[data-theme="light"] .directory-item {
+  color: #333333;
+}
+
+[data-theme="light"] .directory-item:hover {
+  background: #fafafa;
+}
+
+[data-theme="light"] .directory-item.selected {
+  background: #f0f8ff;
+}
+
+[data-theme="light"] .filename-input {
+  background: #ffffff;
+  border-color: #d0d0d0;
+  color: #333333;
+}
+
+[data-theme="light"] .filename-input:focus {
+  border-color: #1890ff;
+  background: #ffffff;
+}
+
+[data-theme="light"] .filename-input::placeholder {
+  color: #999999;
+}
+
+[data-theme="light"] .file-preview {
+  background: #f8f8f8;
+  border-color: #d0d0d0;
+}
+
+[data-theme="light"] .btn-cancel {
+  background: #f8f8f8;
+  color: #333333;
+  border-color: #d0d0d0;
+}
+
+[data-theme="light"] .btn-cancel:hover {
+  background: #e8e8e8;
+}
+
+[data-theme="light"] .btn-create {
+  background: #1890ff;
+}
+
+[data-theme="light"] .btn-create:hover:not(:disabled) {
+  background: #096dd9;
+}
+
+[data-theme="light"] .directory-tree::-webkit-scrollbar-track,
+[data-theme="light"] .dialog-body::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+[data-theme="light"] .directory-tree::-webkit-scrollbar-thumb,
+[data-theme="light"] .dialog-body::-webkit-scrollbar-thumb {
+  background: #c0c0c0;
+}
+
+[data-theme="light"] .directory-tree::-webkit-scrollbar-thumb:hover,
+[data-theme="light"] .dialog-body::-webkit-scrollbar-thumb:hover {
+  background: #a0a0a0;
 }
 </style>

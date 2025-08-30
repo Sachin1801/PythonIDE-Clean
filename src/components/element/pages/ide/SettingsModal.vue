@@ -1,70 +1,78 @@
 <template>
-  <el-dialog
-    v-model="visible"
-    title="Settings"
-    width="400px"
-    :before-close="handleClose"
-    class="settings-dialog"
-  >
-    <div class="settings-content">
-      <div class="setting-item">
-        <label>Theme</label>
-        <el-select v-model="localSettings.theme" @change="updateTheme">
-          <el-option label="Light" value="light" />
-          <el-option label="Dark" value="dark" />
-          <el-option label="High Contrast" value="contrast" />
-        </el-select>
+  <div v-if="visible" class="settings-modal-overlay" @click.self="handleClose">
+    <div class="settings-modal">
+      <div class="settings-header">
+        <h3>Settings</h3>
+        <div class="close-btn" @click="handleClose">
+          <X :size="20" />
+        </div>
       </div>
       
-      <div class="setting-item">
-        <label>Font Size</label>
-        <el-select v-model="localSettings.fontSize" @change="updateFontSize">
-          <el-option label="12px" value="12" />
-          <el-option label="14px" value="14" />
-          <el-option label="16px" value="16" />
-          <el-option label="18px" value="18" />
-          <el-option label="26px" value="26" />
-        </el-select>
-      </div>
-      
-      <div class="setting-item">
-        <label>Show Line Numbers</label>
-        <el-switch 
-          v-model="localSettings.showLineNumbers" 
-          @change="updateLineNumbers"
-        />
-      </div>
-      
-      <div class="setting-item">
-        <label>Auto-save</label>
-        <el-switch 
-          v-model="localSettings.autoSave" 
-          @change="updateAutoSave"
-        />
-      </div>
-      
-      <div class="setting-item" v-if="localSettings.autoSave">
-        <label>Auto-save Interval</label>
-        <el-select v-model="localSettings.autoSaveInterval" @change="updateAutoSaveInterval">
-          <el-option label="30 seconds" value="30" />
-          <el-option label="1 minute" value="60" />
-          <el-option label="2 minutes" value="120" />
-          <el-option label="5 minutes" value="300" />
-        </el-select>
+      <div class="settings-body">
+        <div class="setting-item">
+          <label>Theme</label>
+          <select v-model="localSettings.theme" @change="updateTheme(localSettings.theme)" class="setting-select">
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+            <option value="contrast">High Contrast</option>
+          </select>
+        </div>
+        
+        <div class="setting-item">
+          <label>Font Size</label>
+          <select v-model="localSettings.fontSize" @change="updateFontSize" class="setting-select">
+            <option value="12">12px</option>
+            <option value="14">14px</option>
+            <option value="16">16px</option>
+            <option value="18">18px</option>
+            <option value="26">26px</option>
+          </select>
+        </div>
+        
+        <div class="setting-item">
+          <label>Show Line Numbers</label>
+          <div class="switch-container" @click="toggleLineNumbers">
+            <div class="switch" :class="{ 'switch-on': localSettings.showLineNumbers }">
+              <div class="switch-handle"></div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="setting-item">
+          <label>Auto-save</label>
+          <div class="switch-container" @click="toggleAutoSave">
+            <div class="switch" :class="{ 'switch-on': localSettings.autoSave }">
+              <div class="switch-handle"></div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="setting-item" v-if="localSettings.autoSave">
+          <label>Auto-save Interval</label>
+          <select v-model="localSettings.autoSaveInterval" @change="updateAutoSaveInterval" class="setting-select">
+            <option value="30">30 seconds</option>
+            <option value="60">1 minute</option>
+            <option value="120">2 minutes</option>
+            <option value="300">5 minutes</option>
+          </select>
+        </div>
+        
+        <div class="settings-footer">
+          <button class="close-button" @click="handleClose">Close</button>
+        </div>
       </div>
     </div>
-
-    <template #footer>
-      <span class="dialog-footer">
-        <el-button type="primary" @click="handleClose">Close</el-button>
-      </span>
-    </template>
-  </el-dialog>
+  </div>
 </template>
 
 <script>
+import { X } from 'lucide-vue-next';
+
 export default {
   name: 'SettingsModal',
+  components: {
+    X
+  },
   props: {
     modelValue: {
       type: Boolean,
@@ -150,6 +158,14 @@ export default {
       localStorage.setItem('autoSaveInterval', value)
       this.$emit('update-auto-save-interval', value)
     },
+    toggleLineNumbers() {
+      this.localSettings.showLineNumbers = !this.localSettings.showLineNumbers;
+      this.updateLineNumbers(this.localSettings.showLineNumbers);
+    },
+    toggleAutoSave() {
+      this.localSettings.autoSave = !this.localSettings.autoSave;
+      this.updateAutoSave(this.localSettings.autoSave);
+    },
     handleClose() {
       this.visible = false
     }
@@ -158,221 +174,310 @@ export default {
 </script>
 
 <style scoped>
-/* CSS Variables for theme support */
-.settings-dialog {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-  --settings-bg: #ffffff;
-  --settings-text: #303133;
-  --settings-text-secondary: #606266;
-  --settings-border: #e4e7ed;
-  --settings-bg-secondary: #f5f7fa;
-  --settings-input-bg: #ffffff;
-  --settings-primary: #409eff;
-  --settings-hover-bg: rgba(0, 0, 0, 0.05);
+.settings-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 9998;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-/* Dark theme */
-body[data-theme="dark"] .settings-dialog,
-body.dark-mode .settings-dialog {
-  --settings-bg: #1e1e1e;
-  --settings-text: #e4e4e4;
-  --settings-text-secondary: #b0b0b0;
-  --settings-border: #3a3a3a;
-  --settings-bg-secondary: #2d2d2d;
-  --settings-input-bg: #2a2a2a;
-  --settings-primary: #5ca7ff;
-  --settings-hover-bg: rgba(255, 255, 255, 0.1);
+.settings-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--bg-primary, #1e1e1e);
+  border: 1px solid var(--border-color, #464647);
+  border-radius: 8px;
+  width: 450px;
+  max-width: 90vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  z-index: 9999;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 }
 
-/* High contrast theme */
-body[data-theme="high-contrast"] .settings-dialog,
-body[data-theme="contrast"] .settings-dialog,
-body.high-contrast-mode .settings-dialog {
-  --settings-bg: #000000;
-  --settings-text: #ffffff;
-  --settings-text-secondary: #e0e0e0;
-  --settings-border: #ffffff;
-  --settings-bg-secondary: #1a1a1a;
-  --settings-input-bg: #0a0a0a;
-  --settings-primary: #00aaff;
-  --settings-hover-bg: rgba(255, 255, 255, 0.2);
+.settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-color, #464647);
 }
 
-.settings-content {
-  padding: 10px 0;
+.settings-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--text-primary, #cccccc);
+}
+
+.close-btn {
+  cursor: pointer;
+  color: var(--text-secondary, #969696);
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s;
+  background: transparent;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.close-btn:hover {
+  background: var(--hover-bg, rgba(255, 255, 255, 0.1));
+  color: var(--text-primary, #cccccc);
+}
+
+.settings-body {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+  max-height: 60vh;
 }
 
 .setting-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px;
-  margin: 8px 0;
-  background: var(--settings-bg-secondary);
-  border-radius: 6px;
-  border: 1px solid var(--settings-border);
-  transition: background 0.3s;
+  padding: 15px 0;
+  border-bottom: 1px solid var(--border-color, #464647);
 }
 
-.setting-item:hover {
-  background: var(--settings-hover-bg);
+.setting-item:last-child {
+  border-bottom: none;
 }
 
 .setting-item label {
-  flex: 1;
   font-size: 14px;
-  color: var(--settings-text);
   font-weight: 500;
+  color: var(--text-primary, #cccccc);
+  flex: 1;
 }
 
-.setting-item .el-select {
-  width: 200px;
+.setting-select {
+  width: 150px;
+  padding: 8px 12px;
+  background: var(--input-bg, #2d2d30);
+  border: 1px solid var(--border-color, #464647);
+  border-radius: 4px;
+  color: var(--text-primary, #cccccc);
+  font-size: 14px;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  transition: all 0.2s;
 }
 
-.dialog-footer {
+.setting-select:focus {
+  outline: none;
+  border-color: var(--accent-color, #007acc);
+  background: var(--input-focus-bg, #383838);
+}
+
+.switch-container {
+  cursor: pointer;
+}
+
+.switch {
+  width: 44px;
+  height: 24px;
+  background: var(--switch-bg-off, #404040);
+  border: 1px solid var(--border-color, #464647);
+  border-radius: 12px;
+  position: relative;
+  transition: all 0.3s;
+}
+
+.switch-on {
+  background: var(--accent-color, #007acc);
+  border-color: var(--accent-color, #007acc);
+}
+
+.switch-handle {
+  width: 18px;
+  height: 18px;
+  background: var(--switch-handle, #ffffff);
+  border-radius: 50%;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  transition: all 0.3s;
+}
+
+.switch-on .switch-handle {
+  left: 22px;
+}
+
+.settings-footer {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-color, #464647);
   display: flex;
   justify-content: center;
+}
+
+.close-button {
   width: 100%;
+  padding: 10px 20px;
+  background: var(--accent-color, #007acc);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-sizing: border-box;
 }
 
-/* Dialog styling */
-:deep(.el-dialog) {
-  background: var(--settings-bg) !important;
-  color: var(--settings-text) !important;
+.close-button:hover {
+  background: var(--accent-hover, #005a9e);
 }
 
-/* Force Element Plus dialog background for different themes */
-body[data-theme="dark"] .settings-dialog :deep(.el-dialog),
-body.dark-mode .settings-dialog :deep(.el-dialog) {
-  background-color: #1e1e1e !important;
+/* Light Theme Support */
+[data-theme="light"] .settings-modal {
+  background: #ffffff;
+  border-color: #d0d0d0;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
 }
 
-body[data-theme="high-contrast"] .settings-dialog :deep(.el-dialog),
-body[data-theme="contrast"] .settings-dialog :deep(.el-dialog),
-body.high-contrast-mode .settings-dialog :deep(.el-dialog) {
-  background-color: #000000 !important;
-  border: 2px solid #ffffff !important;
+[data-theme="light"] .settings-header {
+  border-bottom-color: #e0e0e0;
 }
 
-:deep(.el-dialog__header) {
-  padding: 20px;
-  border-bottom: 1px solid var(--settings-border);
-  background: var(--settings-bg);
+[data-theme="light"] .settings-header h3 {
+  color: #333333;
 }
 
-:deep(.el-dialog__body) {
-  padding: 20px;
-  background: var(--settings-bg);
+[data-theme="light"] .close-btn {
+  color: rgba(0, 0, 0, 0.6);
 }
 
-:deep(.el-dialog__footer) {
-  padding: 15px 20px;
-  border-top: 1px solid var(--settings-border);
-  background: var(--settings-bg);
+[data-theme="light"] .close-btn:hover {
+  color: rgba(0, 0, 0, 0.9);
+  background: rgba(0, 0, 0, 0.08);
 }
 
-:deep(.el-dialog__title) {
-  color: var(--settings-text) !important;
+[data-theme="light"] .setting-item {
+  border-bottom-color: #e0e0e0;
 }
 
-/* Input and select styling */
-:deep(.el-input__inner) {
-  background-color: var(--settings-input-bg) !important;
-  color: var(--settings-text) !important;
-  border-color: var(--settings-border) !important;
+[data-theme="light"] .setting-item label {
+  color: #333333;
 }
 
-:deep(.el-input__inner:focus) {
-  border-color: var(--settings-primary) !important;
+[data-theme="light"] .setting-select {
+  background: #f8f8f8;
+  border-color: #d0d0d0;
+  color: #333333;
 }
 
-:deep(.el-select-dropdown) {
-  background: var(--settings-bg) !important;
-  border-color: var(--settings-border) !important;
+[data-theme="light"] .setting-select:focus {
+  background: #ffffff;
+  border-color: #1890ff;
 }
 
-:deep(.el-select-dropdown__item) {
-  color: var(--settings-text) !important;
+[data-theme="light"] .switch {
+  background: #e0e0e0;
+  border-color: #d0d0d0;
 }
 
-:deep(.el-select-dropdown__item:hover) {
-  background: var(--settings-hover-bg) !important;
+[data-theme="light"] .switch-on {
+  background: #1890ff;
+  border-color: #1890ff;
 }
 
-:deep(.el-select-dropdown__item.selected) {
-  color: var(--settings-primary) !important;
+[data-theme="light"] .switch-handle {
+  background: #ffffff;
 }
 
-/* Switch styling - OFF state */
-:deep(.el-switch__core) {
-  background-color: #dcdfe6 !important;
-  border-color: #dcdfe6 !important;
+[data-theme="light"] .settings-footer {
+  border-top-color: #e0e0e0;
 }
 
-body[data-theme="dark"] :deep(.el-switch__core),
-body.dark-mode :deep(.el-switch__core) {
-  background-color: #4a4a4a !important;
-  border-color: #4a4a4a !important;
+[data-theme="light"] .close-button {
+  background: #1890ff;
 }
 
-body[data-theme="high-contrast"] :deep(.el-switch__core),
-body[data-theme="contrast"] :deep(.el-switch__core),
-body.high-contrast-mode :deep(.el-switch__core) {
-  background-color: #333333 !important;
-  border: 2px solid #ffffff !important;
+[data-theme="light"] .close-button:hover {
+  background: #096dd9;
 }
 
-/* Switch styling - ON state */
-:deep(.el-switch.is-checked .el-switch__core) {
-  background-color: #409eff !important;
-  border-color: #409eff !important;
+/* High Contrast Theme Support */
+[data-theme="high-contrast"] .settings-modal {
+  background: #000000;
+  border: 2px solid #ffffff;
+  box-shadow: 0 8px 32px rgba(255, 255, 255, 0.3);
 }
 
-body[data-theme="dark"] :deep(.el-switch.is-checked .el-switch__core),
-body.dark-mode :deep(.el-switch.is-checked .el-switch__core) {
-  background-color: #5ca7ff !important;
-  border-color: #5ca7ff !important;
+[data-theme="high-contrast"] .settings-header {
+  border-bottom: 2px solid #ffffff;
 }
 
-body[data-theme="high-contrast"] :deep(.el-switch.is-checked .el-switch__core),
-body[data-theme="contrast"] :deep(.el-switch.is-checked .el-switch__core),
-body.high-contrast-mode :deep(.el-switch.is-checked .el-switch__core) {
-  background-color: #00aaff !important;
-  border: 2px solid #00aaff !important;
+[data-theme="high-contrast"] .settings-header h3 {
+  color: #ffffff;
 }
 
-/* Switch action button */
-:deep(.el-switch__action) {
-  background-color: #ffffff !important;
+[data-theme="high-contrast"] .close-btn {
+  color: #ffffff;
 }
 
-body[data-theme="dark"] :deep(.el-switch__action),
-body.dark-mode :deep(.el-switch__action) {
-  background-color: #e0e0e0 !important;
+[data-theme="high-contrast"] .close-btn:hover {
+  background: #333333;
+  border: 1px solid #ffff00;
 }
 
-body[data-theme="high-contrast"] :deep(.el-switch__action),
-body[data-theme="contrast"] :deep(.el-switch__action),
-body.high-contrast-mode :deep(.el-switch__action) {
-  background-color: #ffffff !important;
+[data-theme="high-contrast"] .setting-item {
+  border-bottom: 2px solid #ffffff;
 }
 
-/* Additional high contrast styles */
-body[data-theme="high-contrast"] .settings-dialog .setting-item,
-body[data-theme="contrast"] .settings-dialog .setting-item,
-body.high-contrast-mode .settings-dialog .setting-item {
-  border-width: 2px;
+[data-theme="high-contrast"] .setting-item label {
+  color: #ffffff;
 }
 
-body[data-theme="high-contrast"] .settings-dialog :deep(.el-input__inner),
-body[data-theme="contrast"] .settings-dialog :deep(.el-input__inner),
-body.high-contrast-mode .settings-dialog :deep(.el-input__inner) {
-  border-width: 2px !important;
+[data-theme="high-contrast"] .setting-select {
+  background: #000000;
+  border: 2px solid #ffffff;
+  color: #ffffff;
 }
 
-body[data-theme="high-contrast"] .settings-dialog :deep(.el-switch__core),
-body[data-theme="contrast"] .settings-dialog :deep(.el-switch__core),
-body.high-contrast-mode .settings-dialog :deep(.el-switch__core) {
-  border: 2px solid var(--settings-border) !important;
+[data-theme="high-contrast"] .setting-select:focus {
+  border-color: #ffff00;
+}
+
+[data-theme="high-contrast"] .switch {
+  background: #333333;
+  border: 2px solid #ffffff;
+}
+
+[data-theme="high-contrast"] .switch-on {
+  background: #00bfff;
+  border-color: #00bfff;
+}
+
+[data-theme="high-contrast"] .switch-handle {
+  background: #ffffff;
+}
+
+[data-theme="high-contrast"] .settings-footer {
+  border-top: 2px solid #ffffff;
+}
+
+[data-theme="high-contrast"] .close-button {
+  background: #00bfff;
+  color: #000000;
+  border: 2px solid #ffffff;
+}
+
+[data-theme="high-contrast"] .close-button:hover {
+  background: #ffff00;
+  border-color: #ffff00;
 }
 </style>

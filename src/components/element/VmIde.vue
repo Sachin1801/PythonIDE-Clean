@@ -64,6 +64,7 @@
         <pane :size="leftSidebarSize" :min-size="leftSidebarMinSize" :max-size="leftSidebarMaxSize">
           <div id="left-sidebar" class="left-sidebar" v-show="leftSidebarVisible && windowWidth > 900">
             <ProjTree 
+              :currentUser="currentUser"
               v-on:get-item="getFile"
               @get-item-right-panel="getFileForRightPanel"
               @context-menu="showContextMenu"
@@ -5171,50 +5172,64 @@ Advanced packages (install with micropip):
 }
 
 .console-expand-arrow {
-  background: transparent;
-  border: 1px solid var(--console-header-button-border, #3c3c3c);
-  border-radius: 4px;
-  padding: 4px;
+  background: var(--console-expand-bg, rgba(0, 122, 204, 0.1));
+  border: 1.5px solid var(--console-header-button-border, #007ACC);
+  border-radius: 6px;
+  padding: 6px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--console-header-button-text, #B5B5B5);
+  color: var(--console-header-button-text, #007ACC);
   transition: all 0.2s;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
+  box-shadow: 0 1px 3px rgba(0, 122, 204, 0.2);
 }
 
 .console-expand-arrow:hover {
   background: var(--accent-color, #007ACC);
   color: white;
   border-color: var(--accent-color, #007ACC);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 122, 204, 0.4);
 }
 
 [data-theme="light"] .console-expand-arrow {
-  border: 1px solid #adb5bd;
-  color: #6c757d;
+  background: rgba(0, 102, 204, 0.08);
+  border: 1.5px solid #0066cc;
+  color: #0066cc;
+  box-shadow: 0 1px 3px rgba(0, 102, 204, 0.15);
 }
 
 [data-theme="light"] .console-expand-arrow:hover {
   background: #0066cc;
   border-color: #0066cc;
+  color: white;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 102, 204, 0.3);
 }
 
 [data-theme="dark"] .console-expand-arrow {
-  border: 1px solid #565656;
-  color: #b5b5b5;
+  background: rgba(0, 122, 204, 0.1);
+  border: 1.5px solid #007acc;
+  color: #007acc;
+  box-shadow: 0 1px 3px rgba(0, 122, 204, 0.2);
 }
 
 [data-theme="contrast"] .console-expand-arrow {
-  border: 2px solid #4a4a4a;
+  background: rgba(255, 255, 255, 0.08);
+  border: 2px solid #ffffff;
   color: #ffffff;
+  box-shadow: 0 1px 3px rgba(255, 255, 255, 0.15);
 }
 
 [data-theme="contrast"] .console-expand-arrow:hover {
   background: #ffffff;
   color: #000000;
   border-color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(255, 255, 255, 0.3);
 }
 
 .collapse-icon {
@@ -5260,53 +5275,69 @@ Advanced packages (install with micropip):
 }
 
 .console-action-btn {
-  background: transparent;
-  border: 1px solid var(--console-header-button-border, #464647);
-  color: var(--console-header-button-text, #969696);
-  padding: 4px 12px;
-  border-radius: 3px;
+  background: var(--console-action-bg, rgba(0, 122, 204, 0.15));
+  border: 1.5px solid var(--console-header-button-border, #007ACC);
+  color: var(--console-header-button-text, #007ACC);
+  padding: 6px 14px;
+  border-radius: 4px;
   cursor: pointer;
   font-size: 12px;
+  font-weight: 500;
   transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 122, 204, 0.25);
 }
 
 .console-action-btn:hover {
-  background: var(--console-header-button-hover, #3A3A3C);
+  background: var(--console-header-button-hover, #007ACC);
   border-color: var(--accent-color, #007ACC);
   color: var(--text-primary, #FFFFFF);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 122, 204, 0.4);
 }
 
 [data-theme="light"] .console-action-btn {
-  border: 1px solid #adb5bd;
-  color: #6c757d;
+  background: rgba(0, 102, 204, 0.1);
+  border: 1.5px solid #0066cc;
+  color: #0066cc;
+  box-shadow: 0 1px 3px rgba(0, 102, 204, 0.2);
 }
 
 [data-theme="light"] .console-action-btn:hover {
-  background: #e9ecef;
+  background: #0066cc;
   border-color: #0066cc;
-  color: #212529;
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 102, 204, 0.3);
 }
 
 [data-theme="dark"] .console-action-btn {
-  border: 1px solid #565656;
-  color: #969696;
+  background: rgba(0, 122, 204, 0.15);
+  border: 1.5px solid #007acc;
+  color: #007acc;
+  box-shadow: 0 1px 3px rgba(0, 122, 204, 0.25);
 }
 
 [data-theme="dark"] .console-action-btn:hover {
-  background: #3a3a3c;
+  background: #007acc;
   border-color: #007acc;
   color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 122, 204, 0.4);
 }
 
 [data-theme="contrast"] .console-action-btn {
-  border: 2px solid #4a4a4a;
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid #ffffff;
   color: #ffffff;
+  box-shadow: 0 1px 3px rgba(255, 255, 255, 0.2);
 }
 
 [data-theme="contrast"] .console-action-btn:hover {
-  background: #2a2a2a;
+  background: #ffffff;
   border-color: #ffffff;
-  color: #ffffff;
+  color: #000000;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(255, 255, 255, 0.3);
 }
 
 .console-body {

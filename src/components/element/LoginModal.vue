@@ -2,8 +2,10 @@
   <div v-if="visible" class="login-modal-overlay" @click.self="close">
     <div class="login-modal">
       <div class="login-header">
-        <h2>Sign In to Python IDE</h2>
-        <button class="close-btn" @click="close">×</button>
+        <h3>Sign In to Python IDE</h3>
+        <div class="close-btn" @click="close">
+          <X :size="20" />
+        </div>
       </div>
       
       <div class="login-body">
@@ -62,8 +64,13 @@
 </template>
 
 <script>
+import { X } from 'lucide-vue-next';
+
 export default {
   name: 'LoginModal',
+  components: {
+    X
+  },
   props: {
     visible: {
       type: Boolean,
@@ -196,57 +203,70 @@ export default {
   position: fixed;
   top: 0;
   left: 0;
-  right: 0;
-  bottom: 0;
+  width: 100%;
+  height: 100%;
   background: rgba(0, 0, 0, 0.5);
+  z-index: 9998;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 10000;
 }
 
 .login-modal {
-  background: white;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--bg-primary, #1e1e1e);
+  border: 1px solid var(--border-color, #464647);
   border-radius: 8px;
-  width: 90%;
-  max-width: 400px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  width: 450px;
+  max-width: 90vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  z-index: 9999;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 }
 
 .login-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px;
-  border-bottom: 1px solid #e5e5e5;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-color, #464647);
 }
 
-.login-header h2 {
+.login-header h3 {
   margin: 0;
-  font-size: 20px;
-  color: #333;
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--text-primary, #cccccc);
 }
 
 .close-btn {
-  background: none;
-  border: none;
-  font-size: 28px;
-  color: #999;
   cursor: pointer;
-  padding: 0;
-  width: 30px;
-  height: 30px;
+  color: var(--text-secondary, #969696);
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s;
+  background: transparent;
+  border: none;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .close-btn:hover {
-  color: #333;
+  background: var(--hover-bg, rgba(255, 255, 255, 0.1));
+  color: var(--text-primary, #cccccc);
 }
 
 .login-body {
+  flex: 1;
   padding: 20px;
+  overflow-y: auto;
+  max-height: 60vh;
 }
 
 .form-group {
@@ -255,87 +275,101 @@ export default {
 
 .form-group label {
   display: block;
-  margin-bottom: 5px;
-  font-weight: 500;
-  color: #333;
+  margin-bottom: 8px;
   font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary, #cccccc);
 }
 
 .form-group input {
   width: 100%;
-  padding: 10px;
-  border: 1px solid #ddd;
+  box-sizing: border-box; /* Fix overflow issue */
+  padding: 10px 12px;
+  background: var(--input-bg, #2d2d30);
+  border: 1px solid var(--border-color, #464647);
   border-radius: 4px;
+  color: var(--text-primary, #cccccc);
   font-size: 14px;
-  transition: border-color 0.3s;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  transition: all 0.2s;
 }
 
 .form-group input:focus {
   outline: none;
-  border-color: #4CAF50;
+  border-color: var(--accent-color, #007acc);
+  background: var(--input-focus-bg, #383838);
+}
+
+.form-group input::placeholder {
+  color: var(--text-disabled, #6b6b6b);
 }
 
 .form-group input:disabled {
-  background: #f5f5f5;
+  background: var(--input-disabled-bg, #1a1a1a);
   cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .error-message {
-  background: #ffebee;
-  color: #c62828;
-  padding: 10px;
+  background: var(--error-bg, rgba(244, 71, 71, 0.1));
+  color: var(--error-color, #f44747);
+  padding: 10px 12px;
   border-radius: 4px;
+  border: 1px solid var(--error-color, #f44747);
   margin-bottom: 15px;
   font-size: 14px;
 }
 
 .info-message {
-  background: #e3f2fd;
-  color: #1565c0;
-  padding: 10px;
+  background: var(--info-bg, rgba(0, 122, 204, 0.1));
+  color: var(--info-color, #007acc);
+  padding: 10px 12px;
   border-radius: 4px;
+  border: 1px solid var(--info-color, #007acc);
   margin-bottom: 15px;
   font-size: 13px;
 }
 
 .info-message code {
-  background: #1565c0;
+  background: var(--accent-color, #007acc);
   color: white;
   padding: 2px 4px;
   border-radius: 3px;
+  font-size: 12px;
 }
 
 .login-btn {
   width: 100%;
-  padding: 12px;
-  background: #4CAF50;
+  padding: 8px 20px;
+  background: var(--accent-color, #007acc);
   color: white;
   border: none;
   border-radius: 4px;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.3s;
+  transition: all 0.2s;
+  box-sizing: border-box;
 }
 
 .login-btn:hover:not(:disabled) {
-  background: #45a049;
+  background: var(--accent-hover, #005a9e);
 }
 
 .login-btn:disabled {
-  background: #cccccc;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
 .login-footer {
   margin-top: 20px;
   padding-top: 20px;
-  border-top: 1px solid #e5e5e5;
+  border-top: 1px solid var(--border-color, #464647);
 }
 
 .demo-info {
   font-size: 13px;
-  color: #666;
+  color: var(--text-secondary, #969696);
   margin-bottom: 10px;
   font-weight: 500;
 }
@@ -348,14 +382,193 @@ export default {
 
 .demo-accounts li {
   font-size: 12px;
-  color: #666;
+  color: var(--text-secondary, #969696);
   margin-bottom: 5px;
 }
 
 .demo-accounts code {
-  background: #f5f5f5;
+  background: var(--code-bg, #252526);
+  border: 1px solid var(--border-color, #464647);
   padding: 2px 4px;
   border-radius: 3px;
-  color: #333;
+  color: var(--text-primary, #cccccc);
+  font-size: 11px;
+}
+
+/* Light Theme Support */
+[data-theme="light"] .login-modal {
+  background: #ffffff;
+  border-color: #d0d0d0;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+}
+
+[data-theme="light"] .login-header {
+  border-bottom-color: #e0e0e0;
+}
+
+[data-theme="light"] .login-header h3 {
+  color: #333333;
+}
+
+[data-theme="light"] .close-btn {
+  color: rgba(0, 0, 0, 0.6);
+}
+
+[data-theme="light"] .close-btn:hover {
+  color: rgba(0, 0, 0, 0.9);
+  background: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .form-group label {
+  color: #333333;
+}
+
+[data-theme="light"] .form-group input {
+  background: #f8f8f8;
+  border-color: #d0d0d0;
+  color: #333333;
+}
+
+[data-theme="light"] .form-group input:focus {
+  background: #ffffff;
+  border-color: #1890ff;
+}
+
+[data-theme="light"] .form-group input::placeholder {
+  color: #999999;
+}
+
+[data-theme="light"] .form-group input:disabled {
+  background: #f0f0f0;
+}
+
+[data-theme="light"] .error-message {
+  background: #fff2f0;
+  color: #d63384;
+  border-color: #d63384;
+}
+
+[data-theme="light"] .info-message {
+  background: #e6f7ff;
+  color: #1890ff;
+  border-color: #1890ff;
+}
+
+[data-theme="light"] .info-message code {
+  background: #1890ff;
+}
+
+[data-theme="light"] .login-btn {
+  background: #1890ff;
+}
+
+[data-theme="light"] .login-btn:hover:not(:disabled) {
+  background: #096dd9;
+}
+
+[data-theme="light"] .login-footer {
+  border-top-color: #e0e0e0;
+}
+
+[data-theme="light"] .demo-info {
+  color: #666666;
+}
+
+[data-theme="light"] .demo-accounts li {
+  color: #666666;
+}
+
+[data-theme="light"] .demo-accounts code {
+  background: #f0f0f0;
+  border-color: #d0d0d0;
+  color: #333333;
+}
+
+/* High Contrast Theme Support */
+[data-theme="high-contrast"] .login-modal {
+  background: #000000;
+  border: 2px solid #ffffff;
+  box-shadow: 0 8px 32px rgba(255, 255, 255, 0.3);
+}
+
+[data-theme="high-contrast"] .login-header {
+  border-bottom: 2px solid #ffffff;
+}
+
+[data-theme="high-contrast"] .login-header h3 {
+  color: #ffffff;
+}
+
+[data-theme="high-contrast"] .close-btn {
+  color: #ffffff;
+}
+
+[data-theme="high-contrast"] .close-btn:hover {
+  background: #333333;
+  border: 1px solid #ffff00;
+}
+
+[data-theme="high-contrast"] .form-group label {
+  color: #ffffff;
+}
+
+[data-theme="high-contrast"] .form-group input {
+  background: #000000;
+  border: 2px solid #ffffff;
+  color: #ffffff;
+}
+
+[data-theme="high-contrast"] .form-group input:focus {
+  border-color: #ffff00;
+}
+
+[data-theme="high-contrast"] .form-group input::placeholder {
+  color: #cccccc;
+}
+
+[data-theme="high-contrast"] .error-message {
+  background: #000000;
+  color: #ff6b6b;
+  border: 2px solid #ff6b6b;
+}
+
+[data-theme="high-contrast"] .info-message {
+  background: #000000;
+  color: #00bfff;
+  border: 2px solid #00bfff;
+}
+
+[data-theme="high-contrast"] .info-message code {
+  background: #00bfff;
+  color: #000000;
+}
+
+[data-theme="high-contrast"] .login-btn {
+  background: #00bfff;
+  color: #000000;
+  border: 2px solid #ffffff;
+}
+
+[data-theme="high-contrast"] .login-btn:hover:not(:disabled) {
+  background: #ffff00;
+  border-color: #ffff00;
+}
+
+[data-theme="high-contrast"] .login-footer {
+  border-top: 2px solid #ffffff;
+}
+
+[data-theme="high-contrast"] .demo-info {
+  color: #ffffff;
+}
+
+[data-theme="high-contrast"] .demo-accounts li {
+  color: #ffffff;
+}
+
+[data-theme="high-contrast"] .demo-accounts code {
+  background: #333333;
+  border: 1px solid #ffffff;
+  color: #ffffff;
 }
 </style>

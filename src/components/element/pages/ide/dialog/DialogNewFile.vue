@@ -410,7 +410,7 @@ export default {
         let initialContent = '';
         const ext = this.fileExtension.toLowerCase();
         if (ext === '.py') {
-          initialContent = '#!/usr/bin/env python3\n\n';
+          initialContent = ''; // Start with empty content for Python files
         } else if (ext === '.json') {
           initialContent = '{}';
         }

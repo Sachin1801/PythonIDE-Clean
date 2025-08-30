@@ -7,9 +7,9 @@ const wsInfoMap = {
       // This ensures it works both locally and when deployed
       protocol: window.location.protocol === 'https:' ? 'wss:' : 'ws:',
       host: window.location.hostname,
-      port: window.location.port || (window.location.protocol === 'https:' ? '443' : '80'),
+      port: window.location.hostname === 'localhost' ? '10086' : (window.location.port || (window.location.protocol === 'https:' ? '443' : '80')),
       // For local development, use the proxy path; for production use /ws directly
-      pathname: window.location.hostname === 'localhost' ? '/ide-ws' : '/ws',
+      pathname: '/ws',
       search: '', // Remove query params to avoid confusion
     },
     protocols: [],
@@ -135,7 +135,23 @@ const mutations = {
     const callbackObj = wsInfo.jsonMsgCallbacks[dict.id];
     if (callbackObj) {
       if (callbackObj.limits !== 0) {
-        callbackObj.callback(dict);
+        try {
+          // Validate dict.data before calling callback to prevent undefined errors
+          if (dict && typeof dict === 'object' && dict.data !== undefined) {
+            callbackObj.callback(dict);
+          } else {
+            console.warn('[WebSocket] Skipping callback with invalid/undefined data:', dict);
+            // Still call callback with sanitized dict to maintain flow
+            callbackObj.callback({ 
+              ...dict, 
+              data: dict.data || null,
+              code: dict.code || 0 
+            });
+          }
+        } catch (error) {
+          console.warn('[WebSocket] Callback error suppressed:', error);
+          // Don't propagate the error to prevent UI crashes
+        }
         callbackObj.limits -= 1;
       }
       callbackObj.finished = true;

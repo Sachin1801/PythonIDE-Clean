@@ -441,7 +441,6 @@ export default {
       contextMenuTarget: null,
       windowWidth: window.innerWidth,  // Track window width for responsive behavior
       leftSidebarVisible: true,
-      currentUser: null,
       
       dialogType: '',
       dialogTitle: '',
@@ -574,12 +573,8 @@ export default {
     
     if (sessionId && username) {
       console.log('🔑 [VmIde] Found existing session for:', username);
-      this.currentUser = {
-        username: username,
-        role: localStorage.getItem('role'),
-        full_name: localStorage.getItem('full_name'),
-        session_id: sessionId
-      };
+      // currentUser is now a computed property based on localStorage
+      // so no need to set it here
       
       // Initialize WebSocket only if logged in
       try {
@@ -685,16 +680,26 @@ export default {
       return this.$store.state.ide.ideInfo;
     },
     currentUser() {
-      // Simple fallback that doesn't interfere with existing auth system
+      // Check store first (for future compatibility)
       const storeUser = this.$store.state.ide.currentUser;
       if (storeUser) return storeUser;
       
-      try {
-        const userData = localStorage.getItem('user');
-        return userData ? JSON.parse(userData) : null;
-      } catch (e) {
-        return null;
+      // Construct user object from localStorage items
+      const sessionId = localStorage.getItem('session_id');
+      const username = localStorage.getItem('username');
+      const role = localStorage.getItem('role');
+      const fullName = localStorage.getItem('full_name');
+      
+      if (sessionId && username) {
+        return {
+          session_id: sessionId,
+          username: username,
+          role: role,
+          full_name: fullName
+        };
       }
+      
+      return null;
     },
     isMarkdown() {
       if (this.ideInfo.codeSelected.path)
@@ -1958,25 +1963,36 @@ export default {
       console.log('🚀 [loadAllDefaultProjects] Starting to load default projects');
       const self = this;
       
-      // Get current username from localStorage
+      // Get current username and role from localStorage
       const username = localStorage.getItem('username');
+      const role = localStorage.getItem('role');
       
       // Build list of projects to load - use actual project names from the server
       const projectsToLoad = [];
       
-      // Check for user's personal directory (e.g., "Local/sa9082")
-      const userProject = this.ideInfo.projList.find(p => p.name === `Local/${username}`);
-      if (userProject) {
-        projectsToLoad.push(userProject.name);
-      }
-      
-      // Add other standard projects if they exist
-      const standardProjects = ['Lecture Notes', 'Assignments', 'Tests'];
-      standardProjects.forEach(proj => {
-        if (this.ideInfo.projList.some(p => p.name === proj)) {
-          projectsToLoad.push(proj);
+      if (role === 'professor') {
+        // Professor: Load all main folders including Local for full access
+        const professorProjects = ['Local', 'Lecture Notes', 'Assignments', 'Tests'];
+        professorProjects.forEach(proj => {
+          if (this.ideInfo.projList.some(p => p.name === proj)) {
+            projectsToLoad.push(proj);
+          }
+        });
+      } else {
+        // Student: Load user's personal directory and standard folders
+        const userProject = this.ideInfo.projList.find(p => p.name === `Local/${username}`);
+        if (userProject) {
+          projectsToLoad.push(userProject.name);
         }
-      });
+        
+        // Add other standard projects if they exist
+        const standardProjects = ['Lecture Notes', 'Assignments', 'Tests'];
+        standardProjects.forEach(proj => {
+          if (this.ideInfo.projList.some(p => p.name === proj)) {
+            projectsToLoad.push(proj);
+          }
+        });
+      }
       
       console.log('📋 [loadAllDefaultProjects] Projects to load:', projectsToLoad);
       console.log('📋 [loadAllDefaultProjects] Available projects:', this.ideInfo.projList);
@@ -2004,13 +2020,26 @@ export default {
               if (loadCount === projectsToLoad.length) {
                 console.log('✅ [loadAllDefaultProjects] All projects loaded:', loadedProjects);
                 self.$store.commit('ide/handleMultipleProjects', loadedProjects);
-                // Also set the user's project as current
-                const userProjectData = loadedProjects.find(p => p.name === `Local/${username}`);
-                if (userProjectData) {
-                  self.$store.commit('ide/handleProject', userProjectData);
-                } else if (loadedProjects.length > 0) {
-                  // Fallback to first project if user project not found
-                  self.$store.commit('ide/handleProject', loadedProjects[0]);
+                
+                // Set current project based on role
+                if (role === 'professor') {
+                  // Professor: Set Local as default project for full student directory access
+                  const localProjectData = loadedProjects.find(p => p.name === 'Local');
+                  if (localProjectData) {
+                    self.$store.commit('ide/handleProject', localProjectData);
+                  } else if (loadedProjects.length > 0) {
+                    // Fallback to first project
+                    self.$store.commit('ide/handleProject', loadedProjects[0]);
+                  }
+                } else {
+                  // Student: Set their personal project as current
+                  const userProjectData = loadedProjects.find(p => p.name === `Local/${username}`);
+                  if (userProjectData) {
+                    self.$store.commit('ide/handleProject', userProjectData);
+                  } else if (loadedProjects.length > 0) {
+                    // Fallback to first project if user project not found
+                    self.$store.commit('ide/handleProject', loadedProjects[0]);
+                  }
                 }
               }
             } else {
@@ -2417,7 +2446,8 @@ export default {
       
       // Handle successful login
       if (userData) {
-        this.currentUser = userData;
+        // currentUser is now a computed property based on localStorage
+        // so no need to set it here
         
         // Show success message using ElMessage
         ElMessage.success(`Welcome, ${userData.full_name || userData.username}!`);
@@ -2800,40 +2830,71 @@ export default {
     
     async getExistingFilesInDirectory(directoryPath, projectName) {
       return new Promise((resolve) => {
-        // Get the current project tree data
-        const projectData = this.ideInfo.currProj?.data;
-        if (!projectData) {
-          console.log('🔍 [DEBUG] No project data available');
-          resolve([]);
-          return;
-        }
-        
-        // Find the target directory in the tree
-        const findDirectory = (node, targetPath) => {
-          if (node.path === targetPath && node.type === 'dir') {
-            return node;
+        try {
+          // Get the current project tree data
+          const projectData = this.ideInfo.currProj?.data;
+          if (!projectData) {
+            console.log('🔍 [DEBUG] No project data available');
+            resolve([]);
+            return;
           }
-          if (node.children) {
-            for (const child of node.children) {
-              const result = findDirectory(child, targetPath);
-              if (result) return result;
+          
+          // Find the target directory in the tree
+          const findDirectory = (node, targetPath) => {
+            try {
+              if (!node || typeof node !== 'object') {
+                return null;
+              }
+              if (node.path === targetPath && node.type === 'dir') {
+                return node;
+              }
+              if (node.children && Array.isArray(node.children)) {
+                for (const child of node.children) {
+                  if (!child || typeof child !== 'object') {
+                    continue; // Skip invalid children
+                  }
+                  const result = findDirectory(child, targetPath);
+                  if (result) return result;
+                }
+              }
+              return null;
+            } catch (err) {
+              console.warn('🔍 [DEBUG] Error in findDirectory:', err);
+              return null;
             }
+          };
+          
+          const targetDir = findDirectory(projectData, directoryPath);
+          console.log('🔍 [DEBUG] Found target directory:', targetDir);
+          
+          if (targetDir && targetDir.children && Array.isArray(targetDir.children)) {
+            // Extract filenames from the directory with robust null/undefined handling
+            const filenames = targetDir.children
+              .filter(child => {
+                try {
+                  return child && typeof child === 'object' && child.type === 'file' && (child.label || child.name);
+                } catch (e) {
+                  console.warn('🔍 [DEBUG] Invalid child node, skipping:', child, e);
+                  return false;
+                }
+              })
+              .map(child => {
+                try {
+                  return child.label || child.name || 'unnamed';
+                } catch (e) {
+                  console.warn('🔍 [DEBUG] Error extracting child name:', e);
+                  return 'unnamed';
+                }
+              })
+              .filter(name => name && name !== 'unnamed'); // Remove any invalid names
+            console.log('🔍 [DEBUG] Extracted filenames:', filenames);
+            resolve(filenames);
+          } else {
+            console.log('🔍 [DEBUG] Directory not found or has no children');
+            resolve([]);
           }
-          return null;
-        };
-        
-        const targetDir = findDirectory(projectData, directoryPath);
-        console.log('🔍 [DEBUG] Found target directory:', targetDir);
-        
-        if (targetDir && targetDir.children) {
-          // Extract filenames from the directory
-          const filenames = targetDir.children
-            .filter(child => child.type === 'file')
-            .map(child => child.label || child.name);
-          console.log('🔍 [DEBUG] Extracted filenames:', filenames);
-          resolve(filenames);
-        } else {
-          console.log('🔍 [DEBUG] Directory not found or has no children');
+        } catch (error) {
+          console.warn('🔍 [DEBUG] Error in getExistingFilesInDirectory:', error);
           resolve([]);
         }
       });
@@ -3125,13 +3186,12 @@ export default {
       this.fileToMove = freshFileData;
       this.showFileBrowserDialog = true;
       console.log('[VmIde] Move dialog opened with fresh data, mode:', this.fileBrowserMode, 'fileToMove:', this.fileToMove);
-    },
-    handleMoveFile(data) {
+    },    handleMoveFile(data) {
       console.log('[VmIde] handleMoveFile called with data:', data);
       const { oldPath, newPath, projectName } = data;
       const self = this;
       
-      // CRITICAL FIX: Normalize paths to be relative to project root
+      // Normalize paths to be relative to project root
       const normalizePathForProject = (path, projName) => {
         if (!path || !projName) return path;
         // Remove project name prefix if it exists
@@ -3145,7 +3205,7 @@ export default {
       const normalizedOldPath = normalizePathForProject(oldPath, projectName);
       const normalizedNewPath = normalizePathForProject(newPath, projectName);
       
-      console.log('[VmIde] Path normalization:', {
+      console.log('[VmIde] Normalized paths:', {
         originalOldPath: oldPath,
         normalizedOldPath: normalizedOldPath,
         originalNewPath: newPath, 
@@ -3153,188 +3213,81 @@ export default {
         projectName: projectName
       });
       
-      console.log('[VmIde] Move parameters:', {
-        oldPath: oldPath,
-        newPath: newPath,
-        projectName: projectName,
-        currentUser: this.currentUser
-      });
-      
-      // Basic permission validation - only if user data is available
-      if (this.currentUser && this.currentUser.username && this.currentUser.role === 'student') {
-        const studentDir = `Local/${this.currentUser.username}`;
-        console.log('[VmIde] Student permission check:', {
-          studentDir: studentDir,
-          oldPathValid: oldPath.startsWith(studentDir + '/') || normalizedOldPath.startsWith(studentDir.replace('Local/', '') + '/'),
-          newPathValid: newPath.startsWith(studentDir + '/') || normalizedNewPath.startsWith(studentDir.replace('Local/', '') + '/'),
-          oldPath: oldPath,
-          newPath: newPath,
-          normalizedOldPath: normalizedOldPath,
-          normalizedNewPath: normalizedNewPath
-        });
-        
-        // Check both original and normalized paths for student permissions
-        const oldPathAllowed = oldPath.startsWith(studentDir + '/') || normalizedOldPath.startsWith(studentDir.replace('Local/', '') + '/');
-        const newPathAllowed = newPath.startsWith(studentDir + '/') || normalizedNewPath.startsWith(studentDir.replace('Local/', '') + '/');
-        
-        if (!oldPathAllowed || !newPathAllowed) {
-          console.error('[VmIde] Permission denied for student move');
-          ElMessage.error('Students can only move files within their personal directory');
-          this.showFileBrowserDialog = false;
-          return;
-        }
-      }
-      
-      // Validate paths using normalized paths
+      // Basic validation
       if (normalizedOldPath === normalizedNewPath) {
-        console.error('[VmIde] Same source and destination path');
         ElMessage.warning('Source and destination paths are the same');
         this.showFileBrowserDialog = false;
         return;
       }
       
       if (normalizedNewPath.startsWith(normalizedOldPath + '/')) {
-        console.error('[VmIde] Attempting to move file into its subdirectory');
         ElMessage.error('Cannot move a file into its own subdirectory');
         this.showFileBrowserDialog = false;
         return;
       }
       
-      console.log('[VmIde] Starting move operation - getting file content');
+      // Use the new move command - determine if it's a file or folder
+      const isFolder = this.ideInfo.nodeSelected?.isLeaf === false;
+      const moveCommand = isFolder ? types.IDE_MOVE_FOLDER : types.IDE_MOVE_FILE;
       
-      // First get the file content using normalized path
-      this.$store.dispatch(`ide/${types.IDE_GET_FILE}`, {
+      console.log('[VmIde] Using move command:', moveCommand);
+      
+      this.$store.dispatch(`ide/${moveCommand}`, {
+        wsKey: this.wsKey,
         projectName: projectName,
-        filePath: normalizedOldPath,
-        callback: (dict) => {
-          console.log('[VmIde] GET_FILE response:', dict);
-          if (dict.code == 0 && dict.data) {
-            const content = dict.data.content || dict.data || '';
-            console.log('[VmIde] File content retrieved, length:', content ? content.length : 0);
+        oldPath: normalizedOldPath,
+        newPath: normalizedNewPath,
+        callback: (result) => {
+          console.log('[VmIde] Move result:', result);
+          if (result.code === 0) {
+            ElMessage.success(`${isFolder ? 'Folder' : 'File'} moved successfully`);
             
-            // Create file at new location
-            console.log('[VmIde] Creating file at new location');
-            
-            // Extract parent path and filename from normalized newPath
-            const lastSlash = normalizedNewPath.lastIndexOf('/');
-            const parentPath = lastSlash > 0 ? normalizedNewPath.substring(0, lastSlash) : '/';
-            const fileName = lastSlash >= 0 ? normalizedNewPath.substring(lastSlash + 1) : normalizedNewPath;
-            
-            console.log('[VmIde] Create file params:', {
-              projectName: projectName,
-              parentPath: parentPath,
-              fileName: fileName
-            });
-            
-            self.$store.dispatch(`ide/${types.IDE_CREATE_FILE}`, {
-              projectName: projectName,
-              parentPath: parentPath,
-              fileName: fileName,
-              callback: (createDict) => {
-                console.log('[VmIde] CREATE_FILE response:', createDict);
-                if (createDict.code == 0) {
-                  console.log('[VmIde] File created successfully, now writing content');
+            // Update selected node and open tabs if necessary
+            if (self.ideInfo.nodeSelected && self.ideInfo.nodeSelected.path === oldPath) {
+              const updatedNode = {
+                ...self.ideInfo.nodeSelected,
+                path: newPath,
+                filePath: newPath,
+                fileName: newPath.substring(newPath.lastIndexOf('/') + 1),
+                name: newPath.substring(newPath.lastIndexOf('/') + 1),
+                label: newPath.substring(newPath.lastIndexOf('/') + 1)
+              };
+              self.$store.commit('ide/setNodeSelected', updatedNode);
+              
+              // Update open file tabs if it's a file
+              if (!isFolder && self.ideInfo.openList.length > 0) {
+                const openFileIndex = self.ideInfo.openList.findIndex(f => f.path === oldPath);
+                if (openFileIndex !== -1) {
+                  const updatedOpenList = [...self.ideInfo.openList];
+                  updatedOpenList[openFileIndex] = {
+                    ...updatedOpenList[openFileIndex],
+                    path: newPath,
+                    filePath: newPath,
+                    fileName: newPath.substring(newPath.lastIndexOf('/') + 1),
+                    name: newPath.substring(newPath.lastIndexOf('/') + 1),
+                    label: newPath.substring(newPath.lastIndexOf('/') + 1)
+                  };
+                  self.$store.commit('ide/setOpenList', updatedOpenList);
                   
-                  // Write the content to the newly created file
-                  self.$store.dispatch(`ide/${types.IDE_WRITE_FILE}`, {
-                    projectName: projectName,
-                    filePath: fileName, // Use just the filename for write
-                    fileData: content,
-                    complete: true,
-                    callback: (writeDict) => {
-                      console.log('[VmIde] WRITE_FILE response:', writeDict);
-                      if (writeDict.code == 0) {
-                        console.log('[VmIde] Content written successfully, deleting original file');
-                        
-                        // Now delete the original file using normalized path
-                        self.$store.dispatch(`ide/${types.IDE_DEL_FILE}`, {
-                          projectName: projectName,
-                          filePath: normalizedOldPath,
-                          callback: (delDict) => {
-                            console.log('[VmIde] DEL_FILE response:', delDict);
-                            if (delDict.code == 0) {
-                              console.log('[VmIde] Move completed successfully');
-                              ElMessage.success('File moved successfully');
-                              
-                              // Refresh project tree and wait for completion
-                              self.refreshProjectTreeWithCallback(() => {
-                                console.log('[VmIde] Tree refresh completed after move');
-                                
-                                // Update nodeSelected to reflect the new path if it was the moved file
-                                if (self.ideInfo.nodeSelected && self.ideInfo.nodeSelected.path === oldPath) {
-                                  console.log('[VmIde] Updating nodeSelected to new path:', newPath);
-                                  const updatedNode = {
-                                    ...self.ideInfo.nodeSelected,
-                                    path: newPath,
-                                    filePath: newPath,
-                                    fileName: newPath.substring(newPath.lastIndexOf('/') + 1),
-                                    name: newPath.substring(newPath.lastIndexOf('/') + 1),
-                                    label: newPath.substring(newPath.lastIndexOf('/') + 1)
-                                  };
-                                  self.$store.commit('ide/setNodeSelected', updatedNode);
-                                }
-                                
-                                // Reset file browser dialog state to pick up new tree data
-                                self.fileToMove = null;
-                                self.showFileBrowserDialog = false;
-                              });
-                              
-                              // If the moved file was open, update its path
-                              const openFile = self.ideInfo.codeItems.find(item => 
-                                item.filePath === oldPath && item.projectName === projectName
-                              );
-                              if (openFile) {
-                                console.log('[VmIde] Updating open file reference');
-                                openFile.filePath = newPath;
-                                openFile.fileName = newPath.substring(newPath.lastIndexOf('/') + 1);
-                                openFile.path = newPath; // Also update path property
-                                
-                                // Update the store
-                                self.$store.commit('ide/updateCodeItem', {
-                                  index: self.ideInfo.codeItems.indexOf(openFile),
-                                  updates: {
-                                    filePath: newPath,
-                                    fileName: openFile.fileName,
-                                    path: newPath
-                                  }
-                                });
-                              }
-                              
-                              // Update console states if they exist
-                              if (self.fileConsoleStates && self.fileConsoleStates[oldPath]) {
-                                console.log('[VmIde] Updating console states');
-                                self.fileConsoleStates[newPath] = self.fileConsoleStates[oldPath];
-                                delete self.fileConsoleStates[oldPath];
-                              }
-                              
-                              console.log('[VmIde] File moved successfully from', oldPath, 'to', newPath);
-                            } else {
-                              console.error('[VmIde] Failed to delete original file:', delDict);
-                              ElMessage.error('Failed to delete original file after move');
-                            }
-                          }
-                        });
-                      } else {
-                        console.error('[VmIde] Failed to write file content:', writeDict);
-                        ElMessage.error('Failed to write content to new file');
-                      }
-                    }
-                  });
-                } else {
-                  console.error('[VmIde] Failed to create file:', createDict);
-                  ElMessage.error('Failed to create file at new location');
+                  if (self.ideInfo.selectFilePath === oldPath) {
+                    self.$store.commit('ide/setSelectFilePath', newPath);
+                  }
                 }
               }
+            }
+            
+            // Refresh the project tree
+            self.refreshProjectTreeWithCallback(() => {
+              console.log('[VmIde] Tree refresh completed after move');
+              self.showFileBrowserDialog = false;
             });
           } else {
-            console.error('[VmIde] Failed to read file:', dict);
-            ElMessage.error(dict.message || 'Failed to read file for moving');
+            console.error('[VmIde] Move failed:', result);
+            ElMessage.error(result.msg || `Failed to move ${isFolder ? 'folder' : 'file'}`);
+            self.showFileBrowserDialog = false;
           }
         }
       });
-      
-      // Note: Dialog will be closed by refreshProjectTreeWithCallback after tree refresh
-      console.log('[VmIde] Move operation initiated, dialog will close after tree refresh');
     },
     deleteFileFromMenu(data) {
       // Delete file from File menu

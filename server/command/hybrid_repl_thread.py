@@ -19,6 +19,7 @@ import resource
 import psutil
 
 from common.config import Config
+from common.file_storage import file_storage
 from command.error_handler import EducationalErrorHandler
 from command.response import response
 
@@ -381,7 +382,7 @@ while True:
                 'stderr': subprocess.STDOUT,
                 'text': True,
                 'bufsize': 0,
-                'cwd': os.path.dirname(self.script_path) if self.script_path else Config.PROJECTS
+                'cwd': os.path.dirname(self.script_path) if self.script_path else file_storage.ide_base
             }
             
             # Temporarily disable resource limits to debug the issue

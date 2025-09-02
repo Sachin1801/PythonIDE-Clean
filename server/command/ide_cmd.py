@@ -22,6 +22,7 @@ from .repl_thread import PythonREPLThread
 from .hybrid_repl_thread import HybridREPLThread
 from .bug_report_handler import handle_bug_report
 from common.config import Config
+from common.file_storage import file_storage
 
 PROJECT_IS_EXIST = -1
 PROJECT_IS_NOT_EXIST = -2
@@ -34,13 +35,15 @@ FILE_IS_NOT_EXIST = -22
 
 jedi_is_gt_17 = Version(jedi_version) >= Version('0.17.0')
 
-if not os.path.exists(os.path.join(Config.PROJECTS, 'ide')):
-    os.makedirs(os.path.join(Config.PROJECTS, 'ide'))
+# Use file_storage for persistent storage
+ide_base = file_storage.ide_base
+if not os.path.exists(ide_base):
+    os.makedirs(ide_base)
 
 # Ensure default folders exist
-default_folders = ['Local', 'Assignments', 'Lecture Notes', 'Testing']
+default_folders = ['Local', 'Assignments', 'Lecture Notes', 'Tests']
 for folder_name in default_folders:
-    folder_path = os.path.join(Config.PROJECTS, 'ide', folder_name)
+    folder_path = os.path.join(ide_base, folder_name)
     if not os.path.exists(folder_path):
         os.makedirs(folder_path)
         # Create .config file for the folder
@@ -62,19 +65,19 @@ class IdeCmd(object):
         pass
 
     async def ide_list_projects(self, client, cmd_id, data):
-        ide_path = os.path.join(Config.PROJECTS, 'ide')
+        ide_path = file_storage.ide_base
         code, projects = list_projects(ide_path)
         await response(client, cmd_id, code, projects)
 
     async def ide_get_project(self, client, cmd_id, data):
         prj_name = data.get('projectName')
-        prj_path = os.path.join(Config.PROJECTS, 'ide', prj_name)
+        prj_path = os.path.join(file_storage.ide_base, prj_name)
         code, project = get_project(prj_path)
         await response(client, cmd_id, code, project)
 
     async def ide_create_project(self, client, cmd_id, data):
         prj_name = data.get('projectName')
-        prj_path = os.path.join(Config.PROJECTS, 'ide', prj_name)
+        prj_path = os.path.join(file_storage.ide_base, prj_name)
         code, _ = create_project(prj_path, config_data={
             'type': 'python',
             'expendKeys': ['/'],
@@ -191,7 +194,7 @@ print("="*50)
 
     async def ide_delete_project(self, client, cmd_id, data):
         prj_name = data.get('projectName')
-        prj_path = os.path.join(Config.PROJECTS, 'ide', prj_name)
+        prj_path = os.path.join(file_storage.ide_base, prj_name)
         code, _ = delete(prj_path)
         await response(client, cmd_id, code, _)
 
@@ -204,21 +207,21 @@ print("="*50)
             await response(client, cmd_id, -1, f'Cannot rename protected folder: {old_name}')
             return
             
-        old_path = os.path.join(Config.PROJECTS, 'ide', old_name)
+        old_path = os.path.join(file_storage.ide_base, old_name)
         new_name = data.get('newName')
-        new_path = os.path.join(Config.PROJECTS, 'ide', new_name)
+        new_path = os.path.join(file_storage.ide_base, new_name)
         code, _ = rename(old_path, new_path)
         await response(client, cmd_id, code, _)
 
     async def ide_save_project(self, client, cmd_id, data):
         prj_name = data.get('projectName')
-        prj_path = os.path.join(Config.PROJECTS, 'ide', prj_name)
+        prj_path = os.path.join(file_storage.ide_base, prj_name)
         code, _ = save_project(prj_path, data)
         await response(client, cmd_id, code, _)
 
     async def ide_create_file(self, client, cmd_id, data):
         prj_name = data.get('projectName')
-        prj_path = os.path.join(Config.PROJECTS, 'ide', prj_name)
+        prj_path = os.path.join(file_storage.ide_base, prj_name)
         parent_path = convert_path(data.get('parentPath'))
         file_name = data.get('fileName')
         file_path = os.path.join(prj_path, parent_path, file_name)
@@ -227,7 +230,7 @@ print("="*50)
 
     async def ide_write_file(self, client, cmd_id, data):
         prj_name = data.get('projectName')
-        prj_path = os.path.join(Config.PROJECTS, 'ide', prj_name)
+        prj_path = os.path.join(file_storage.ide_base, prj_name)
         file_path = os.path.join(prj_path, convert_path(data.get('filePath')))
         file_data = data.get('fileData')
         code, _ = write_project_file(prj_path, file_path, file_data)
@@ -251,7 +254,7 @@ print("="*50)
 
     async def ide_get_file(self, client, cmd_id, data):
         prj_name = data.get('projectName')
-        prj_path = os.path.join(Config.PROJECTS, 'ide', prj_name)
+        prj_path = os.path.join(file_storage.ide_base, prj_name)
         file_path = os.path.join(prj_path, convert_path(data.get('filePath')))
         
         # Check if binary file requested
@@ -269,14 +272,14 @@ print("="*50)
 
     async def ide_delete_file(self, client, cmd_id, data):
         prj_name = data.get('projectName')
-        prj_path = os.path.join(Config.PROJECTS, 'ide', prj_name)
+        prj_path = os.path.join(file_storage.ide_base, prj_name)
         file_path = os.path.join(prj_path, convert_path(data.get('filePath')))
         code, _ = delete_project_file(prj_path, file_path)
         await response(client, cmd_id, code, _)
 
     async def ide_rename_file(self, client, cmd_id, data):
         prj_name = data.get('projectName')
-        prj_path = os.path.join(Config.PROJECTS, 'ide', prj_name)
+        prj_path = os.path.join(file_storage.ide_base, prj_name)
         old_path_input = data.get('oldPath')
         new_name = data.get('newName')
         
@@ -305,7 +308,7 @@ print("="*50)
 
     async def ide_create_folder(self, client, cmd_id, data):
         prj_name = data.get('projectName')
-        prj_path = os.path.join(Config.PROJECTS, 'ide', prj_name)
+        prj_path = os.path.join(file_storage.ide_base, prj_name)
         parent_path = convert_path(data.get('parentPath'))
         folder_name = data.get('folderName')
         folder_path = os.path.join(prj_path, parent_path, folder_name)
@@ -314,14 +317,14 @@ print("="*50)
 
     async def ide_delete_folder(self, client, cmd_id, data):
         prj_name = data.get('projectName')
-        prj_path = os.path.join(Config.PROJECTS, 'ide', prj_name)
+        prj_path = os.path.join(file_storage.ide_base, prj_name)
         folder_path = os.path.join(prj_path, convert_path(data.get('folderPath')))
         code, _ = delete_project_file(prj_path, folder_path)
         await response(client, cmd_id, code, _)
 
     async def ide_rename_folder(self, client, cmd_id, data):
         prj_name = data.get('projectName')
-        prj_path = os.path.join(Config.PROJECTS, 'ide', prj_name)
+        prj_path = os.path.join(file_storage.ide_base, prj_name)
         old_path = os.path.join(prj_path, convert_path(data.get('oldPath')))
         new_name = data.get('newName')
         new_path = os.path.join(os.path.dirname(old_path), new_name)
@@ -388,7 +391,7 @@ print("="*50)
                 return
             
             # Get full filesystem paths using the corrected paths (not relative paths)
-            ide_base_path = os.path.join(Config.PROJECTS, 'ide')
+            ide_base_path = file_storage.ide_base
             old_full_path = os.path.join(ide_base_path, old_path_full)
             new_full_path = os.path.join(ide_base_path, new_path_full)
             
@@ -503,7 +506,7 @@ print("="*50)
                 return
             
             # Get full filesystem paths using the corrected paths (not relative paths)
-            ide_base_path = os.path.join(Config.PROJECTS, 'ide')
+            ide_base_path = file_storage.ide_base
             old_full_path = os.path.join(ide_base_path, old_path_full)
             new_full_path = os.path.join(ide_base_path, new_path_full)
             
@@ -624,7 +627,7 @@ print("="*50)
             # Remove the duplicate project name from the path
             file_path_input = file_path_input[len(prj_name)+1:]
         
-        prj_path = os.path.join(Config.PROJECTS, 'ide', prj_name)
+        prj_path = os.path.join(file_storage.ide_base, prj_name)
         file_path = os.path.join(prj_path, convert_path(file_path_input))
         
         print(f"[BACKEND-DEBUG] run_python_program: projectName={prj_name}, filePath={file_path_input}, hybrid={use_hybrid}")

@@ -383,6 +383,7 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler, WebSocketKeepali
         """Build a file tree structure for the frontend"""
         import os
         from pathlib import Path
+        from common.file_storage import file_storage
         
         # Validate access
         if not project_path:
@@ -394,7 +395,8 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler, WebSocketKeepali
                 if not project_path.startswith(f'Local/{self.username}'):
                     return None
         
-        base_path = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) / 'projects' / 'ide'
+        # Use the correct storage path (EFS in production, local in dev)
+        base_path = Path(file_storage.ide_base)
         full_path = base_path / project_path
         
         if not full_path.exists():
@@ -520,7 +522,7 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler, WebSocketKeepali
                 # Convert relative path to absolute path for REPL registry
                 import os
                 from common.config import Config
-                abs_path = os.path.normpath(os.path.join(Config.PROJECTS, 'ide', full_path))
+                abs_path = os.path.normpath(os.path.join(file_storage.ide_base, full_path))
                 terminated = repl_registry.terminate_repl(self.username, abs_path)
                 if terminated:
                     logger.info(f"Terminated existing REPL for {abs_path} after file save")

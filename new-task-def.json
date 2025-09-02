@@ -1,0 +1,74 @@
+{
+    "family": "pythonide-backend",
+    "taskRoleArn": "arn:aws:iam::653306034507:role/pythonide-task-role",
+    "executionRoleArn": "arn:aws:iam::653306034507:role/pythonide-execution-role",
+    "networkMode": "awsvpc",
+    "containerDefinitions": [
+        {
+            "name": "pythonide-backend",
+            "image": "653306034507.dkr.ecr.us-east-2.amazonaws.com/pythonide-backend:combined-v1",
+            "cpu": 0,
+            "portMappings": [
+                {
+                    "containerPort": 8080,
+                    "hostPort": 8080,
+                    "protocol": "tcp"
+                }
+            ],
+            "essential": true,
+            "environment": [
+                {
+                    "name": "IDE_SECRET_KEY",
+                    "value": "A2nERTooLUHzsLbUjBGOnUg2-iadQxXQXi_Tw41381U"
+                },
+                {
+                    "name": "NODE_ENV",
+                    "value": "production"
+                },
+                {
+                    "name": "DATABASE_URL",
+                    "value": "postgresql://pythonide_admin:Sachinadlakha9082@pythonide-db.c1u6aa2mqwwf.us-east-2.rds.amazonaws.com:5432/pythonide"
+                },
+                {
+                    "name": "PORT",
+                    "value": "8080"
+                },
+                {
+                    "name": "IDE_DATA_PATH",
+                    "value": "/mnt/efs/pythonide-data"
+                }
+            ],
+            "mountPoints": [
+                {
+                    "sourceVolume": "pythonide-efs",
+                    "containerPath": "/mnt/efs"
+                }
+            ],
+            "volumesFrom": [],
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": "/ecs/pythonide-backend",
+                    "awslogs-region": "us-east-2",
+                    "awslogs-stream-prefix": "ecs"
+                }
+            },
+            "systemControls": []
+        }
+    ],
+    "volumes": [
+        {
+            "name": "pythonide-efs",
+            "efsVolumeConfiguration": {
+                "fileSystemId": "fs-0ba3b6fecab24774a",
+                "rootDirectory": "/",
+                "transitEncryption": "ENABLED"
+            }
+        }
+    ],
+    "requiresCompatibilities": [
+        "FARGATE"
+    ],
+    "cpu": "1024",
+    "memory": "2048"
+}

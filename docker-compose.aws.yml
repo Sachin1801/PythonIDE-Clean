@@ -1,0 +1,59 @@
+# AWS ECS deployment configuration
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "8080:8080"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - IDE_SECRET_KEY=${IDE_SECRET_KEY}
+      - IDE_DATA_PATH=/mnt/efs/pythonide-data
+      - PORT=8080
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - efs-storage:/mnt/efs:rw,local
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - pythonide-network
+    logging:
+      driver: awslogs
+      options:
+        awslogs-group: /aws/ecs/pythonide-backend
+        awslogs-region: us-east-1
+        awslogs-stream-prefix: ecs
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "80:80"
+    environment:
+      - VUE_APP_API_BASE_URL=${BACKEND_URL}
+      - VUE_APP_WS_BASE_URL=${BACKEND_WS_URL}
+    networks:
+      - pythonide-network
+    logging:
+      driver: awslogs
+      options:
+        awslogs-group: /aws/ecs/pythonide-frontend
+        awslogs-region: us-east-1
+        awslogs-stream-prefix: ecs
+
+volumes:
+  efs-storage:
+    external: true
+    name: pythonide-efs
+
+networks:
+  pythonide-network:
+    driver: bridge

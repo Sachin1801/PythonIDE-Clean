@@ -289,3 +289,114 @@ class RenewSessionHandler(tornado.web.RequestHandler):
                 'success': False,
                 'error': str(e)
             }))
+
+
+class ForgotPasswordHandler(tornado.web.RequestHandler):
+    """Handle forgot password requests"""
+    
+    def initialize(self):
+        self.user_manager = UserManager()
+    
+    def set_default_headers(self):
+        """Set CORS headers"""
+        self.set_header("Access-Control-Allow-Origin", "*")
+        self.set_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+        self.set_header("Access-Control-Allow-Headers", "Content-Type")
+    
+    def options(self):
+        """Handle preflight requests"""
+        self.set_status(204)
+        self.finish()
+    
+    def post(self):
+        """Generate password reset token"""
+        try:
+            data = json.loads(self.request.body)
+            username_or_email = data.get('username')  # Could be username or email
+            
+            if not username_or_email:
+                self.set_status(400)
+                self.write(json.dumps({
+                    'success': False,
+                    'error': 'Username or email required'
+                }))
+                return
+            
+            # Create reset token (never expose user data in response for security)
+            result = self.user_manager.create_password_reset_token(username_or_email)
+            
+            if result['success']:
+                # Security: Never return actual user data or token in response
+                # In production, this would send an email with the reset link
+                self.set_status(200)
+                self.write(json.dumps({
+                    'success': True,
+                    'message': 'Password reset instructions sent. Check with administrator.',
+                    # For development only - remove in production:
+                    'dev_token': result['token'],
+                    'dev_expires': result['expires_at']
+                }))
+            else:
+                # Security: Return generic message even if user not found
+                self.set_status(200)  # Don't reveal if user exists
+                self.write(json.dumps({
+                    'success': True,
+                    'message': 'Password reset instructions sent. Check with administrator.'
+                }))
+                
+        except Exception as e:
+            self.set_status(500)
+            self.write(json.dumps({
+                'success': False,
+                'error': 'Internal server error'
+            }))
+
+
+class ResetPasswordHandler(tornado.web.RequestHandler):
+    """Handle password reset with token"""
+    
+    def initialize(self):
+        self.user_manager = UserManager()
+    
+    def set_default_headers(self):
+        """Set CORS headers"""
+        self.set_header("Access-Control-Allow-Origin", "*")
+        self.set_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+        self.set_header("Access-Control-Allow-Headers", "Content-Type")
+    
+    def options(self):
+        """Handle preflight requests"""
+        self.set_status(204)
+        self.finish()
+    
+    def post(self):
+        """Reset password using token"""
+        try:
+            data = json.loads(self.request.body)
+            token = data.get('token')
+            new_password = data.get('new_password')
+            
+            if not all([token, new_password]):
+                self.set_status(400)
+                self.write(json.dumps({
+                    'success': False,
+                    'error': 'Token and new password required'
+                }))
+                return
+            
+            # Reset password
+            result = self.user_manager.reset_password_with_token(token, new_password)
+            
+            if result['success']:
+                self.set_status(200)
+            else:
+                self.set_status(400)
+            
+            self.write(json.dumps(result))
+                
+        except Exception as e:
+            self.set_status(500)
+            self.write(json.dumps({
+                'success': False,
+                'error': 'Internal server error'
+            }))

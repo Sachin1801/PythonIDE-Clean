@@ -42,11 +42,8 @@ COPY server/ ./server/
 # Copy built frontend from previous stage
 COPY --from=frontend-builder /app/dist/ ./dist/
 
-# Create necessary directories
-RUN mkdir -p server/projects/ide/Local \
-    "server/projects/ide/Lecture Notes" \
-    server/projects/ide/Assignments \
-    server/projects/ide/Tests
+# Create temporary directories (persistent storage will be mounted externally)
+RUN mkdir -p /tmp/pythonide-data/ide
 
 # Set environment variables
 ENV PORT=8080

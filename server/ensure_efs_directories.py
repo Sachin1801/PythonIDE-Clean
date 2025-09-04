@@ -33,12 +33,24 @@ def copy_local_to_efs():
     logger.info(f"EFS Path: {efs_base}")
     logger.info(f"Storage Type: {file_storage.get_storage_info()['type']}")
     
-    # Create main directories
-    main_dirs = ['Local', 'Assignments', 'Tests', 'Lecture Notes', 'Testing']
+    # Create only the directories we want to keep
+    main_dirs = ['Local', 'Lecture Notes']
     for dir_name in main_dirs:
         dir_path = efs_base / dir_name
         dir_path.mkdir(parents=True, exist_ok=True)
         logger.info(f"✓ Ensured directory: {dir_path}")
+    
+    # Remove unwanted directories if they exist
+    unwanted_dirs = ['Assignments', 'Tests', 'Testing']
+    for dir_name in unwanted_dirs:
+        dir_path = efs_base / dir_name
+        if dir_path.exists() and dir_path.is_dir():
+            shutil.rmtree(dir_path)
+            logger.info(f"✓ Removed unwanted directory: {dir_path}")
+        elif dir_path.exists():
+            logger.info(f"- Found file (not directory): {dir_path}")
+        else:
+            logger.info(f"- Directory not found: {dir_path}")
     
     # ONLY student usernames get directories (professors have full access, no personal folders)
     student_usernames = [

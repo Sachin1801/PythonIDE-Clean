@@ -29,7 +29,7 @@ PythonIDE-Clean is a web-based Python IDE designed for educational use at a coll
 - **RDS Endpoint**: pythonide-db.c1u6aa2mqwwf.us-east-2.rds.amazonaws.com
 - **Load Balancer**: pythonide-alb-456687384.us-east-2.elb.amazonaws.com
 - **Student Count**: 41 directories (all admin accounts present)
-- **Database**: pythonide-db (corrected name)
+- **Database**: pythonide (actual database name on RDS instance)
 
 ### Current Capacity:
 - **Target**: 60+ concurrent users on AWS ECS Fargate
@@ -82,7 +82,7 @@ PythonIDE-Clean is a web-based Python IDE designed for educational use at a coll
 
 ### Environment Variables (AWS):
 ```bash
-DATABASE_URL=postgresql://pythonide_admin:Sachinadlakha9082@pythonide-db.c1u6aa2mqwwf.us-east-2.rds.amazonaws.com:5432/pythonide-db
+DATABASE_URL=postgresql://pythonide_admin:Sachinadlakha9082@pythonide-db.c1u6aa2mqwwf.us-east-2.rds.amazonaws.com:5432/pythonide
 IDE_SECRET_KEY=@ok#N2q0%!F2zGUuC^rYvtY2Op#hkEWsMtBRDsk@5Bq7D8x#Y18kajwIrozM0YE6
 IDE_DATA_PATH=/mnt/efs/pythonide-data
 PORT=8080

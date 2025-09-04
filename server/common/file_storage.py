@@ -19,14 +19,14 @@ class FileStorageManager:
         self._ensure_base_directories()
     
     def _get_storage_root(self):
-        """Get storage root - AWS EFS or local"""
-        # AWS EFS - mounted at /mnt/efs in production
-        if os.path.exists('/mnt/efs'):
-            return '/mnt/efs/pythonide-data'
-        
-        # Check custom environment variable
+        """Get storage root - prioritize environment variable, then EFS, then local"""
+        # Check custom environment variable first (set in Docker)
         if 'IDE_DATA_PATH' in os.environ:
             return os.environ['IDE_DATA_PATH']
+        
+        # AWS EFS - mounted at /mnt/efs in production
+        if os.path.exists('/mnt/efs/pythonide-data'):
+            return '/mnt/efs/pythonide-data'
         
         # Local development - directory outside project
         return '/tmp/pythonide-data'

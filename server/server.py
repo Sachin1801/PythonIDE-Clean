@@ -21,6 +21,7 @@ from setup_route import SetupHandler, ResetDatabaseHandler
 from common.database import db_manager
 from health_monitor import health_monitor
 from migrations.migration_manager import run_auto_migrations
+from auto_init_users import init_users_if_needed
 
 # Load environment variables
 load_dotenv()
@@ -159,8 +160,9 @@ def main():
     port = args.port or int(os.getenv('PORT', 10086))
     address = args.address
 
-    template_path = os.path.join(os.path.dirname(__file__), '..', 'dist', 'templates')
-    static_path = os.path.join(os.path.dirname(__file__), '..', 'dist', 'static')
+    # Use absolute paths that work in Docker container
+    template_path = '/app/dist/templates' if os.path.exists('/app/dist/templates') else os.path.join(os.path.dirname(__file__), '..', 'dist', 'templates')
+    static_path = '/app/dist/static' if os.path.exists('/app/dist/static') else os.path.join(os.path.dirname(__file__), '..', 'dist', 'static')
     settings = {
         'template_path': template_path,
         'static_path': static_path,
@@ -206,6 +208,13 @@ def main():
             logger.error("Database migrations failed! Server startup aborted.")
             sys.exit(1)
         logger.info("Database migrations completed successfully")
+        
+        # Auto-initialize users if needed
+        logger.info("Checking if users need initialization...")
+        try:
+            init_users_if_needed()
+        except Exception as e:
+            logger.error(f"Failed to initialize users: {e}")
     else:
         logger.warning("DATABASE_URL not set - using local PostgreSQL fallback")
         logger.warning("Migrations will be skipped without DATABASE_URL")

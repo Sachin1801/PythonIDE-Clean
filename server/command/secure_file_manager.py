@@ -204,6 +204,30 @@ class SecureFileManager:
                 'files': []
             }
         
+        # Special handling for professors accessing Local directory
+        if dir_path == 'Local' and role == 'professor':
+            # List all student directories for professors
+            local_path = self.base_path / 'Local'
+            if local_path.exists():
+                try:
+                    subdirs = []
+                    for item in local_path.iterdir():
+                        if item.is_dir():
+                            subdirs.append({
+                                'name': item.name,
+                                'path': f'Local/{item.name}'
+                            })
+                    return {
+                        'success': True,
+                        'directories': sorted(subdirs, key=lambda x: x['name']),
+                        'files': []
+                    }
+                except Exception as e:
+                    logger.error(f"Error listing Local directory for professor: {e}")
+                    return {'success': False, 'error': str(e)}
+            else:
+                return {'success': False, 'error': 'Local directory not found'}
+        
         permission = self.validate_path(username, role, dir_path)
         if not permission:
             return {'success': False, 'error': 'Permission denied'}

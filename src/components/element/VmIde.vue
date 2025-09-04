@@ -10,7 +10,6 @@
       v-on:run-item="runPathSelected"
       @stop-item="stop"
       @clear-console="clearConsole"
-      @share-project="shareProject"
       @sign-in="handleSignIn"
       @open-upload-dialog="showUploadDialog = true"
       @download-file="downloadFile"
@@ -21,7 +20,6 @@
       @open-move-dialog="openMoveDialog"
       @delete-file="deleteFileFromMenu"
       @delete-selected-file="deleteSelectedFile"
-      @share-file="shareFile"
       @undo="handleUndo"
       @redo="handleRedo"
       @cut="handleCut"
@@ -2470,10 +2468,6 @@ export default {
       this.fileToMove = null;
       this.showFileBrowserDialog = true;
     },
-    shareProject() {
-      // Handle share project functionality
-      this.$message.info('Share project feature coming soon!');
-    },
     handleSignIn() {
       console.log('handleSignIn called');
       
@@ -2583,10 +2577,6 @@ export default {
         }
       }
       this.showNewFolderDialog = true;
-    },
-    shareFile() {
-      // Handle share file functionality
-      this.$message.info('Share file feature coming soon!');
     },
     // Edit menu handlers
     handleUndo() {

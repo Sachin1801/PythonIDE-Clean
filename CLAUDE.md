@@ -3,29 +3,37 @@
 ## Project Overview
 PythonIDE-Clean is a web-based Python IDE designed for educational use at a college. It supports 60+ concurrent students, allowing them to write, execute, and submit Python code for assignments and tests.
 
-## Current Status (Updated: December 2024)
+## Current Status (Updated: January 2025)
 
 ### ✅ Implemented Features:
 1. **User authentication** - Login system with bcrypt password hashing
-2. **File isolation** - Each student has `Local/{username}/` folder
-3. **PostgreSQL database** - Migrated from SQLite for scalability
+2. **File isolation** - Each student has `Local/{username}/` folder (41 students)
+3. **PostgreSQL database** - AWS RDS PostgreSQL for production
 4. **Authenticated WebSockets** - Secure real-time connections
-5. **Role-based permissions** - Student vs Professor access control
-6. **Cloud deployment** - Railway platform with automatic scaling
+5. **Role-based permissions** - Student vs Professor access control (3 admin accounts: sl7927, sa9082, et2434)
+6. **AWS deployment** - ECS Fargate with EFS persistent storage
 7. **Session management** - Token-based authentication
 8. **File synchronization** - Database tracks file metadata
 9. **Hybrid REPL System** - Scripts transition to REPL with variable persistence
+10. **Admin permissions** - Professors can see all student directories in Local/
 
-### ⚠️ Remaining Issues:
-1. **Resource limits** - Need CPU/memory limits per execution
-2. **Rate limiting** - No request throttling implemented
-3. **Process cleanup** - Abandoned processes not cleaned automatically
-4. **Monitoring** - Basic logging only, no APM integration
-5. **Backups** - Manual process, not automated
+### 🚨 Current Deployment Issues:
+1. **Docker Platform Mismatch** - Image built with wrong platform manifest for AWS Fargate
+2. **Docker Credential Issues** - Cannot rebuild image locally due to credential problems
+3. **Service Down** - ECS tasks failing to start due to platform incompatibility
+
+### 🎯 Working Configuration:
+- **Account ID**: 653306034507
+- **Region**: us-east-2
+- **EFS ID**: fs-0ba3b6fecab24774a
+- **RDS Endpoint**: pythonide-db.c1u6aa2mqwwf.us-east-2.rds.amazonaws.com
+- **Load Balancer**: pythonide-alb-456687384.us-east-2.elb.amazonaws.com
+- **Student Count**: 41 directories (all admin accounts present)
+- **Database**: pythonide-db (corrected name)
 
 ### Current Capacity:
-- **With PostgreSQL: 60+ concurrent users** (previously 5-10 with SQLite)
-- Tested up to 20 concurrent users successfully
+- **Target**: 60+ concurrent users on AWS ECS Fargate
+- **Status**: Service configured but not running due to Docker image issues
 
 ## Current Architecture
 
@@ -63,33 +71,41 @@ PythonIDE-Clean is a web-based Python IDE designed for educational use at a coll
 
 ## Deployment & Infrastructure
 
-### Production Environment (Railway):
-- **Platform**: Railway.app cloud hosting
-- **Database**: PostgreSQL (managed by Railway)
-- **URL**: Accessible via Railway-generated domain
-- **Scaling**: Automatic based on load
-- **Cost**: $0-20/month on free tier
+### Production Environment (AWS):
+- **Platform**: AWS ECS Fargate
+- **Database**: AWS RDS PostgreSQL (pythonide-db.c1u6aa2mqwwf.us-east-2.rds.amazonaws.com)
+- **Storage**: AWS EFS (fs-0ba3b6fecab24774a) mounted at /mnt/efs/pythonide-data
+- **Load Balancer**: pythonide-alb-456687384.us-east-2.elb.amazonaws.com
+- **Region**: us-east-2
+- **Container Registry**: ECR (653306034507.dkr.ecr.us-east-2.amazonaws.com/pythonide-backend)
+- **Status**: Infrastructure ready, service failing due to Docker image platform issues
 
-### Environment Variables:
+### Environment Variables (AWS):
 ```bash
-DATABASE_URL=postgresql://...  # Auto-set by Railway
-PORT=8080                       # Auto-set by Railway
-IDE_SECRET_KEY=<secure-key>
+DATABASE_URL=postgresql://pythonide_admin:Sachinadlakha9082@pythonide-db.c1u6aa2mqwwf.us-east-2.rds.amazonaws.com:5432/pythonide-db
+IDE_SECRET_KEY=@ok#N2q0%!F2zGUuC^rYvtY2Op#hkEWsMtBRDsk@5Bq7D8x#Y18kajwIrozM0YE6
+IDE_DATA_PATH=/mnt/efs/pythonide-data
+PORT=8080
 MAX_CONCURRENT_EXECUTIONS=60
 EXECUTION_TIMEOUT=30
 MEMORY_LIMIT_MB=128
 ```
 
-### Deployment Process:
+### Deployment Process (AWS):
 ```bash
-# Deploy to Railway
-railway up
+# Build and deploy (currently failing due to platform issues)
+./deploy-aws.sh
 
-# Initialize users
-railway run python server/migrations/create_users.py
+# Alternative: Build with explicit platform
+docker build --platform linux/amd64 -f Dockerfile -t pythonide-backend:latest .
 
-# Monitor logs
-railway logs
+# Push to ECR
+aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 653306034507.dkr.ecr.us-east-2.amazonaws.com
+docker tag pythonide-backend:latest 653306034507.dkr.ecr.us-east-2.amazonaws.com/pythonide-backend:latest
+docker push 653306034507.dkr.ecr.us-east-2.amazonaws.com/pythonide-backend:latest
+
+# Update ECS service
+aws ecs update-service --cluster pythonide-cluster --service pythonide-service --force-new-deployment --region us-east-2
 ```
 
 ## Hybrid REPL System

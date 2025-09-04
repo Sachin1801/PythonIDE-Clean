@@ -49,11 +49,6 @@
                 </button>
               </li>
               <li class="nav__dropdown-item">
-                <button @click="shareFile()">
-                  <span>Share</span>
-                </button>
-              </li>
-              <li class="nav__dropdown-item">
                 <button @click="moveFile()" :disabled="!hasSelectedFile">
                   <span>Move</span>
                   <span class="nav__keyboard-shortcut">Ctrl+Shift+M</span>
@@ -284,10 +279,6 @@
           <Trash2 :size="20" />
         </div>
 
-        <!-- Share Button -->
-        <div class="icon-btn" @click="shareProject()" title="Share">
-          <Share2 :size="20" />
-        </div>
       </div>
 
       <!-- Right Section: Settings Icon -->
@@ -309,7 +300,7 @@
 </template>
 
 <script>
-import { Upload, Play, Square, Settings, Share2, Trash2, UserCircle, Save } from 'lucide-vue-next';
+import { Upload, Play, Square, Settings, Trash2, UserCircle, Save } from 'lucide-vue-next';
 import { ElMessageBox, ElMessage } from 'element-plus';
 import UserProfileModal from '../../UserProfileModal.vue';
 
@@ -388,7 +379,6 @@ export default {
     Play,
     Square,
     Settings,
-    Share2,
     Trash2,
     UserCircle,
     Save,
@@ -713,9 +703,6 @@ export default {
         // User cancelled - do nothing
       });
     },
-    shareProject() {
-      this.$emit('share-project');
-    },
     openSettings() {
       this.$emit('open-settings');
     },
@@ -824,10 +811,6 @@ export default {
       }).catch(() => {
         // User cancelled
       });
-    },
-    shareFile() {
-      this.closeDropdowns();
-      this.$emit('share-file');
     },
     // Edit menu methods
     undo() {

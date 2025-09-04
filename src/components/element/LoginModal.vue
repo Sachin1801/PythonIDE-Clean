@@ -41,7 +41,7 @@
           </div>
           
           <div v-if="isFirstLogin" class="info-message">
-            <p>First time? Your initial password is: <code>{{ username }}2024</code></p>
+            <p>First time? Your initial password is: <code>student@{{ username }}</code></p>
             <p>Please change it after logging in.</p>
           </div>
           
@@ -51,13 +51,6 @@
           </button>
         </form>
         
-        <div class="login-footer">
-          <p class="demo-info">Demo Accounts:</p>
-          <ul class="demo-accounts">
-            <li>Student: <code>sa9082</code> / <code>sa90822024</code></li>
-            <li>Professor: <code>professor</code> / <code>ChangeMeASAP2024!</code></li>
-          </ul>
-        </div>
       </div>
     </div>
   </div>
@@ -361,39 +354,6 @@ export default {
   cursor: not-allowed;
 }
 
-.login-footer {
-  margin-top: 20px;
-  padding-top: 20px;
-  border-top: 1px solid var(--border-color, #464647);
-}
-
-.demo-info {
-  font-size: 13px;
-  color: var(--text-secondary, #969696);
-  margin-bottom: 10px;
-  font-weight: 500;
-}
-
-.demo-accounts {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.demo-accounts li {
-  font-size: 12px;
-  color: var(--text-secondary, #969696);
-  margin-bottom: 5px;
-}
-
-.demo-accounts code {
-  background: var(--code-bg, #252526);
-  border: 1px solid var(--border-color, #464647);
-  padding: 2px 4px;
-  border-radius: 3px;
-  color: var(--text-primary, #cccccc);
-  font-size: 11px;
-}
 
 /* Light Theme Support */
 [data-theme="light"] .login-modal {
@@ -466,23 +426,6 @@ export default {
   background: #096dd9;
 }
 
-[data-theme="light"] .login-footer {
-  border-top-color: #e0e0e0;
-}
-
-[data-theme="light"] .demo-info {
-  color: #666666;
-}
-
-[data-theme="light"] .demo-accounts li {
-  color: #666666;
-}
-
-[data-theme="light"] .demo-accounts code {
-  background: #f0f0f0;
-  border-color: #d0d0d0;
-  color: #333333;
-}
 
 /* High Contrast Theme Support */
 [data-theme="high-contrast"] .login-modal {
@@ -554,21 +497,4 @@ export default {
   border-color: #ffff00;
 }
 
-[data-theme="high-contrast"] .login-footer {
-  border-top: 2px solid #ffffff;
-}
-
-[data-theme="high-contrast"] .demo-info {
-  color: #ffffff;
-}
-
-[data-theme="high-contrast"] .demo-accounts li {
-  color: #ffffff;
-}
-
-[data-theme="high-contrast"] .demo-accounts code {
-  background: #333333;
-  border: 1px solid #ffffff;
-  color: #ffffff;
-}
 </style>

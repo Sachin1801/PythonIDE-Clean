@@ -22,7 +22,7 @@
       "environment": [
         {
           "name": "DATABASE_URL",
-          "value": "postgresql://pythonide_admin:Sachinadlakha9082@pythonide-db.c1u6aa2mqwwf.us-east-2.rds.amazonaws.com:5432/pythonide-db"
+          "value": "postgresql://pythonide_admin:Sachinadlakha9082@pythonide-db.c1u6aa2mqwwf.us-east-2.rds.amazonaws.com:5432/pythonide"
         },
         {
           "name": "IDE_SECRET_KEY",

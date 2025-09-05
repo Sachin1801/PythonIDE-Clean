@@ -358,7 +358,7 @@ export default {
     
     isProtectedFolder(data) {
       // Check if this is a protected project folder (root level)
-      const protectedFolders = ['Assignments', 'Lecture Notes'];
+      const protectedFolders = ['Lecture Notes'];
       const name = data.label || data.name;
       // Protected folders can't be renamed or deleted
       return data.path === '/' && protectedFolders.includes(name);

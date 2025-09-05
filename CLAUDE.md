@@ -54,15 +54,12 @@ PythonIDE-Clean is a web-based Python IDE designed for educational use at a coll
 │   ├── jd1234/         # Another student's workspace
 │   └── ...
 ├── Lecture Notes/      # Professor uploads, students read-only
-├── Assignments/        # Assignment descriptions and submissions
-└── Tests/             # Test descriptions and submissions
 ```
 
 ### User Roles & Permissions:
 - **Students:**
   - Full access: `Local/{username}/`
   - Read-only: `Lecture Notes/`
-  - Write own files by students but assignment and test material uploaded by professor which is read only for students: `Assignments/`, `Tests/`
   
 - **Professors:**
   - Full access to everything

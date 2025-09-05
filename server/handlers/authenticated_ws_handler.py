@@ -300,9 +300,6 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler, WebSocketKeepali
             'create_directory': self.file_manager.create_directory,
             'delete_file': self.file_manager.delete_file,
             'rename_file': self.file_manager.rename_file,
-            'submit_assignment': self.file_manager.submit_assignment,
-            'get_submissions': self.file_manager.get_submissions,
-            'grade_submission': self.file_manager.grade_submission,
         }
         
         if cmd in file_commands:
@@ -355,10 +352,10 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler, WebSocketKeepali
         """Handle ide_list_projects command - returns available projects for user"""
         if self.role == 'professor':
             # Professor can see all top-level directories
-            projects = ['Local', 'Lecture Notes', 'Assignments', 'Tests']
+            projects = ['Local', 'Lecture Notes']
         else:
             # Students see only their personal directory and shared resources
-            projects = [f'Local/{self.username}', 'Lecture Notes', 'Assignments', 'Tests']
+            projects = [f'Local/{self.username}', 'Lecture Notes']
         
         return {
             'code': 0,

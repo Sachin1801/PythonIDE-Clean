@@ -1161,12 +1161,12 @@ export default {
 }
 
 .stop-btn {
-  background: var(--danger-color, #dc3545);
+  background: var(--danger-color, #6c757d);
   color: white;
 }
 
 .stop-btn:hover {
-  background: var(--danger-hover, #c82333);
+  background: var(--danger-hover, #adb5bd);
 }
 
 .save-btn {

@@ -36,8 +36,6 @@ class FileStorageManager:
         directories = [
             self.ide_base,
             os.path.join(self.ide_base, 'Local'),
-            os.path.join(self.ide_base, 'Assignments'), 
-            os.path.join(self.ide_base, 'Tests'),
             os.path.join(self.ide_base, 'Lecture Notes')
         ]
         
@@ -51,13 +49,6 @@ class FileStorageManager:
         """Get user's local directory path"""
         return os.path.join(self.ide_base, 'Local', username)
     
-    def get_assignments_directory(self):
-        """Get assignments directory path"""
-        return os.path.join(self.ide_base, 'Assignments')
-    
-    def get_tests_directory(self):
-        """Get tests directory path"""  
-        return os.path.join(self.ide_base, 'Tests')
     
     def get_lecture_notes_directory(self):
         """Get lecture notes directory path"""

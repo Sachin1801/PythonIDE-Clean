@@ -119,7 +119,7 @@ print("Only you can see files in your Local/{username}/ folder.")
     logger.info(f"  - Total: {len(student_usernames)} user directories")
     
     # Copy content directories (Assignments, Tests, Lecture Notes)
-    content_dirs = ['Assignments', 'Tests', 'Lecture Notes', 'Testing']
+    content_dirs = ['Lecture Notes']
     for dir_name in content_dirs:
         local_dir = local_base / dir_name
         efs_dir = efs_base / dir_name
@@ -160,7 +160,7 @@ def verify_efs_structure():
     issues = []
     
     # Check main directories
-    for dir_name in ['Local', 'Assignments', 'Tests', 'Lecture Notes']:
+    for dir_name in ['Local', 'Lecture Notes']:
         dir_path = efs_base / dir_name
         if not dir_path.exists():
             issues.append(f"Missing directory: {dir_name}")

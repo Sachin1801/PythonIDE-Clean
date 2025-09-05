@@ -82,9 +82,7 @@ def setup_users():
     # Create shared directories
     print("\nCreating shared directories...")
     shared_dirs = [
-        "server/projects/ide/Lecture Notes",
-        "server/projects/ide/Assignments",
-        "server/projects/ide/Tests"
+        "server/projects/ide/Lecture Notes"
     ]
     
     for dir_path in shared_dirs:

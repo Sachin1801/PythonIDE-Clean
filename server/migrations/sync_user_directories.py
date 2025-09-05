@@ -103,9 +103,7 @@ print("Start coding and have fun learning Python!")
     
     # Ensure other required directories exist
     other_dirs = [
-        "/home/sachinadlakha/on-campus/PythonIDE-Clean/server/projects/ide/Lecture Notes",
-        "/home/sachinadlakha/on-campus/PythonIDE-Clean/server/projects/ide/Assignments",
-        "/home/sachinadlakha/on-campus/PythonIDE-Clean/server/projects/ide/Tests"
+        "/home/sachinadlakha/on-campus/PythonIDE-Clean/server/projects/ide/Lecture Notes"
     ]
     
     print("\nEnsuring other directories exist:")
@@ -118,7 +116,7 @@ print("Start coding and have fun learning Python!")
     print("\nDirectory Structure:")
     print("  • Admins (sl7927, sa9082, et2434): Full access to all directories")
     print("  • Students: Access only to Local/{username}/")
-    print("  • All users: Read-only access to Lecture Notes, Assignments, Tests")
+    print("  • All users: Read-only access to Lecture Notes")
 
 if __name__ == '__main__':
     sync_user_directories()

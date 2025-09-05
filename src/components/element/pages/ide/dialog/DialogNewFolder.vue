@@ -238,7 +238,7 @@ export default {
       // If path already contains the project name, return as is
       if (path && path !== '/') {
         // Check if path already starts with a known project name
-        const knownProjects = ['Local', 'Lecture Notes', 'Assignments', 'Tests'];
+        const knownProjects = ['Local', 'Lecture Notes'];
         for (let proj of knownProjects) {
           if (path.startsWith(proj)) {
             return path;

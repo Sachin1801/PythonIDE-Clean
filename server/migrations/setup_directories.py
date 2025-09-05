@@ -52,7 +52,7 @@ def setup_directory_structure():
     print(f"Setting up directory structure at: {base_path}")
     
     # Create main directories
-    main_dirs = ['Local', 'Lecture Notes', 'Assignments', 'Tests']
+    main_dirs = ['Local', 'Lecture Notes']
     
     for dir_name in main_dirs:
         dir_path = base_path / dir_name
@@ -80,21 +80,6 @@ This directory contains course materials uploaded by professors.
 
 Materials are organized by topic or week."""
         
-        elif dir_name == 'Assignments':
-            readme_content = """# Assignments
-
-This directory contains assignment descriptions and submissions.
-- Assignment descriptions are uploaded by professors
-- Students submit their work in their own subdirectories
-- Structure: Assignments/{assignment_name}/{username}/"""
-        
-        elif dir_name == 'Tests':
-            readme_content = """# Tests
-
-This directory contains test materials and submissions.
-- Test descriptions are uploaded by professors
-- Students submit their work during test periods
-- Structure: Tests/{test_name}/{username}/"""
         
         readme_path.write_text(readme_content)
     

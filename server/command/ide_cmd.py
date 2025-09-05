@@ -41,7 +41,7 @@ if not os.path.exists(ide_base):
     os.makedirs(ide_base)
 
 # Ensure default folders exist
-default_folders = ['Local', 'Assignments', 'Lecture Notes', 'Tests']
+default_folders = ['Local', 'Lecture Notes']
 for folder_name in default_folders:
     folder_path = os.path.join(ide_base, folder_name)
     if not os.path.exists(folder_path):
@@ -54,7 +54,7 @@ for folder_name in default_folders:
             'openList': [],
             'selectFilePath': '',
             'lastAccessTime': time.time(),
-            'protected': folder_name in ['Assignments', 'Lecture Notes']  # Mark as protected
+            'protected': folder_name in ['Lecture Notes']  # Mark as protected
         }
         with open(config_path, 'w') as f:
             json.dump(config_data, f, indent=4)
@@ -202,7 +202,7 @@ print("="*50)
         old_name = data.get('oldName')
         
         # Check if project is protected
-        protected_projects = ['Assignments', 'Lecture Notes']
+        protected_projects = ['Lecture Notes']
         if old_name in protected_projects:
             await response(client, cmd_id, -1, f'Cannot rename protected folder: {old_name}')
             return
@@ -360,12 +360,12 @@ print("="*50)
             # Handle paths that might already include project context
             # If the path already starts with a project name, use it as-is
             # Otherwise, prepend the current project name
-            if '/' in old_path_relative and old_path_relative.split('/')[0] in ['Local', 'Lecture Notes', 'Assignments', 'Tests']:
+            if '/' in old_path_relative and old_path_relative.split('/')[0] in ['Local', 'Lecture Notes']:
                 old_path_full = old_path_relative  # Path already includes project context
             else:
                 old_path_full = f"{prj_name}/{old_path_relative}" if old_path_relative else prj_name
                 
-            if '/' in new_path_relative and new_path_relative.split('/')[0] in ['Local', 'Lecture Notes', 'Assignments', 'Tests']:
+            if '/' in new_path_relative and new_path_relative.split('/')[0] in ['Local', 'Lecture Notes']:
                 new_path_full = new_path_relative  # Path already includes project context
             else:
                 new_path_full = f"{prj_name}/{new_path_relative}" if new_path_relative else prj_name
@@ -475,12 +475,12 @@ print("="*50)
             # Handle paths that might already include project context
             # If the path already starts with a project name, use it as-is
             # Otherwise, prepend the current project name
-            if '/' in old_path_relative and old_path_relative.split('/')[0] in ['Local', 'Lecture Notes', 'Assignments', 'Tests']:
+            if '/' in old_path_relative and old_path_relative.split('/')[0] in ['Local', 'Lecture Notes']:
                 old_path_full = old_path_relative  # Path already includes project context
             else:
                 old_path_full = f"{prj_name}/{old_path_relative}" if old_path_relative else prj_name
                 
-            if '/' in new_path_relative and new_path_relative.split('/')[0] in ['Local', 'Lecture Notes', 'Assignments', 'Tests']:
+            if '/' in new_path_relative and new_path_relative.split('/')[0] in ['Local', 'Lecture Notes']:
                 new_path_full = new_path_relative  # Path already includes project context
             else:
                 new_path_full = f"{prj_name}/{new_path_relative}" if new_path_relative else prj_name

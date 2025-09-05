@@ -2046,7 +2046,7 @@ export default {
       
       if (role === 'professor') {
         // Professor: Load all main folders including Local for full access
-        const professorProjects = ['Local', 'Lecture Notes', 'Assignments', 'Tests'];
+        const professorProjects = ['Local', 'Lecture Notes'];
         professorProjects.forEach(proj => {
           if (this.ideInfo.projList.some(p => p.name === proj)) {
             projectsToLoad.push(proj);
@@ -2060,7 +2060,7 @@ export default {
         }
         
         // Add other standard projects if they exist
-        const standardProjects = ['Lecture Notes', 'Assignments', 'Tests'];
+        const standardProjects = ['Lecture Notes'];
         standardProjects.forEach(proj => {
           if (this.ideInfo.projList.some(p => p.name === proj)) {
             projectsToLoad.push(proj);

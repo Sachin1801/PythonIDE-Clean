@@ -1,7 +1,12 @@
 # Local User Directories
 
-This directory contains individual user workspaces.
-Each user has their own subdirectory: Local/{username}/
+This directory contains individual workspaces for each student.
 
-Students can only access their own directory.
-Professors can access all directories.
+## Structure
+- Each student has their own directory: `Local/{username}/`
+- Students can only access their own directory
+- Professors can access all directories
+
+## Permissions
+- Students: Full access to their own directory
+- Professors: Full access to all directories

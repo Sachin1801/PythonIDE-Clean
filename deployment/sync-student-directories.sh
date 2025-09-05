@@ -15,8 +15,6 @@ fi
 
 # Ensure base structure exists
 mkdir -p /mnt/efs/pythonide-data/ide/Local
-mkdir -p /mnt/efs/pythonide-data/ide/Assignments
-mkdir -p /mnt/efs/pythonide-data/ide/Tests
 mkdir -p "/mnt/efs/pythonide-data/ide/Lecture Notes"
 
 echo "✅ Created base directory structure on EFS"

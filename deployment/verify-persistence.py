@@ -58,7 +58,7 @@ def check_persistence():
         return False
     
     # Check directories
-    dirs_to_check = ['Local', 'Lecture Notes', 'Assignments', 'Tests']
+    dirs_to_check = ['Local', 'Lecture Notes']
     for dir_name in dirs_to_check:
         dir_path = os.path.join(base_path, dir_name)
         if os.path.exists(dir_path):

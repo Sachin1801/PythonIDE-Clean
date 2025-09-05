@@ -46,8 +46,6 @@ echo -e "\n${YELLOW}Step 4: Verifying EFS directories...${NC}"
 echo "Note: EFS directories are created automatically when containers start."
 echo "The following directories should exist on EFS:"
 echo "  /mnt/efs/pythonide-data/ide/Local/"
-echo "  /mnt/efs/pythonide-data/ide/Assignments/"
-echo "  /mnt/efs/pythonide-data/ide/Tests/"
 echo "  /mnt/efs/pythonide-data/ide/Lecture Notes/"
 
 # Step 5: Test login

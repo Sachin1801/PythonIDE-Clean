@@ -40,10 +40,6 @@
             {{ error }}
           </div>
           
-          <div v-if="isFirstLogin" class="info-message">
-            <p>First time? Your initial password is: <code>student@{{ username }}</code></p>
-            <p>Please change it after logging in.</p>
-          </div>
           
           <button type="submit" class="login-btn" :disabled="loading">
             <span v-if="loading">Signing in...</span>

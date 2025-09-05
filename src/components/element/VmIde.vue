@@ -5766,8 +5766,9 @@ body .console-output-area .console-line .console-repl-input span {
   background: var(--bg-primary, #1E1E1E);
   border: 1px solid var(--border-secondary, #464647);
   color: var(--text-primary, #FFFFFF);
-  font-family: 'Courier New', monospace;
-  font-size: 14px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace !important;
+  font-size: 13px !important;
+  line-height: 1.4 !important;
   padding: 6px 8px;
   border-radius: 3px;
   outline: none;
@@ -5775,7 +5776,6 @@ body .console-output-area .console-line .console-repl-input span {
   overflow-y: auto; /* Scroll when exceeds max-height */
   min-height: 32px; /* Approximately 1 line */
   max-height: 150px; /* Approximately 7 lines */
-  line-height: 20px;
   transition: border-color 0.2s ease, height 0.15s ease;
 }
 

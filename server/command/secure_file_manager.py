@@ -174,6 +174,7 @@ class SecureFileManager:
     def list_directory(self, username, role, data):
         """List directory contents with permission checking"""
         dir_path = data.get('path', '')
+        logger.info(f"Directory listing request: user={username}, role={role}, path='{dir_path}'")
         
         # Root directory is always accessible (to see top-level folders)
         if dir_path == '' or dir_path == '/':
@@ -192,16 +193,24 @@ class SecureFileManager:
         # Special handling for professors accessing Local directory
         if dir_path == 'Local' and role == 'professor':
             # List all student directories for professors
+            logger.info(f"Professor {username} accessing Local directory")
             local_path = self.base_path / 'Local'
+            logger.info(f"Local path: {local_path}, exists: {local_path.exists()}")
+            
             if local_path.exists():
                 try:
                     subdirs = []
-                    for item in local_path.iterdir():
+                    all_items = list(local_path.iterdir())
+                    logger.info(f"Found {len(all_items)} items in Local directory")
+                    
+                    for item in all_items:
                         if item.is_dir():
                             subdirs.append({
                                 'name': item.name,
                                 'path': f'Local/{item.name}'
                             })
+                    
+                    logger.info(f"Returning {len(subdirs)} directories for professor")
                     return {
                         'success': True,
                         'directories': sorted(subdirs, key=lambda x: x['name']),
@@ -211,6 +220,7 @@ class SecureFileManager:
                     logger.error(f"Error listing Local directory for professor: {e}")
                     return {'success': False, 'error': str(e)}
             else:
+                logger.error(f"Local directory not found: {local_path}")
                 return {'success': False, 'error': 'Local directory not found'}
         
         permission = self.validate_path(username, role, dir_path)

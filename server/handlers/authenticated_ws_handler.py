@@ -196,6 +196,7 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler, WebSocketKeepali
                     self.role = result['role']
                     self.session_id = result['token']  # Store the token as session_id
                     self.full_name = result['full_name']
+                    logger.info(f"User authenticated: {self.username} with role: {self.role}")
                     
                     # Sync user files with database
                     try:

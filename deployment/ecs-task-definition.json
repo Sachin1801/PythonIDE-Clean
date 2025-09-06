@@ -7,7 +7,7 @@
     "FARGATE"
   ],
   "cpu": "1024",
-  "memory": "2048",
+  "memory": "4096",
   "containerDefinitions": [
     {
       "name": "pythonide-backend",
@@ -35,6 +35,10 @@
         {
           "name": "PORT",
           "value": "8080"
+        },
+        {
+          "name": "ENABLE_AUTO_RESTART",
+          "value": "false"
         }
       ],
       "mountPoints": [

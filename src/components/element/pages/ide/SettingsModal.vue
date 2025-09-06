@@ -20,7 +20,7 @@
         
         <div class="setting-item">
           <label>Font Size</label>
-          <select v-model="localSettings.fontSize" @change="updateFontSize" class="setting-select">
+          <select v-model="localSettings.fontSize" @change="updateFontSize(localSettings.fontSize)" class="setting-select">
             <option value="12">12px</option>
             <option value="14">14px</option>
             <option value="16">16px</option>
@@ -38,7 +38,7 @@
           </div>
         </div>
         
-        <div class="setting-item">
+        <!-- <div class="setting-item">
           <label>Auto-save</label>
           <div class="switch-container" @click="toggleAutoSave">
             <div class="switch" :class="{ 'switch-on': localSettings.autoSave }">
@@ -64,7 +64,7 @@
               <div class="switch-handle"></div>
             </div>
           </div>
-        </div>
+        </div> -->
         
         <div class="settings-footer">
           <button class="close-button" @click="handleClose">Close</button>

@@ -72,6 +72,7 @@
               @download-item="handleDownloadItem"
               @new-file="handleNewFileFromTree"
               @new-folder="handleNewFolderFromTree"
+              @import-file="handleImportFileFromTree"
             ></ProjTree>
           </div>
         </pane>
@@ -117,7 +118,7 @@
               <!-- Console Header with Collapse/Expand Button -->
           <div class="console-header">
             <div class="console-header-left">
-              <span class="console-title">{{ isReplMode ? 'Python REPL' : 'Console' }}</span>
+              <span class="console-title">{{ isReplMode ? 'Console' : 'Console' }}</span>
             </div>
             <div class="console-header-center">
               <!-- Collapsed state: Only up arrow -->
@@ -354,6 +355,7 @@
     <DialogUpload v-if="showUploadDialog" v-model="showUploadDialog" @refresh-tree="refreshProjectTree" @close="showUploadDialog = false"></DialogUpload>
     <DialogNewFile v-if="showNewFileDialog" v-model="showNewFileDialog" @file-created="handleFileCreated"></DialogNewFile>
     <DialogNewFolder v-if="showNewFolderDialog" v-model="showNewFolderDialog" @folder-created="handleFolderCreated"></DialogNewFolder>
+    <DialogImportFile v-if="showImportFileDialog" v-model="showImportFileDialog" @files-imported="handleFilesImported"></DialogImportFile>
     <DialogFileBrowser 
       v-model="showFileBrowserDialog" 
       :mode="fileBrowserMode"
@@ -404,6 +406,7 @@ import DialogDelete from './pages/ide/dialog/DialogDelete';
 import DialogUpload from './pages/ide/dialog/DialogUpload';
 import DialogNewFile from './pages/ide/dialog/DialogNewFile';
 import DialogNewFolder from './pages/ide/dialog/DialogNewFolder';
+import DialogImportFile from './pages/ide/dialog/DialogImportFile';
 import DialogFileBrowser from './pages/ide/dialog/DialogFileBrowser';
 import sessionManager from '../../utils/sessionManager';
 import CsvViewer from './pages/ide/CsvViewer';
@@ -425,6 +428,7 @@ export default {
       showUploadDialog: false,
       showNewFileDialog: false,
       showNewFolderDialog: false,
+      showImportFileDialog: false,
       showFileBrowserDialog: false,
       showLoginModal: false,
       fileBrowserMode: 'open',
@@ -547,6 +551,7 @@ export default {
     DialogUpload,
     DialogNewFile,
     DialogNewFolder,
+    DialogImportFile,
     DialogFileBrowser,
     CsvViewer,
     MediaViewer,
@@ -956,7 +961,10 @@ export default {
       }
       
       // Store in localStorage for persistence
-      localStorage.setItem('editorFontSize', value);
+      localStorage.setItem('fontSize', value);
+      
+      // Dispatch custom event for same-tab CodeEditor components
+      window.dispatchEvent(new CustomEvent('fontSizeChanged'));
     },
     updateLineNumbers(value) {
       // Update line numbers in all CodeMirror editors
@@ -1836,6 +1844,15 @@ export default {
       // Refresh the project tree
       this.refreshProjectTree();
     },
+    handleFilesImported(data) {
+      // Handle files imported from import file dialog
+      console.log('[handleFilesImported] Files imported:', data);
+      
+      // Refresh the project tree to show the new files
+      this.refreshProjectTree();
+      
+      // Optionally show a success message (already handled by the dialog component)
+    },
     refreshProjectTree() {
       // Refresh the project tree by re-fetching the project data
       this.refreshProjectTreeWithCallback(null);
@@ -2577,6 +2594,18 @@ export default {
         }
       }
       this.showNewFolderDialog = true;
+    },
+    handleImportFileFromTree() {
+      // Open import file dialog - only for admin users
+      const nodeSelected = this.ideInfo.nodeSelected;
+      if (!nodeSelected || (nodeSelected.type !== 'dir' && nodeSelected.type !== 'folder')) {
+        // Select the root folder if no folder is selected
+        const rootFolder = this.ideInfo.currProj?.data;
+        if (rootFolder) {
+          this.$store.commit('ide/setNodeSelected', rootFolder);
+        }
+      }
+      this.showImportFileDialog = true;
     },
     // Edit menu handlers
     handleUndo() {
@@ -5452,7 +5481,7 @@ Advanced packages (install with micropip):
   white-space: pre-wrap;
   word-wrap: break-word;
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 13px;
+  font-size: 20px;
   line-height: 1.4;
   font-weight: 400;
   letter-spacing: 0.02em; /* Consistent character spacing for output */
@@ -5533,7 +5562,7 @@ Advanced packages (install with micropip):
   white-space: pre-wrap;
   word-wrap: break-word;
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 13px;
+  font-size: 20px;
   line-height: 1.4;
   font-weight: 500;
   flex: 1;
@@ -5767,7 +5796,7 @@ body .console-output-area .console-line .console-repl-input span {
   border: 1px solid var(--border-secondary, #464647);
   color: var(--text-primary, #FFFFFF);
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace !important;
-  font-size: 13px !important;
+  font-size: 20px !important;
   line-height: 1.4 !important;
   padding: 6px 8px;
   border-radius: 3px;

@@ -17,6 +17,7 @@ from handlers.ws_handler import WebSocketHandler
 from handlers.authenticated_ws_handler import AuthenticatedWebSocketHandler
 from handlers.vue_handler import VueHandler
 from handlers.auth_handler import LoginHandler, LogoutHandler, ValidateSessionHandler, ChangePasswordHandler, RenewSessionHandler, ForgotPasswordHandler, ResetPasswordHandler
+from handlers.upload_handler import UploadFileHandler
 from setup_route import SetupHandler, ResetDatabaseHandler
 from common.database import db_manager
 from health_monitor import health_monitor
@@ -180,6 +181,7 @@ def main():
         (r'/api/change-password', ChangePasswordHandler),
         (r'/api/forgot-password', ForgotPasswordHandler),
         (r'/api/reset-password', ResetPasswordHandler),
+        (r'/api/upload-file', UploadFileHandler),
         (r'^.*$', VueHandler),
     ]
 

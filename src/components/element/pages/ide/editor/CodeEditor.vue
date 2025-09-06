@@ -226,6 +226,20 @@ export default {
       attributes: true,
       attributeFilter: ['data-theme']
     });
+    
+    // Listen for localStorage changes (font size, line numbers, etc.)
+    window.addEventListener('storage', (e) => {
+      if (e.key === 'fontSize') {
+        this.applySavedSettings();
+      } else if (e.key === 'showLineNumbers') {
+        this.applySavedSettings();
+      }
+    });
+    
+    // Listen for custom font size change events (for same-tab changes)
+    window.addEventListener('fontSizeChanged', () => {
+      this.applySavedSettings();
+    });
   },
   watch: {
     // Watch for content changes and fix coordinate system

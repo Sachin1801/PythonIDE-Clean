@@ -1,13 +1,16 @@
 <template>
   <div class="proj-tree-container">
     <div class="tree-header">
-      <span class="tree-title">File Management</span>
-      <div class="tree-header-actions">
+      <!-- <span class="tree-title">File Management</span> -->
+      <div class="tree-header-actions ">
         <button class="action-btn new-folder-btn" @click="handleNewFolder" title="New Folder">
           <FolderPlus :size="16" />
         </button>
         <button class="action-btn new-file-btn" @click="handleNewFile" title="New File">
           <FilePlus :size="16" />
+        </button>
+        <button v-if="isAdmin" class="action-btn import-btn" @click="handleImportFile" title="Import File">
+          <Upload :size="16" />
         </button>
         <button class="action-btn refresh-btn" @click="refreshTree" title="Refresh">
           <RefreshCw :size="16" />
@@ -100,7 +103,7 @@
 <script>
 import * as types from '../../../../store/mutation-types';
 import { getIconForFile, getIconForFolder, getIconForOpenFolder } from 'vscode-icons-js';
-import { RefreshCw, MoreVertical, FilePlus, FolderPlus } from 'lucide-vue-next';
+import { RefreshCw, MoreVertical, FilePlus, FolderPlus, Upload } from 'lucide-vue-next';
 import { ElMessage, ElMessageBox } from 'element-plus';
 
 export default {
@@ -109,6 +112,7 @@ export default {
     MoreVertical,
     FilePlus,
     FolderPlus,
+    Upload,
   },
   props: {
     currentUser: {
@@ -174,6 +178,20 @@ export default {
       
       // Emit event to open new folder dialog
       this.$emit('new-folder');
+    },
+    handleImportFile() {
+      // Check if a folder is selected, if not select the root folder
+      const nodeSelected = this.ideInfo.nodeSelected;
+      if (!nodeSelected || (nodeSelected.type !== 'dir' && nodeSelected.type !== 'folder')) {
+        // Select the root folder
+        const rootFolder = this.ideInfo.currProj?.data;
+        if (rootFolder) {
+          this.$store.commit('ide/setNodeSelected', rootFolder);
+        }
+      }
+      
+      // Emit event to open import file dialog
+      this.$emit('import-file');
     },
     refreshTree() {
       // Refresh all projects if in multi-root mode
@@ -569,6 +587,11 @@ export default {
     ideInfo() {
       return this.$store.state.ide.ideInfo;
     },
+    isAdmin() {
+      // Check if current user is one of the admin accounts
+      const adminAccounts = ['sl7927', 'sa9082', 'et2434'];
+      return this.currentUser && adminAccounts.includes(this.currentUser.username);
+    },
     treeData() {
       // Use multi-root data if available, otherwise fall back to single project
       if (this.ideInfo.multiRootData && this.ideInfo.multiRootData.children.length > 0) {
@@ -720,6 +743,10 @@ export default {
 
 .new-file-btn:hover {
   color: #67c23a;
+}
+
+.import-btn:hover {
+  color: #e6a23c;
 }
 
 .refresh-btn:hover {

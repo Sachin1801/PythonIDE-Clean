@@ -1152,12 +1152,12 @@ export default {
 
 /* Run and Stop button styling */
 .run-btn {
-  background: var(--accent-color, #28a745);
+  /* background: var(--accent-color, #28a745); */
   color: white;
 }
 
 .run-btn:hover {
-  background: var(--accent-hover, #218838);
+  /* background: var(--accent-hover, #218838); */
 }
 
 .stop-btn {

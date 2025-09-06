@@ -411,16 +411,38 @@ export default {
         return;
       }
       
-      const name = data.label || data.name;
+      const fullName = data.label || data.name;
+      let nameToShow = fullName;
+      let extension = '';
       
+      // For files, extract extension and show only filename for renaming
+      if (data.type === 'file') {
+        const lastDotIndex = fullName.lastIndexOf('.');
+        if (lastDotIndex > 0) { // Ensure there's a filename before the extension
+          nameToShow = fullName.substring(0, lastDotIndex);
+          extension = fullName.substring(lastDotIndex);
+        }
+      }
+      
+      // Different patterns for files vs folders
+      const isFile = data.type === 'file';
+      const inputPattern = isFile 
+        ? /^[a-zA-Z0-9_.-]+$/ // Files: no spaces allowed (safer for code files)
+        : /^[a-zA-Z0-9_. -]+$/; // Folders: allow spaces
+      const errorMessage = isFile 
+        ? 'Invalid filename format (no spaces allowed)'
+        : 'Invalid folder name format';
+
       ElMessageBox.prompt('Enter new name:', 'Rename', {
         confirmButtonText: 'OK',
         cancelButtonText: 'Cancel',
-        inputValue: name,
-        inputPattern: /^[a-zA-Z0-9_.-]+$/,
-        inputErrorMessage: 'Invalid name format'
+        inputValue: nameToShow,
+        inputPattern: inputPattern,
+        inputErrorMessage: errorMessage
       }).then(({ value }) => {
-        this.doRename(data, value);
+        // Add extension back for files
+        const finalName = (data.type === 'file' && extension) ? value + extension : value;
+        this.doRename(data, finalName);
       }).catch(() => {
         // User cancelled
       });

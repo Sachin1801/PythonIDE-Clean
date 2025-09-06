@@ -5529,7 +5529,7 @@ Advanced packages (install with micropip):
   word-wrap: break-word;
   font-weight: 500;
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 13px;
+  font-size: 20px;
   line-height: 1.4;
   letter-spacing: 0.02em; /* Match output character spacing for consistency */
 }
@@ -5551,7 +5551,7 @@ Advanced packages (install with micropip):
   color: var(--accent-color, #007ACC);
   font-weight: 500;
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 13px;
+  font-size: 20px;
   line-height: 1.4;
   flex-shrink: 0;
 }

@@ -71,41 +71,68 @@ class ProcessCleanupService:
     """Service to clean up abandoned Python processes"""
     
     def __init__(self):
-        self.max_process_age = int(os.environ.get('MAX_PROCESS_AGE', '1800'))  # 30 minutes default
-        self.max_repl_age = int(os.environ.get('MAX_REPL_AGE', '3600'))  # 60 minutes for REPL
+        # Optimized for 1 vCPU, 4GB RAM - support 8-10 users
+        self.max_process_age = int(os.environ.get('MAX_PROCESS_AGE', '3600'))  # 1 hour default (increased)
+        self.max_repl_age = int(os.environ.get('MAX_REPL_AGE', '7200'))  # 2 hours for REPL (increased)
+        self.max_concurrent_processes = 20  # Limit total user processes for current hardware
         
     def cleanup_abandoned_processes(self):
-        """Kill Python processes older than the age limit"""
+        """Kill Python processes older than the age limit or exceeding limits"""
         try:
             current_time = time.time()
             cleanup_count = 0
+            user_processes = []  # Track user processes for limit enforcement
             
             for proc in psutil.process_iter(['pid', 'create_time', 'cmdline', 'name']):
                 try:
                     # Check if it's a Python process
                     if proc.info['name'] and 'python' in proc.info['name'].lower():
+                        # Skip the main server process to prevent 30-minute crashes
+                        if proc.info['pid'] == os.getpid():
+                            continue
+                        
                         # Get command line arguments
                         cmdline = proc.info.get('cmdline', [])
                         if cmdline and any('.py' in str(arg) for arg in cmdline):
-                            # Check process age
-                            age = current_time - proc.info['create_time']
-                            
-                            # Determine max age based on process type
-                            max_age = self.max_repl_age if 'repl' in str(cmdline).lower() else self.max_process_age
-                            
-                            if age > max_age:
-                                # Kill the process
-                                try:
-                                    proc.kill()
-                                    cleanup_count += 1
-                                    logger.info(f"Killed abandoned process PID {proc.info['pid']} (age: {int(age)}s)")
-                                except psutil.NoSuchProcess:
-                                    pass
-                                except Exception as e:
-                                    logger.error(f"Failed to kill process {proc.info['pid']}: {e}")
+                            # Track user processes for resource limits
+                            user_processes.append({
+                                'pid': proc.info['pid'],
+                                'age': current_time - proc.info['create_time'],
+                                'cmdline': str(cmdline),
+                                'proc': proc
+                            })
                                     
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
+            
+            # Sort by age (oldest first) and enforce limits
+            user_processes.sort(key=lambda p: p['age'], reverse=True)
+            
+            # Clean up processes that exceed limits
+            for i, proc_info in enumerate(user_processes):
+                should_kill = False
+                reason = ""
+                
+                # Check age limits
+                max_age = self.max_repl_age if 'repl' in proc_info['cmdline'].lower() else self.max_process_age
+                if proc_info['age'] > max_age:
+                    should_kill = True
+                    reason = f"age limit ({int(proc_info['age'])}s > {max_age}s)"
+                
+                # Check total process count limit (kill oldest processes first)
+                elif i >= self.max_concurrent_processes:
+                    should_kill = True
+                    reason = f"process limit exceeded (keeping newest {self.max_concurrent_processes})"
+                
+                if should_kill:
+                    try:
+                        proc_info['proc'].kill()
+                        cleanup_count += 1
+                        logger.info(f"Killed process PID {proc_info['pid']}: {reason}")
+                    except psutil.NoSuchProcess:
+                        pass
+                    except Exception as e:
+                        logger.error(f"Failed to kill process {proc_info['pid']}: {e}")
                     
             if cleanup_count > 0:
                 logger.info(f"Process cleanup: killed {cleanup_count} abandoned processes")

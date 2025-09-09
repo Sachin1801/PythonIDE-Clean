@@ -31,3 +31,11 @@ server/venv/
 env/
 .env
 docs/
+
+# Credential files - never commit passwords or sensitive data
+adminData/
+*.csv
+*credentials*.csv
+*password*.csv
+*accounts*.txt
+*summary*.txt

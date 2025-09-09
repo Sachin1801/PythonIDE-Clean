@@ -77,10 +77,10 @@
                 <span class="shortcut-action">Replace</span>
                 <span class="shortcut-keys">Ctrl+H</span>
               </div>
-              <div class="shortcut-item">
+              <!-- <div class="shortcut-item">
                 <span class="shortcut-action">Comment/Uncomment</span>
                 <span class="shortcut-keys">Ctrl+/</span>
-              </div>
+              </div> -->
               <div class="shortcut-item">
                 <span class="shortcut-action">Select All</span>
                 <span class="shortcut-keys">Ctrl+A</span>

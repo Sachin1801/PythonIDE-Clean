@@ -17,6 +17,7 @@ from handlers.ws_handler import WebSocketHandler
 from handlers.authenticated_ws_handler import AuthenticatedWebSocketHandler
 from handlers.vue_handler import VueHandler
 from handlers.auth_handler import LoginHandler, LogoutHandler, ValidateSessionHandler, ChangePasswordHandler, RenewSessionHandler, ForgotPasswordHandler, ResetPasswordHandler
+from handlers.admin_handler import get_admin_handlers
 from handlers.upload_handler import UploadFileHandler
 from setup_route import SetupHandler, ResetDatabaseHandler
 from common.database import db_manager
@@ -209,6 +210,7 @@ def main():
         (r'/api/forgot-password', ForgotPasswordHandler),
         (r'/api/reset-password', ResetPasswordHandler),
         (r'/api/upload-file', UploadFileHandler),
+        *get_admin_handlers(),                    # Admin password management endpoints
         (r'^.*$', VueHandler),
     ]
 

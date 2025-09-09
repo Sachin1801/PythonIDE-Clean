@@ -131,7 +131,7 @@
               <li class="nav__dropdown-item">
                 <button @click="comment()">
                   <span>Comment</span>
-                  <span class="nav__keyboard-shortcut">Ctrl+/</span>
+                  <!-- <span class="nav__keyboard-shortcut">Ctrl+/</span> -->
                 </button>
               </li>
             </ul>

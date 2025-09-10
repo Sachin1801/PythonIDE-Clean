@@ -59,6 +59,7 @@ class MigrationHandler(RequestHandler):
             # Parse request body
             data = json.loads(self.request.body.decode()) if self.request.body else {}
             secret = data.get('secret', '')
+            action = data.get('action', 'migrate')  # Default to migrate, but allow 'fix_directories'
             
             # Simple security check
             if secret != 'PythonIDE2025Migration':
@@ -66,13 +67,23 @@ class MigrationHandler(RequestHandler):
                 self.write({'success': False, 'error': 'Invalid secret'})
                 return
             
-            # Run migration script
-            result = subprocess.run(
-                ['python3', '/app/server/migrations/create_full_class_with_consistent_passwords.py', '--environment', 'production'],
-                capture_output=True,
-                text=True,
-                cwd='/app/server'
-            )
+            # Check which action to perform
+            if action == 'fix_directories':
+                # Run directory fix script
+                result = subprocess.run(
+                    ['python3', '/app/server/migrations/fix_efs_directories.py'],
+                    capture_output=True,
+                    text=True,
+                    cwd='/app/server'
+                )
+            else:
+                # Run migration script
+                result = subprocess.run(
+                    ['python3', '/app/server/migrations/create_full_class_with_consistent_passwords.py', '--environment', 'production'],
+                    capture_output=True,
+                    text=True,
+                    cwd='/app/server'
+                )
             
             # Check result
             if result.returncode == 0:

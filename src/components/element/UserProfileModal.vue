@@ -48,7 +48,7 @@
         </div>
       </div>
 
-          <!-- Change Password Tab -->
+          <!-- Change Password Tab
           <div v-if="activeTab === 'change-password'" class="password-section">
             <form @submit.prevent="changePassword">
               <div class="form-group">
@@ -98,10 +98,10 @@
                 </button>
               </div>
             </form>
-          </div>
+          </div> -->
 
           <!-- Forgot Password Tab -->
-          <div v-if="activeTab === 'forgot-password'" class="forgot-section">
+          <!-- <div v-if="activeTab === 'forgot-password'" class="forgot-section">
             <div class="forgot-info">
               <p>To reset your password, you need to verify your current password first.</p>
               <p>If you don't remember your current password, please contact the administrator.</p>
@@ -187,7 +187,7 @@
                 </p>
               </div>
             </div>
-          </div>
+          </div> -->
         </div>
       </div>
         
@@ -242,8 +242,8 @@ export default {
       
       tabs: [
         { id: 'profile', label: 'Profile', icon: 'User' },
-        { id: 'change-password', label: 'Change Password', icon: 'Lock' },
-        { id: 'forgot-password', label: 'Forgot Password', icon: 'HelpCircle' }
+        // { id: 'change-password', label: 'Change Password', icon: 'Lock' },
+        // { id: 'forgot-password', label: 'Forgot Password', icon: 'HelpCircle' }
       ],
       
       passwordForm: {

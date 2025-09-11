@@ -159,7 +159,23 @@ def init_users_if_needed():
             ('mat9481', 'Mario Toscano', 'student@mat9481'),
             ('cw4715', 'Chun-Hsiang Wang', 'student@cw4715'),
             ('jw9248', 'Jingyuan Wang', 'student@jw9248'),
-            ('sz4766', 'Shengbo Zhang', 'student@sz4766')
+            ('sz4766', 'Shengbo Zhang', 'student@sz4766'),
+            ('sz3991', 'Shiwen Zhu', 'student@sz3991'),
+            ('eif2018', 'Ethan Flores', 'student@eif2018'),
+            ('ql2499', 'Nick Li', 'student@ql2499'),
+            ('gs4387', 'Gursehaj Singh', 'student@gs4387'),
+            ('cw4973', 'Caden Wang', 'student@cw4973'),
+            ('jy4383', 'Jessica Yuan', 'student@jy4383'),
+            ('test_1', 'Test Student 1', 'student@test_1'),
+            ('test_2', 'Test Student 2', 'student@test_2'),
+            ('test_3', 'Test Student 3', 'student@test_3'),
+            ('test_4', 'Test Student 4', 'student@test_4'),
+            ('test_5', 'Test Student 5', 'student@test_5'),
+            ('test_6', 'Test Student 6', 'student@test_6'),
+            ('test_7', 'Test Student 7', 'student@test_7'),
+            ('test_8', 'Test Student 8', 'student@test_8'),
+            ('test_9', 'Test Student 9', 'student@test_9'),
+            ('test_10', 'Test Student 10', 'student@test_10')
         ]
         
         for username, full_name, password in student_users:
@@ -221,7 +237,9 @@ def create_efs_directories():
             'lh4052', 'jh9963', 'ch5315', 'wh2717', 'bsj5539', 'fk2248', 'nvk9963',
             'sil9056', 'hl6459', 'zl3894', 'jom2045', 'arm9283', 'zm2525', 'im2420',
             'jn3143', 'jn9106', 'djp10030', 'ap10062', 'bap9618', 'fp2331', 'srp8204',
-            'agr8457', 'shs9941', 'as19217', 'mat9481', 'cw4715', 'jw9248', 'sz4766'
+            'agr8457', 'shs9941', 'as19217', 'mat9481', 'cw4715', 'jw9248', 'sz4766',
+            'sz3991', 'eif2018', 'ql2499', 'gs4387', 'cw4973', 'jy4383',
+            'test_1', 'test_2', 'test_3', 'test_4', 'test_5', 'test_6', 'test_7', 'test_8', 'test_9', 'test_10'
         ]
         
         # Only create directories for students
@@ -235,16 +253,15 @@ def create_efs_directories():
             welcome_file = os.path.join(user_dir, 'welcome.py')
             if not os.path.exists(welcome_file):
                 with open(welcome_file, 'w') as f:
-                    f.write(f'''# Welcome to Python IDE, {username}!
-# This is your personal workspace.
+                    f.write(f'''# Welcome {username}!
+# This is your personal workspace directory.
+# Only you and the teaching staff can access files here.
 
-print("Hello, {username}!")
-print("Welcome to Python Programming!")
-print()
-print("Your files are automatically saved.")
-print("Only you can see files in your Local/{username}/ folder.")
+print("Hello {username}!")
+print("This is your personal Python IDE workspace.")
+print("Start coding and have fun learning Python!")
 
-# Try writing your first Python program below:
+# Try running this file by clicking the Run button!
 ''')
             print(f"Created directory for: {username}")
         

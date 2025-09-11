@@ -5465,7 +5465,7 @@ Advanced packages (install with micropip):
   background: var(--bg-primary, #1E1E1E);
   padding: 12px;
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 13px;
+  font-size: 20px;
   line-height: 1.4;
   min-height: 0; /* Important for flexbox overflow to work properly */
 }
@@ -5500,7 +5500,7 @@ Advanced packages (install with micropip):
   align-items: flex-start;
   gap: 8px;
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 13px;
+  font-size: 20px;
   line-height: 1.4;
 }
 
@@ -5718,7 +5718,7 @@ body .console-output-area .console-line .console-repl-input span {
   gap: 8px;
   margin-bottom: 8px;
   color: var(--text-secondary, #969696);
-  font-size: 13px;
+  font-size: 20px;
 }
 
 .prompt-icon {
@@ -5738,7 +5738,7 @@ body .console-output-area .console-line .console-repl-input span {
   padding: 6px 10px;
   border-radius: 3px;
   font-family: 'Courier New', monospace;
-  font-size: 13px;
+  font-size: 20px;
   outline: none;
   resize: none; /* Prevent manual resize */
   overflow-y: auto; /* Scroll when exceeds max-height */

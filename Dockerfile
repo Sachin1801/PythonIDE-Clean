@@ -6,7 +6,9 @@ WORKDIR /app
 
 # Copy frontend package files
 COPY package*.json ./
-COPY .env.production ./
+
+# Create production environment file for build
+RUN echo "VUE_APP_WS_URL=ws://pythonide-alb-456687384.us-east-2.elb.amazonaws.com" > .env.production
 
 # Install dependencies (including dev dependencies for build)
 RUN npm ci

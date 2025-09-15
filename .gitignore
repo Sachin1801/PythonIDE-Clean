@@ -2,7 +2,8 @@
 node_modules
 
 
-# local env files
+# local env files - ALL environment files should be ignored
+.env*
 .env.local
 .env.*.local
 .env.development
@@ -43,5 +44,4 @@ adminData/
 *password*.csv
 *accounts*.txt
 *summary*.txt
-
 

@@ -1,13 +1,16 @@
 <template>
   <div class="proj-tree-container">
     <div class="tree-header">
-      <span class="tree-title">File Management</span>
-      <div class="tree-header-actions">
+      <!-- <span class="tree-title">File Management</span> -->
+      <div class="tree-header-actions ">
         <button class="action-btn new-folder-btn" @click="handleNewFolder" title="New Folder">
           <FolderPlus :size="16" />
         </button>
         <button class="action-btn new-file-btn" @click="handleNewFile" title="New File">
           <FilePlus :size="16" />
+        </button>
+        <button v-if="isAdmin" class="action-btn import-btn" @click="handleImportFile" title="Import File">
+          <Upload :size="16" />
         </button>
         <button class="action-btn refresh-btn" @click="refreshTree" title="Refresh">
           <RefreshCw :size="16" />
@@ -34,7 +37,7 @@
         <span class="node-wrapper" @dblclick.stop="handleDoubleClick(data)">
           <img :src="getIconUrl(data)" alt="" class="node-icon" />
           <span class="node-label">{{ node.label }}</span>
-          <span class="node-actions" v-if="data.type === 'file'">
+          <span class="node-actions" v-if="data.type === 'file' || data.type === 'dir' || data.type === 'folder'">
             <button class="dropdown-btn" @click.stop="showDropdown($event, data)" title="Actions">
               <MoreVertical :size="14" />
             </button>
@@ -52,16 +55,18 @@
       </div>
       <div class="menu-divider" v-if="contextMenu.data.type === 'file' && isPreviewFile(contextMenu.data)"></div>
       <div class="menu-item" 
-           @click="handleMenuAction('rename', contextMenu.data)"
+           :class="{ disabled: !canRenameOrDelete(contextMenu.data) }"
+           @click="canRenameOrDelete(contextMenu.data) && handleMenuAction('rename', contextMenu.data)"
            v-if="!isProtectedFolder(contextMenu.data)">
         <span>Rename</span>
       </div>
-      <div class="menu-divider"></div>
+      <div class="menu-divider" v-if="!isProtectedFolder(contextMenu.data)"></div>
       <div class="menu-item" @click="handleMenuAction('download', contextMenu.data)" v-if="contextMenu.data.type === 'file'">
         <span>Download</span>
       </div>
       <div class="menu-item danger" 
-           @click="handleMenuAction('delete', contextMenu.data)"
+           :class="{ disabled: !canRenameOrDelete(contextMenu.data) }"
+           @click="canRenameOrDelete(contextMenu.data) && handleMenuAction('delete', contextMenu.data)"
            v-if="!isProtectedFolder(contextMenu.data)">
         <span>Delete</span>
       </div>
@@ -76,16 +81,18 @@
       </div>
       <div class="menu-divider" v-if="dropdown.data.type === 'file' && isPreviewFile(dropdown.data)"></div>
       <div class="menu-item" 
-           @click="handleMenuAction('rename', dropdown.data)"
+           :class="{ disabled: !canRenameOrDelete(dropdown.data) }"
+           @click="canRenameOrDelete(dropdown.data) && handleMenuAction('rename', dropdown.data)"
            v-if="!isProtectedFolder(dropdown.data)">
         <span>Rename</span>
       </div>
-      <div class="menu-divider"></div>
+      <div class="menu-divider" v-if="!isProtectedFolder(dropdown.data)"></div>
       <div class="menu-item" @click="handleMenuAction('download', dropdown.data)" v-if="dropdown.data.type === 'file'">
         <span>Download</span>
       </div>
       <div class="menu-item danger" 
-           @click="handleMenuAction('delete', dropdown.data)"
+           :class="{ disabled: !canRenameOrDelete(dropdown.data) }"
+           @click="canRenameOrDelete(dropdown.data) && handleMenuAction('delete', dropdown.data)"
            v-if="!isProtectedFolder(dropdown.data)">
         <span>Delete</span>
       </div>
@@ -96,7 +103,7 @@
 <script>
 import * as types from '../../../../store/mutation-types';
 import { getIconForFile, getIconForFolder, getIconForOpenFolder } from 'vscode-icons-js';
-import { RefreshCw, MoreVertical, FilePlus, FolderPlus } from 'lucide-vue-next';
+import { RefreshCw, MoreVertical, FilePlus, FolderPlus, Upload } from 'lucide-vue-next';
 import { ElMessage, ElMessageBox } from 'element-plus';
 
 export default {
@@ -105,6 +112,13 @@ export default {
     MoreVertical,
     FilePlus,
     FolderPlus,
+    Upload,
+  },
+  props: {
+    currentUser: {
+      type: Object,
+      default: null
+    }
   },
   data() {
     return {
@@ -164,6 +178,20 @@ export default {
       
       // Emit event to open new folder dialog
       this.$emit('new-folder');
+    },
+    handleImportFile() {
+      // Check if a folder is selected, if not select the root folder
+      const nodeSelected = this.ideInfo.nodeSelected;
+      if (!nodeSelected || (nodeSelected.type !== 'dir' && nodeSelected.type !== 'folder')) {
+        // Select the root folder
+        const rootFolder = this.ideInfo.currProj?.data;
+        if (rootFolder) {
+          this.$store.commit('ide/setNodeSelected', rootFolder);
+        }
+      }
+      
+      // Emit event to open import file dialog
+      this.$emit('import-file');
     },
     refreshTree() {
       // Refresh all projects if in multi-root mode
@@ -281,8 +309,8 @@ export default {
     
     handleContextMenu(event, data, node) {
       event.preventDefault();
-      // Only show context menu for files, not folders
-      if (data.type === 'file') {
+      // Show context menu for both files and folders
+      if (data.type === 'file' || data.type === 'dir' || data.type === 'folder') {
         this.showContextMenu(event, data);
       }
     },
@@ -348,29 +376,73 @@ export default {
     
     isProtectedFolder(data) {
       // Check if this is a protected project folder (root level)
-      const protectedFolders = ['Assignments', 'Lecture Notes'];
+      const protectedFolders = ['Lecture Notes'];
       const name = data.label || data.name;
       // Protected folders can't be renamed or deleted
       return data.path === '/' && protectedFolders.includes(name);
     },
     
+    canRenameOrDelete(data) {
+      // If user is not available, deny access
+      if (!this.currentUser) return false;
+      
+      // Professors can do everything except protected folders
+      if (this.currentUser.role === 'professor') {
+        return !this.isProtectedFolder(data);
+      }
+      
+      // Students can only modify items in their own Local/{username} folder
+      if (this.currentUser.role === 'student') {
+        const userPath = `Local/${this.currentUser.username}`;
+        const itemPath = data.path || '';
+        
+        // Allow if the item is inside the user's Local folder
+        // but not the user's Local/{username} folder itself
+        return itemPath.startsWith(userPath + '/') && !this.isProtectedFolder(data);
+      }
+      
+      return false;
+    },
+    
     startRename(data) {
-      // Prevent renaming of all folders
-      if (data.type === 'dir' || data.type === 'folder') {
-        ElMessage.warning('Folders cannot be renamed.');
+      // Check permissions first
+      if (!this.canRenameOrDelete(data)) {
+        ElMessage.warning('You do not have permission to rename this item.');
         return;
       }
       
-      const name = data.label || data.name;
+      const fullName = data.label || data.name;
+      let nameToShow = fullName;
+      let extension = '';
       
+      // For files, extract extension and show only filename for renaming
+      if (data.type === 'file') {
+        const lastDotIndex = fullName.lastIndexOf('.');
+        if (lastDotIndex > 0) { // Ensure there's a filename before the extension
+          nameToShow = fullName.substring(0, lastDotIndex);
+          extension = fullName.substring(lastDotIndex);
+        }
+      }
+      
+      // Different patterns for files vs folders
+      const isFile = data.type === 'file';
+      const inputPattern = isFile 
+        ? /^[a-zA-Z0-9_.-]+$/ // Files: no spaces allowed (safer for code files)
+        : /^[a-zA-Z0-9_. -]+$/; // Folders: allow spaces
+      const errorMessage = isFile 
+        ? 'Invalid filename format (no spaces allowed)'
+        : 'Invalid folder name format';
+
       ElMessageBox.prompt('Enter new name:', 'Rename', {
         confirmButtonText: 'OK',
         cancelButtonText: 'Cancel',
-        inputValue: name,
-        inputPattern: /^[a-zA-Z0-9_.-]+$/,
-        inputErrorMessage: 'Invalid name format'
+        inputValue: nameToShow,
+        inputPattern: inputPattern,
+        inputErrorMessage: errorMessage
       }).then(({ value }) => {
-        this.doRename(data, value);
+        // Add extension back for files
+        const finalName = (data.type === 'file' && extension) ? value + extension : value;
+        this.doRename(data, finalName);
       }).catch(() => {
         // User cancelled
       });
@@ -413,24 +485,63 @@ export default {
             return;
           }
           
-          ElMessageBox.confirm(
-            `Are you sure you want to delete "${data.label}"?`,
-            'Confirm Delete',
-            {
-              confirmButtonText: 'Delete',
-              cancelButtonText: 'Cancel',
-              type: 'warning',
+          if (data.type === 'directory') {
+            // Count folder contents
+            const counts = this.countFolderContents(data);
+            let message = `Are you sure you want to delete "${data.label}"?`;
+            
+            if (counts.totalFiles > 0 || counts.totalFolders > 0) {
+              const fileText = counts.totalFiles === 1 ? 'file' : 'files';
+              const folderText = counts.totalFolders === 1 ? 'folder' : 'folders';
+              
+              if (counts.totalFiles > 0 && counts.totalFolders > 0) {
+                message = `This folder contains ${counts.totalFiles} ${fileText} and ${counts.totalFolders} ${folderText}. Are you sure you want to delete "${data.label}" and all its contents?`;
+              } else if (counts.totalFiles > 0) {
+                message = `This folder contains ${counts.totalFiles} ${fileText}. Are you sure you want to delete "${data.label}" and all its contents?`;
+              } else {
+                message = `This folder contains ${counts.totalFolders} ${folderText}. Are you sure you want to delete "${data.label}" and all its contents?`;
+              }
             }
-          ).then(() => {
-            console.log('[ProjTree] Emitting delete for:', data);
-            this.$emit('delete-item', {
-              path: data.path,
-              type: data.type,
-              projectName: data.projectName || this.ideInfo.currProj?.data?.name
+            
+            ElMessageBox.confirm(
+              message,
+              'Confirm Delete',
+              {
+                confirmButtonText: 'Delete',
+                cancelButtonText: 'Cancel',
+                type: 'warning',
+              }
+            ).then(() => {
+              console.log('[ProjTree] Emitting delete for:', data);
+              this.$emit('delete-item', {
+                path: data.path,
+                type: data.type,
+                projectName: data.projectName || this.ideInfo.currProj?.data?.name
+              });
+            }).catch(() => {
+              // User cancelled
             });
-          }).catch(() => {
-            // User cancelled
-          });
+          } else {
+            // Original file delete logic
+            ElMessageBox.confirm(
+              `Are you sure you want to delete "${data.label}"?`,
+              'Confirm Delete',
+              {
+                confirmButtonText: 'Delete',
+                cancelButtonText: 'Cancel',
+                type: 'warning',
+              }
+            ).then(() => {
+              console.log('[ProjTree] Emitting delete for:', data);
+              this.$emit('delete-item', {
+                path: data.path,
+                type: data.type,
+                projectName: data.projectName || this.ideInfo.currProj?.data?.name
+              });
+            }).catch(() => {
+              // User cancelled
+            });
+          }
           break;
         case 'download':
           if (data.type === 'file') {
@@ -438,6 +549,28 @@ export default {
           }
           break;
       }
+    },
+    
+    countFolderContents(folderNode) {
+      let totalFiles = 0;
+      let totalFolders = 0;
+      
+      const countRecursive = (node) => {
+        if (!node.children) return;
+        
+        for (const child of node.children) {
+          if (child.type === 'file') {
+            totalFiles++;
+          } else if (child.type === 'directory') {
+            totalFolders++;
+            countRecursive(child);
+          }
+        }
+      };
+      
+      countRecursive(folderNode);
+      
+      return { totalFiles, totalFolders };
     },
   },
   mounted() {
@@ -475,6 +608,11 @@ export default {
   computed: {
     ideInfo() {
       return this.$store.state.ide.ideInfo;
+    },
+    isAdmin() {
+      // Check if current user is one of the admin accounts
+      const adminAccounts = ['sl7927', 'sa9082', 'et2434'];
+      return this.currentUser && adminAccounts.includes(this.currentUser.username);
     },
     treeData() {
       // Use multi-root data if available, otherwise fall back to single project
@@ -560,17 +698,15 @@ export default {
 }
 .ide-project-list .el-tree-node.is-current>.el-tree-node__content {
   /* style for selected nodes without children */
-  background-color: #383B3D;
+  background-color: #094771 !important;
 }
 .ide-project-list .el-tree-node__content:hover {
   /* style when mouse hovers over node */
-  background-color: #383B3D;
+  background-color: #2a2d2e !important;
 }
 .ide-project-list .el-tree-node:focus>.el-tree-node__content {
   /* style for selected nodes with children */
-  /* background-color: rgb(26, 37, 51); */
-  background: #383B3D;
-  /* color: #FFF; */
+  background: #094771 !important;
 }
 .ide-project-list .el-tree-node.is-current>.el-tree-node__content .display-none {
   display: inline-block;
@@ -629,6 +765,10 @@ export default {
 
 .new-file-btn:hover {
   color: #67c23a;
+}
+
+.import-btn:hover {
+  color: #e6a23c;
 }
 
 .refresh-btn:hover {
@@ -817,32 +957,41 @@ export default {
   color: #52c41a;
 }
 
-[data-theme="light"] .refresh-btn:hover {
+:root[data-theme="light"] .refresh-btn:hover {
   color: #1890ff;
 }
 
-[data-theme="light"] .ide-project-list {
+:root[data-theme="light"] .ide-project-list {
   background: #f8f8f8;
   color: #333333;
 }
 
-[data-theme="light"] .ide-project-list .el-tree-node.is-current > .el-tree-node__content {
-  background-color: #e3f2fd !important;
+:root[data-theme="light"] .node-label {
+  color: #000000 !important;
 }
 
-[data-theme="light"] .ide-project-list .el-tree-node__content:hover {
-  background-color: #f0f0f0 !important;
+:root[data-theme="light"] .ide-project-list .el-tree-node__content {
+  color: #000000 !important;
 }
 
-[data-theme="light"] .ide-project-list .el-tree-node:focus > .el-tree-node__content {
-  background: #e3f2fd !important;
+/* Light theme overrides with higher specificity */
+:root[data-theme="light"] .ide-project-list .el-tree-node.is-current > .el-tree-node__content {
+  background-color: #f8fbff !important;
 }
 
-[data-theme="light"] .tree::-webkit-scrollbar-thumb {
+:root[data-theme="light"] .ide-project-list .el-tree-node__content:hover {
+  background-color: #fafafa !important;
+}
+
+:root[data-theme="light"] .ide-project-list .el-tree-node:focus > .el-tree-node__content {
+  background: #f8fbff !important;
+}
+
+:root[data-theme="light"] .tree::-webkit-scrollbar-thumb {
   background: #c0c0c0;
 }
 
-[data-theme="light"] .tree::-webkit-scrollbar-track {
+:root[data-theme="light"] .tree::-webkit-scrollbar-track {
   background: #f0f0f0;
 }
 
@@ -873,6 +1022,26 @@ export default {
 
 [data-theme="high-contrast"] .tree::-webkit-scrollbar-track {
   background: #333333;
+}
+
+/* Disabled menu items */
+.menu-item.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  color: var(--text-disabled, #6b6b6b) !important;
+}
+
+.menu-item.disabled:hover {
+  background: transparent !important;
+}
+
+[data-theme="light"] .menu-item.disabled {
+  color: #cccccc !important;
+}
+
+[data-theme="high-contrast"] .menu-item.disabled {
+  color: #666666 !important;
+  opacity: 0.7;
 }
 </style>
 

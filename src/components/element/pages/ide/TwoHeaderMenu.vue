@@ -49,11 +49,6 @@
                 </button>
               </li>
               <li class="nav__dropdown-item">
-                <button @click="shareFile()">
-                  <span>Share</span>
-                </button>
-              </li>
-              <li class="nav__dropdown-item">
                 <button @click="moveFile()" :disabled="!hasSelectedFile">
                   <span>Move</span>
                   <span class="nav__keyboard-shortcut">Ctrl+Shift+M</span>
@@ -136,7 +131,7 @@
               <li class="nav__dropdown-item">
                 <button @click="comment()">
                   <span>Comment</span>
-                  <span class="nav__keyboard-shortcut">Ctrl+/</span>
+                  <!-- <span class="nav__keyboard-shortcut">Ctrl+/</span> -->
                 </button>
               </li>
             </ul>
@@ -270,6 +265,11 @@
           <Square :size="20" />
         </div>
 
+        <!-- Save Button -->
+        <div class="icon-btn save-btn" @click="saveFile()" title="Save (Ctrl+S)">
+          <Save :size="20" />
+        </div>
+
         <!-- Delete Button -->
         <div 
           class="icon-btn delete-btn" 
@@ -279,10 +279,6 @@
           <Trash2 :size="20" />
         </div>
 
-        <!-- Share Button -->
-        <div class="icon-btn" @click="shareProject()" title="Share">
-          <Share2 :size="20" />
-        </div>
       </div>
 
       <!-- Right Section: Settings Icon -->
@@ -304,7 +300,7 @@
 </template>
 
 <script>
-import { Upload, Play, Square, Settings, Share2, Trash2, UserCircle } from 'lucide-vue-next';
+import { Upload, Play, Square, Settings, Trash2, UserCircle, Save } from 'lucide-vue-next';
 import { ElMessageBox, ElMessage } from 'element-plus';
 import UserProfileModal from '../../UserProfileModal.vue';
 
@@ -383,9 +379,9 @@ export default {
     Play,
     Square,
     Settings,
-    Share2,
     Trash2,
     UserCircle,
+    Save,
     UserProfileModal,
   },
   mounted() {
@@ -635,7 +631,10 @@ export default {
     saveFile() {
       this.closeDropdowns();
       if (this.ideInfo.codeSelected) {
-        this.$store.dispatch('ide/saveFile', this.ideInfo.codeSelected);
+        this.$store.dispatch('ide/saveFile', { 
+          codeItem: this.ideInfo.codeSelected, 
+          isAutoSave: false 
+        });
         ElMessage.success('File saved');
       }
     },
@@ -703,9 +702,6 @@ export default {
       }).catch(() => {
         // User cancelled - do nothing
       });
-    },
-    shareProject() {
-      this.$emit('share-project');
     },
     openSettings() {
       this.$emit('open-settings');
@@ -815,10 +811,6 @@ export default {
       }).catch(() => {
         // User cancelled
       });
-    },
-    shareFile() {
-      this.closeDropdowns();
-      this.$emit('share-file');
     },
     // Edit menu methods
     undo() {
@@ -1122,9 +1114,9 @@ export default {
 
 /* Icon Button Styles */
 .icon-btn {
-  padding: 6px;
-  width: 32px;
-  height: 32px;
+  padding: 5px;
+  width: 28px;
+  height: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1160,21 +1152,30 @@ export default {
 
 /* Run and Stop button styling */
 .run-btn {
-  background: var(--accent-color, #28a745);
+  /* background: var(--accent-color, #28a745); */
   color: white;
 }
 
 .run-btn:hover {
-  background: var(--accent-hover, #218838);
+  /* background: var(--accent-hover, #218838); */
 }
 
 .stop-btn {
-  background: var(--danger-color, #dc3545);
+  background: var(--danger-color, #6c757d);
   color: white;
 }
 
 .stop-btn:hover {
-  background: var(--danger-hover, #c82333);
+  background: var(--danger-hover, #adb5bd);
+}
+
+.save-btn {
+  background: var(--info-color, #17a2b8);
+  color: white;
+}
+
+.save-btn:hover {
+  background: var(--info-hover, #138496);
 }
 
 /* Theme-specific adjustments */
@@ -1231,5 +1232,16 @@ export default {
 [data-theme="light"] .stop-btn:hover {
   background: #c82333;
   box-shadow: 0 2px 4px rgba(220, 53, 69, 0.2);
+}
+
+[data-theme="light"] .save-btn {
+  background: #17a2b8;
+  color: white;
+  border: 1px solid #138496;
+}
+
+[data-theme="light"] .save-btn:hover {
+  background: #138496;
+  box-shadow: 0 2px 4px rgba(23, 162, 184, 0.2);
 }
 </style>

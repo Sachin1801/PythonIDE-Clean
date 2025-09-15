@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  # Local PostgreSQL for development only
+  postgres:
+    image: postgres:15.7-alpine
+    container_name: pythonide-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: pythonide
+    volumes:
+      # Persistent database storage
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pythonide:
+    build: .
+    container_name: pythonide-app
+    ports:
+      - "10086:8080"
+    environment:
+      # For AWS deployment, this will be overridden with RDS endpoint
+      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/pythonide}
+      IDE_SECRET_KEY: ${IDE_SECRET_KEY:-secure-key-change-in-production}
+      MAX_CONCURRENT_EXECUTIONS: 60
+      EXECUTION_TIMEOUT: 30
+      MEMORY_LIMIT_MB: 128
+    volumes:
+      # CRITICAL: Mount persistent storage for user files
+      - user_files:/app/server/projects/ide
+      # Mount initialization script
+      - ./server/migrations:/app/server/migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    command: >
+      sh -c "
+        echo 'Waiting for database...' &&
+        sleep 5 &&
+        echo 'Running migrations and creating users...' &&
+        python migrations/create_real_class_users.py --no-remove &&
+        python migrations/sync_user_directories.py &&
+        echo 'Starting server...' &&
+        python server.py
+      "
+
+volumes:
+  # Named volumes for persistent storage
+  postgres_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${PWD}/data/postgres
+      o: bind
+  
+  user_files:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${PWD}/data/user_files
+      o: bind

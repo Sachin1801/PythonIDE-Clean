@@ -19,6 +19,10 @@ const ideInfo = {
   treeRef: null,
   nodeSelected: null,
   projList: [],
+  // Auto-save settings
+  autoSave: false,
+  autoSaveInterval: 60, // seconds
+  autoSaveNotifications: true,
   // Fullscreen preview state
   fullscreenPreview: {
     active: false,
@@ -745,8 +749,21 @@ const mutations = {
     console.log(`Editor option ${option} set to ${value}`);
   },
   setAutoSave(state, value) {
-    // Store auto-save setting
+    state.ideInfo.autoSave = value;
     console.log(`Auto-save set to ${value}`);
+  },
+  setAutoSaveInterval(state, value) {
+    state.ideInfo.autoSaveInterval = parseInt(value);
+    console.log(`Auto-save interval set to ${value} seconds`);
+  },
+  setAutoSaveNotifications(state, value) {
+    state.ideInfo.autoSaveNotifications = value;
+    console.log(`Auto-save notifications set to ${value}`);
+  },
+  addAutoSaveNotification(state, { message, timestamp }) {
+    // This mutation is used to trigger notifications in the component
+    // The actual notification display is handled in the component
+    console.log(`Auto-save notification: ${message}`);
   }
 };
 
@@ -1030,6 +1047,35 @@ const actions = {
           }
         }
       }, { root: true });
+    });
+  },
+  saveFile(context, { codeItem, isAutoSave = false }) {
+    // Use the existing IDE_WRITE_FILE action to save the file
+    const logPrefix = isAutoSave ? '[AUTO-SAVE]' : '[MANUAL-SAVE]';
+    console.log(`${logPrefix} Saving file: ${codeItem.path}`);
+    
+    return context.dispatch(types.IDE_WRITE_FILE, {
+      filePath: codeItem.path,
+      fileData: codeItem.content,
+      complete: false,
+      line: 0,
+      column: 0,
+      callback: (response) => {
+        if (response && response.code === 0) {
+          console.log(`${logPrefix} Successfully saved: ${codeItem.path}`);
+          
+          // Show notification if it's auto-save and notifications are enabled
+          if (isAutoSave && context.state.ideInfo.autoSaveNotifications) {
+            // This will be handled in the component with ElMessage
+            context.commit('addAutoSaveNotification', { 
+              message: `Auto-saved: ${codeItem.name}`,
+              timestamp: Date.now()
+            });
+          }
+        } else {
+          console.error(`${logPrefix} Failed to save: ${codeItem.path}`, response);
+        }
+      }
     });
   }
 };

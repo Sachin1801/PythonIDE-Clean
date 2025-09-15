@@ -19,6 +19,7 @@ import resource
 import psutil
 
 from common.config import Config
+from common.file_storage import file_storage
 from command.error_handler import EducationalErrorHandler
 from command.response import response
 
@@ -26,13 +27,15 @@ from command.response import response
 class HybridREPLThread(threading.Thread):
     """Thread for running Python scripts then transitioning to REPL mode"""
     
-    def __init__(self, cmd_id, client, event_loop, script_path=None, registry_callback=None):
+    def __init__(self, cmd_id, client, event_loop, script_path=None, registry_callback=None, lock_manager=None, username=None):
         super().__init__()
         self.cmd_id = cmd_id
         self.client = client
         self.event_loop = event_loop
         self.script_path = script_path
         self.registry_callback = registry_callback
+        self.lock_manager = lock_manager
+        self.username = username
         self.alive = True
         self.p = None
         self.error_handler = EducationalErrorHandler()
@@ -62,13 +65,40 @@ class HybridREPLThread(threading.Thread):
                 pass
     
     def stop(self):
-        """Stop the subprocess gracefully"""
+        """Stop the subprocess gracefully, then forcefully if needed"""
+        print(f"[HYBRID-REPL] Stopping thread for cmd_id: {self.cmd_id}")
         self.alive = False
         if self.p:
             try:
+                # First try graceful termination
                 self.p.terminate()
-            except:
+                
+                # Wait up to 0.1 seconds for graceful shutdown
+                for _ in range(10):  # 10 * 0.01 = 0.1 seconds
+                    if self.p.poll() is not None:
+                        print(f"[HYBRID-REPL] Process {self.p.pid} terminated gracefully")
+                        break
+                    time.sleep(0.01)
+                else:
+                    # Force kill if still running
+                    print(f"[HYBRID-REPL] Force killing process {self.p.pid}")
+                    self.p.kill()
+                    self.p.wait()  # Ensure process is fully dead
+                    
+            except Exception as e:
+                print(f"[HYBRID-REPL] Error stopping process: {e}")
                 pass
+        
+        # Release execution lock if we have one
+        self._release_execution_lock()
+    
+    def _release_execution_lock(self):
+        """Release execution lock for this script"""
+        if self.lock_manager and self.script_path and self.username:
+            try:
+                self.lock_manager.release_execution_lock(self.username, self.script_path, self.cmd_id)
+            except Exception as e:
+                print(f"[HYBRID-REPL] Error releasing execution lock: {e}")
     
     
     def update_client(self, client, cmd_id):
@@ -352,7 +382,7 @@ while True:
                 'stderr': subprocess.STDOUT,
                 'text': True,
                 'bufsize': 0,
-                'cwd': os.path.dirname(self.script_path) if self.script_path else Config.PROJECTS
+                'cwd': os.path.dirname(self.script_path) if self.script_path else file_storage.ide_base
             }
             
             # Temporarily disable resource limits to debug the issue
@@ -517,6 +547,9 @@ while True:
                     print(f"[HYBRID-REPL] Script execution completed")
                     buffer = buffer.replace("__SCRIPT_END__", "")
                     self.script_executed = True
+                    
+                    # Release execution lock since script is done (REPL can continue)
+                    self._release_execution_lock()
                 
                 elif "__SCRIPT_ERROR__" in buffer:
                     # Script had an error, don't start REPL
@@ -525,6 +558,9 @@ while True:
                     # Send any remaining output
                     if buffer.strip():
                         self.response_to_client(0, {'stdout': buffer})
+                    
+                    # Release execution lock on error too
+                    self._release_execution_lock()
                     # Signal script error to client
                     self.response_to_client(4000, {'error': 'Script execution failed'})
                     # Kill the process

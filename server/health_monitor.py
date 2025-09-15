@@ -17,10 +17,11 @@ class HealthMonitor:
         self.start_time = time.time()
         self.last_db_check = 0
         self.db_failures = 0
-        self.max_db_failures = 3
-        self.memory_threshold = 85  # Restart if memory usage exceeds 85%
+        self.max_db_failures = 10  # Increased tolerance for transient failures
+        self.memory_threshold = 95  # Only restart at 95% memory (container has 2GB)
         self.last_activity = time.time()
-        self.idle_timeout = 3600  # 1 hour idle timeout
+        self.idle_timeout = 86400  # 24 hours idle timeout (was 1 hour)
+        self.auto_restart_enabled = os.environ.get('ENABLE_AUTO_RESTART', 'false').lower() == 'true'
         
     def start(self):
         """Start health monitoring"""
@@ -156,11 +157,28 @@ class HealthMonitor:
     
     def trigger_graceful_restart(self, reason):
         """Trigger a graceful server restart"""
-        logger.warning(f"Triggering graceful restart: {reason}")
+        logger.warning(f"Graceful restart requested: {reason}")
         
-        # On Railway, exit with code 0 for automatic restart
-        # The restart policy in railway.json will handle it
-        IOLoop.current().add_callback(self.shutdown)
+        # Check if auto-restart is disabled
+        if not self.auto_restart_enabled:
+            logger.info(f"Auto-restart disabled, attempting recovery only: {reason}")
+            self.cleanup_resources()
+            self.cleanup_zombie_processes()
+            return
+        
+        # For AWS ECS, we should NOT exit unless absolutely necessary
+        # Instead, try to recover in-place
+        logger.info("Attempting in-place recovery instead of restart...")
+        self.cleanup_resources()
+        self.cleanup_zombie_processes()
+        
+        # Only shutdown if memory is critically high
+        memory = psutil.virtual_memory()
+        if memory.percent > 98:
+            logger.critical(f"Memory critical at {memory.percent}%, must restart")
+            IOLoop.current().add_callback(self.shutdown)
+        else:
+            logger.info(f"Recovery attempted, continuing operation (memory: {memory.percent}%)")
     
     def shutdown(self):
         """Perform graceful shutdown"""

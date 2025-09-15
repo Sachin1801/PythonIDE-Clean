@@ -22,6 +22,7 @@ from .repl_thread import PythonREPLThread
 from .hybrid_repl_thread import HybridREPLThread
 from .bug_report_handler import handle_bug_report
 from common.config import Config
+from common.file_storage import file_storage
 
 PROJECT_IS_EXIST = -1
 PROJECT_IS_NOT_EXIST = -2
@@ -34,13 +35,15 @@ FILE_IS_NOT_EXIST = -22
 
 jedi_is_gt_17 = Version(jedi_version) >= Version('0.17.0')
 
-if not os.path.exists(os.path.join(Config.PROJECTS, 'ide')):
-    os.makedirs(os.path.join(Config.PROJECTS, 'ide'))
+# Use file_storage for persistent storage
+ide_base = file_storage.ide_base
+if not os.path.exists(ide_base):
+    os.makedirs(ide_base)
 
 # Ensure default folders exist
-default_folders = ['Local', 'Assignments', 'Lecture Notes', 'Testing']
+default_folders = ['Local', 'Lecture Notes']
 for folder_name in default_folders:
-    folder_path = os.path.join(Config.PROJECTS, 'ide', folder_name)
+    folder_path = os.path.join(ide_base, folder_name)
     if not os.path.exists(folder_path):
         os.makedirs(folder_path)
         # Create .config file for the folder
@@ -51,7 +54,7 @@ for folder_name in default_folders:
             'openList': [],
             'selectFilePath': '',
             'lastAccessTime': time.time(),
-            'protected': folder_name in ['Assignments', 'Lecture Notes']  # Mark as protected
+            'protected': folder_name in ['Lecture Notes']  # Mark as protected
         }
         with open(config_path, 'w') as f:
             json.dump(config_data, f, indent=4)
@@ -62,19 +65,19 @@ class IdeCmd(object):
         pass
 
     async def ide_list_projects(self, client, cmd_id, data):
-        ide_path = os.path.join(Config.PROJECTS, 'ide')
+        ide_path = file_storage.ide_base
         code, projects = list_projects(ide_path)
         await response(client, cmd_id, code, projects)
 
     async def ide_get_project(self, client, cmd_id, data):
         prj_name = data.get('projectName')
-        prj_path = os.path.join(Config.PROJECTS, 'ide', prj_name)
+        prj_path = os.path.join(file_storage.ide_base, prj_name)
         code, project = get_project(prj_path)
         await response(client, cmd_id, code, project)
 
     async def ide_create_project(self, client, cmd_id, data):
         prj_name = data.get('projectName')
-        prj_path = os.path.join(Config.PROJECTS, 'ide', prj_name)
+        prj_path = os.path.join(file_storage.ide_base, prj_name)
         code, _ = create_project(prj_path, config_data={
             'type': 'python',
             'expendKeys': ['/'],
@@ -191,7 +194,7 @@ print("="*50)
 
     async def ide_delete_project(self, client, cmd_id, data):
         prj_name = data.get('projectName')
-        prj_path = os.path.join(Config.PROJECTS, 'ide', prj_name)
+        prj_path = os.path.join(file_storage.ide_base, prj_name)
         code, _ = delete(prj_path)
         await response(client, cmd_id, code, _)
 
@@ -199,26 +202,26 @@ print("="*50)
         old_name = data.get('oldName')
         
         # Check if project is protected
-        protected_projects = ['Assignments', 'Lecture Notes']
+        protected_projects = ['Lecture Notes']
         if old_name in protected_projects:
             await response(client, cmd_id, -1, f'Cannot rename protected folder: {old_name}')
             return
             
-        old_path = os.path.join(Config.PROJECTS, 'ide', old_name)
+        old_path = os.path.join(file_storage.ide_base, old_name)
         new_name = data.get('newName')
-        new_path = os.path.join(Config.PROJECTS, 'ide', new_name)
+        new_path = os.path.join(file_storage.ide_base, new_name)
         code, _ = rename(old_path, new_path)
         await response(client, cmd_id, code, _)
 
     async def ide_save_project(self, client, cmd_id, data):
         prj_name = data.get('projectName')
-        prj_path = os.path.join(Config.PROJECTS, 'ide', prj_name)
+        prj_path = os.path.join(file_storage.ide_base, prj_name)
         code, _ = save_project(prj_path, data)
         await response(client, cmd_id, code, _)
 
     async def ide_create_file(self, client, cmd_id, data):
         prj_name = data.get('projectName')
-        prj_path = os.path.join(Config.PROJECTS, 'ide', prj_name)
+        prj_path = os.path.join(file_storage.ide_base, prj_name)
         parent_path = convert_path(data.get('parentPath'))
         file_name = data.get('fileName')
         file_path = os.path.join(prj_path, parent_path, file_name)
@@ -227,7 +230,7 @@ print("="*50)
 
     async def ide_write_file(self, client, cmd_id, data):
         prj_name = data.get('projectName')
-        prj_path = os.path.join(Config.PROJECTS, 'ide', prj_name)
+        prj_path = os.path.join(file_storage.ide_base, prj_name)
         file_path = os.path.join(prj_path, convert_path(data.get('filePath')))
         file_data = data.get('fileData')
         code, _ = write_project_file(prj_path, file_path, file_data)
@@ -251,7 +254,7 @@ print("="*50)
 
     async def ide_get_file(self, client, cmd_id, data):
         prj_name = data.get('projectName')
-        prj_path = os.path.join(Config.PROJECTS, 'ide', prj_name)
+        prj_path = os.path.join(file_storage.ide_base, prj_name)
         file_path = os.path.join(prj_path, convert_path(data.get('filePath')))
         
         # Check if binary file requested
@@ -269,14 +272,14 @@ print("="*50)
 
     async def ide_delete_file(self, client, cmd_id, data):
         prj_name = data.get('projectName')
-        prj_path = os.path.join(Config.PROJECTS, 'ide', prj_name)
+        prj_path = os.path.join(file_storage.ide_base, prj_name)
         file_path = os.path.join(prj_path, convert_path(data.get('filePath')))
         code, _ = delete_project_file(prj_path, file_path)
         await response(client, cmd_id, code, _)
 
     async def ide_rename_file(self, client, cmd_id, data):
         prj_name = data.get('projectName')
-        prj_path = os.path.join(Config.PROJECTS, 'ide', prj_name)
+        prj_path = os.path.join(file_storage.ide_base, prj_name)
         old_path_input = data.get('oldPath')
         new_name = data.get('newName')
         
@@ -305,7 +308,7 @@ print("="*50)
 
     async def ide_create_folder(self, client, cmd_id, data):
         prj_name = data.get('projectName')
-        prj_path = os.path.join(Config.PROJECTS, 'ide', prj_name)
+        prj_path = os.path.join(file_storage.ide_base, prj_name)
         parent_path = convert_path(data.get('parentPath'))
         folder_name = data.get('folderName')
         folder_path = os.path.join(prj_path, parent_path, folder_name)
@@ -314,14 +317,14 @@ print("="*50)
 
     async def ide_delete_folder(self, client, cmd_id, data):
         prj_name = data.get('projectName')
-        prj_path = os.path.join(Config.PROJECTS, 'ide', prj_name)
+        prj_path = os.path.join(file_storage.ide_base, prj_name)
         folder_path = os.path.join(prj_path, convert_path(data.get('folderPath')))
         code, _ = delete_project_file(prj_path, folder_path)
         await response(client, cmd_id, code, _)
 
     async def ide_rename_folder(self, client, cmd_id, data):
         prj_name = data.get('projectName')
-        prj_path = os.path.join(Config.PROJECTS, 'ide', prj_name)
+        prj_path = os.path.join(file_storage.ide_base, prj_name)
         old_path = os.path.join(prj_path, convert_path(data.get('oldPath')))
         new_name = data.get('newName')
         new_path = os.path.join(os.path.dirname(old_path), new_name)
@@ -357,12 +360,12 @@ print("="*50)
             # Handle paths that might already include project context
             # If the path already starts with a project name, use it as-is
             # Otherwise, prepend the current project name
-            if '/' in old_path_relative and old_path_relative.split('/')[0] in ['Local', 'Lecture Notes', 'Assignments', 'Tests']:
+            if '/' in old_path_relative and old_path_relative.split('/')[0] in ['Local', 'Lecture Notes']:
                 old_path_full = old_path_relative  # Path already includes project context
             else:
                 old_path_full = f"{prj_name}/{old_path_relative}" if old_path_relative else prj_name
                 
-            if '/' in new_path_relative and new_path_relative.split('/')[0] in ['Local', 'Lecture Notes', 'Assignments', 'Tests']:
+            if '/' in new_path_relative and new_path_relative.split('/')[0] in ['Local', 'Lecture Notes']:
                 new_path_full = new_path_relative  # Path already includes project context
             else:
                 new_path_full = f"{prj_name}/{new_path_relative}" if new_path_relative else prj_name
@@ -388,7 +391,7 @@ print("="*50)
                 return
             
             # Get full filesystem paths using the corrected paths (not relative paths)
-            ide_base_path = os.path.join(Config.PROJECTS, 'ide')
+            ide_base_path = file_storage.ide_base
             old_full_path = os.path.join(ide_base_path, old_path_full)
             new_full_path = os.path.join(ide_base_path, new_path_full)
             
@@ -472,12 +475,12 @@ print("="*50)
             # Handle paths that might already include project context
             # If the path already starts with a project name, use it as-is
             # Otherwise, prepend the current project name
-            if '/' in old_path_relative and old_path_relative.split('/')[0] in ['Local', 'Lecture Notes', 'Assignments', 'Tests']:
+            if '/' in old_path_relative and old_path_relative.split('/')[0] in ['Local', 'Lecture Notes']:
                 old_path_full = old_path_relative  # Path already includes project context
             else:
                 old_path_full = f"{prj_name}/{old_path_relative}" if old_path_relative else prj_name
                 
-            if '/' in new_path_relative and new_path_relative.split('/')[0] in ['Local', 'Lecture Notes', 'Assignments', 'Tests']:
+            if '/' in new_path_relative and new_path_relative.split('/')[0] in ['Local', 'Lecture Notes']:
                 new_path_full = new_path_relative  # Path already includes project context
             else:
                 new_path_full = f"{prj_name}/{new_path_relative}" if new_path_relative else prj_name
@@ -503,7 +506,7 @@ print("="*50)
                 return
             
             # Get full filesystem paths using the corrected paths (not relative paths)
-            ide_base_path = os.path.join(Config.PROJECTS, 'ide')
+            ide_base_path = file_storage.ide_base
             old_full_path = os.path.join(ide_base_path, old_path_full)
             new_full_path = os.path.join(ide_base_path, new_path_full)
             
@@ -624,7 +627,7 @@ print("="*50)
             # Remove the duplicate project name from the path
             file_path_input = file_path_input[len(prj_name)+1:]
         
-        prj_path = os.path.join(Config.PROJECTS, 'ide', prj_name)
+        prj_path = os.path.join(file_storage.ide_base, prj_name)
         file_path = os.path.join(prj_path, convert_path(file_path_input))
         
         print(f"[BACKEND-DEBUG] run_python_program: projectName={prj_name}, filePath={file_path_input}, hybrid={use_hybrid}")
@@ -633,24 +636,43 @@ print("="*50)
         
         if os.path.exists(file_path) and os.path.isfile(file_path) and file_path.endswith('.py'):
             if use_hybrid:
-                # Terminate existing REPL for this file to ensure fresh execution with updated code
-                try:
-                    from .repl_registry import repl_registry
-                    # Normalize path to match the format used in save handler
-                    normalized_path = os.path.normpath(file_path)
-                    terminated = repl_registry.terminate_repl(username, normalized_path)
-                    if terminated:
-                        print(f"[BACKEND-DEBUG] Terminated existing REPL for {normalized_path} before new execution")
-                        # Small delay to ensure process cleanup completes
-                        import time
-                        time.sleep(0.1)
-                except Exception as e:
-                    print(f"[BACKEND-DEBUG] Failed to terminate REPL: {e}")
-                    pass  # Continue even if termination fails
+                # Use execution lock manager to prevent race conditions
+                from .execution_lock_manager import execution_lock_manager
                 
-                # Always create a new HybridREPLThread (threads cannot be reused)
-                print(f"[BACKEND-DEBUG] Using HybridREPLThread for Python execution with REPL")
-                thread = HybridREPLThread(cmd_id, client, asyncio.get_event_loop(), script_path=file_path)
+                # Try to acquire execution lock for this user+file
+                lock_acquired = execution_lock_manager.acquire_execution_lock(username, file_path, cmd_id, timeout=2.0)
+                if not lock_acquired:
+                    print(f"[BACKEND-DEBUG] Could not acquire execution lock for user {username}, file {file_path}, cmd_id: {cmd_id}")
+                    await response(client, cmd_id, -1, 'You already have this file running. Please wait for it to complete.')
+                    return
+                
+                try:
+                    # First stop any existing subprocess for this cmd_id to prevent duplicates
+                    print(f"[BACKEND-DEBUG] Stopping existing subprocess for cmd_id: {cmd_id}")
+                    client.handler_info.stop_subprogram(cmd_id)
+                    
+                    # Terminate existing REPL for this file to ensure fresh execution with updated code
+                    try:
+                        from .repl_registry import repl_registry
+                        # Normalize path to match the format used in save handler
+                        normalized_path = os.path.normpath(file_path)
+                        terminated = repl_registry.terminate_repl(username, normalized_path)
+                        if terminated:
+                            print(f"[BACKEND-DEBUG] Terminated existing REPL for {normalized_path} before new execution")
+                            # Brief delay to ensure complete process cleanup
+                            import time
+                            time.sleep(0.1)
+                    except Exception as e:
+                        print(f"[BACKEND-DEBUG] Failed to terminate REPL: {e}")
+                        pass  # Continue even if termination fails
+                    
+                    # Always create a new HybridREPLThread (threads cannot be reused)
+                    print(f"[BACKEND-DEBUG] Using HybridREPLThread for Python execution with REPL")
+                    thread = HybridREPLThread(cmd_id, client, asyncio.get_event_loop(), script_path=file_path, lock_manager=execution_lock_manager, username=username)
+                except Exception as e:
+                    # If anything fails, release the lock
+                    execution_lock_manager.release_execution_lock(username, file_path, cmd_id)
+                    raise e
             else:
                 # Use the working implementation with byte-by-byte reading
                 cmd = [Config.PYTHON, '-u', file_path]
@@ -658,8 +680,10 @@ print("="*50)
                 thread = WorkingSimpleThread(cmd, cmd_id, client, asyncio.get_event_loop())
             
             print(f"[BACKEND-DEBUG] Thread created for cmd_id: {cmd_id}")
+            # Ensure clean state before setting new subprogram
             client.handler_info.set_subprogram(cmd_id, thread)
             await response(client, cmd_id, 0, None)
+            print(f"[BACKEND-DEBUG] Starting new subprocess for cmd_id: {cmd_id}")
             client.handler_info.start_subprogram(cmd_id)
         else:
             await response(client, cmd_id, 1111, 'File can not run')

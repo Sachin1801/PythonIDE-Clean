@@ -21,6 +21,11 @@ const routes = [
     component: () => import('@/components/element/VmIdeWithSplitpanes'),
     meta: { title: 'Vm Web IDE - New' },
   },
+  {
+    path: '/admin/users',
+    component: () => import('@/components/element/AdminPasswordManager'),
+    meta: { title: 'Admin Password Manager' },
+  },
 ]
 
 export const router = createRouter({

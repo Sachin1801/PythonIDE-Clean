@@ -2,10 +2,13 @@
 node_modules
 
 
-# local env files
+# local env files - ALL environment files should be ignored
+.env*
 .env.local
 .env.*.local
 .env.development
+.env.production
+
 
 # Log files
 npm-debug.log*
@@ -31,3 +34,14 @@ server/venv/
 env/
 .env
 docs/
+.mypy_cache
+
+
+# Credential files - never commit passwords or sensitive data
+adminData/
+*.csv
+*credentials*.csv
+*password*.csv
+*accounts*.txt
+*summary*.txt
+

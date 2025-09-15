@@ -26,18 +26,23 @@ class HandlerInfo(object):
     
     def stop_subprogram(self, program_id):
         if program_id is None:
+            # Stop all subprograms
             for _, t in self.subprograms.items():
                 t.stop()
+            # Join all threads to ensure complete shutdown
             for _, t in self.subprograms.items():
                 try:
-                    t.join()
+                    t.join(timeout=0.5)  # Wait max 0.5 seconds per thread
                 except:
                     pass
         elif program_id in self.subprograms:
             try:
                 t = self.subprograms.pop(program_id)
+                print(f"[HANDLER-INFO] Stopping subprogram {program_id}")
                 t.stop()
-                t.join()
-            except:
+                t.join(timeout=0.5)  # Wait max 0.5 seconds for thread to finish
+                print(f"[HANDLER-INFO] Subprogram {program_id} stopped and joined")
+            except Exception as e:
+                print(f"[HANDLER-INFO] Error stopping subprogram {program_id}: {e}")
                 pass
 

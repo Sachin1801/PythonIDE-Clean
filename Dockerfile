@@ -6,7 +6,9 @@ WORKDIR /app
 
 # Copy frontend package files
 COPY package*.json ./
-COPY .env.production ./
+
+# Create production environment file for build
+RUN echo "VUE_APP_WS_URL=ws://pythonide-alb-456687384.us-east-2.elb.amazonaws.com" > .env.production
 
 # Install dependencies (including dev dependencies for build)
 RUN npm ci
@@ -39,19 +41,20 @@ RUN pip install --no-cache-dir -r server/requirements.txt
 # Copy server code
 COPY server/ ./server/
 
+# Copy deployment scripts
+COPY deployment/ ./deployment/
+
 # Copy built frontend from previous stage
 COPY --from=frontend-builder /app/dist/ ./dist/
 
-# Create necessary directories
-RUN mkdir -p server/projects/ide/Local \
-    "server/projects/ide/Lecture Notes" \
-    server/projects/ide/Assignments \
-    server/projects/ide/Tests
+# Create mount points for both local and AWS EFS
+RUN mkdir -p /tmp/pythonide-data/ide /mnt/efs/pythonide-data/ide
 
 # Set environment variables
 ENV PORT=8080
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
+ENV IDE_DATA_PATH=/mnt/efs/pythonide-data
 
 # Expose port
 EXPOSE 8080
@@ -60,6 +63,6 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
-# Start the application
+# Start the application with initialization
 WORKDIR /app/server
-CMD ["python", "server.py"]
+CMD ["sh", "-c", "/app/deployment/sync-student-directories.sh && python /app/server/auto_init_users.py && python /app/server/ensure_efs_directories.py && python server.py"]

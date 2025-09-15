@@ -10,7 +10,6 @@
       v-on:run-item="runPathSelected"
       @stop-item="stop"
       @clear-console="clearConsole"
-      @share-project="shareProject"
       @sign-in="handleSignIn"
       @open-upload-dialog="showUploadDialog = true"
       @download-file="downloadFile"
@@ -21,7 +20,6 @@
       @open-move-dialog="openMoveDialog"
       @delete-file="deleteFileFromMenu"
       @delete-selected-file="deleteSelectedFile"
-      @share-file="shareFile"
       @undo="handleUndo"
       @redo="handleRedo"
       @cut="handleCut"
@@ -44,6 +42,7 @@
       @update-word-wrap="updateWordWrap"
       @update-auto-save="updateAutoSave"
       @update-auto-save-interval="updateAutoSaveInterval"
+      @update-auto-save-notifications="updateAutoSaveNotifications"
     />
     
     <!-- Keyboard Shortcuts Modal -->
@@ -64,6 +63,7 @@
         <pane :size="leftSidebarSize" :min-size="leftSidebarMinSize" :max-size="leftSidebarMaxSize">
           <div id="left-sidebar" class="left-sidebar" v-show="leftSidebarVisible && windowWidth > 900">
             <ProjTree 
+              :currentUser="currentUser"
               v-on:get-item="getFile"
               @get-item-right-panel="getFileForRightPanel"
               @context-menu="showContextMenu"
@@ -72,6 +72,7 @@
               @download-item="handleDownloadItem"
               @new-file="handleNewFileFromTree"
               @new-folder="handleNewFolderFromTree"
+              @import-file="handleImportFileFromTree"
             ></ProjTree>
           </div>
         </pane>
@@ -117,7 +118,7 @@
               <!-- Console Header with Collapse/Expand Button -->
           <div class="console-header">
             <div class="console-header-left">
-              <span class="console-title">{{ isReplMode ? 'Python REPL' : 'Console' }}</span>
+              <span class="console-title">{{ isReplMode ? 'Console' : 'Console' }}</span>
             </div>
             <div class="console-header-center">
               <!-- Collapsed state: Only up arrow -->
@@ -354,6 +355,7 @@
     <DialogUpload v-if="showUploadDialog" v-model="showUploadDialog" @refresh-tree="refreshProjectTree" @close="showUploadDialog = false"></DialogUpload>
     <DialogNewFile v-if="showNewFileDialog" v-model="showNewFileDialog" @file-created="handleFileCreated"></DialogNewFile>
     <DialogNewFolder v-if="showNewFolderDialog" v-model="showNewFolderDialog" @folder-created="handleFolderCreated"></DialogNewFolder>
+    <DialogImportFile v-if="showImportFileDialog" v-model="showImportFileDialog" @files-imported="handleFilesImported"></DialogImportFile>
     <DialogFileBrowser 
       v-model="showFileBrowserDialog" 
       :mode="fileBrowserMode"
@@ -404,7 +406,9 @@ import DialogDelete from './pages/ide/dialog/DialogDelete';
 import DialogUpload from './pages/ide/dialog/DialogUpload';
 import DialogNewFile from './pages/ide/dialog/DialogNewFile';
 import DialogNewFolder from './pages/ide/dialog/DialogNewFolder';
+import DialogImportFile from './pages/ide/dialog/DialogImportFile';
 import DialogFileBrowser from './pages/ide/dialog/DialogFileBrowser';
+import sessionManager from '../../utils/sessionManager';
 import CsvViewer from './pages/ide/CsvViewer';
 import MediaViewer from './pages/ide/editor/MediaViewer';
 import SettingsModal from './pages/ide/SettingsModal';
@@ -424,6 +428,7 @@ export default {
       showUploadDialog: false,
       showNewFileDialog: false,
       showNewFolderDialog: false,
+      showImportFileDialog: false,
       showFileBrowserDialog: false,
       showLoginModal: false,
       fileBrowserMode: 'open',
@@ -546,6 +551,7 @@ export default {
     DialogUpload,
     DialogNewFile,
     DialogNewFolder,
+    DialogImportFile,
     DialogFileBrowser,
     CsvViewer,
     MediaViewer,
@@ -566,6 +572,9 @@ export default {
     this.throttledHandleResizeLeft = this.throttle(this.handleResizeLeft, 16); // ~60fps
     this.throttledHandleResizeRight = this.throttle(this.handleResizeRight, 16);
     this.throttledHandleResizeConsole = this.throttle(this.handleResizeConsole, 16);
+    
+    // Initialize auto-save settings from localStorage
+    this.initializeAutoSave();
 
     // Check if user is already logged in
     const sessionId = localStorage.getItem('session_id');
@@ -575,6 +584,10 @@ export default {
       console.log('🔑 [VmIde] Found existing session for:', username);
       // currentUser is now a computed property based on localStorage
       // so no need to set it here
+      
+      // Initialize session manager for auto-renewal
+      console.log('🔄 [VmIde] Starting session manager for auto-renewal...');
+      sessionManager.startTracking();
       
       // Initialize WebSocket only if logged in
       try {
@@ -589,9 +602,10 @@ export default {
         console.error('❌ [VmIde] Error initializing WebSocket:', error);
       }
     } else {
-      console.log('🔒 [VmIde] No session found, user needs to login');
+      console.log('🔒 [VmIde] No session found, auto-opening login modal...');
+      // Auto-open login modal when no user is logged in
+      this.showLoginModal = true;
       // Don't initialize WebSocket until after login
-      // User will click Sign In button to show login modal
       return;
     }
 
@@ -947,7 +961,10 @@ export default {
       }
       
       // Store in localStorage for persistence
-      localStorage.setItem('editorFontSize', value);
+      localStorage.setItem('fontSize', value);
+      
+      // Dispatch custom event for same-tab CodeEditor components
+      window.dispatchEvent(new CustomEvent('fontSizeChanged'));
     },
     updateLineNumbers(value) {
       // Update line numbers in all CodeMirror editors
@@ -978,16 +995,51 @@ export default {
     },
     updateAutoSaveInterval(value) {
       this.$store.commit('ide/setAutoSaveInterval', value);
-      if (this.$store.state.ide.autoSave) {
+      if (this.$store.state.ide.ideInfo.autoSave) {
         this.stopAutoSave();
         this.startAutoSave();
       }
+    },
+    updateAutoSaveNotifications(value) {
+      this.$store.commit('ide/setAutoSaveNotifications', value);
+    },
+    initializeAutoSave() {
+      // Load auto-save settings from localStorage and initialize the store
+      const savedAutoSave = localStorage.getItem('autoSave');
+      const savedAutoSaveInterval = localStorage.getItem('autoSaveInterval');
+      const savedAutoSaveNotifications = localStorage.getItem('autoSaveNotifications');
+      
+      // Set store values
+      if (savedAutoSave !== null) {
+        const autoSaveEnabled = savedAutoSave === 'true';
+        this.$store.commit('ide/setAutoSave', autoSaveEnabled);
+        
+        if (autoSaveEnabled) {
+          console.log('[AUTO-SAVE] Auto-save is enabled in settings, starting timer');
+          this.startAutoSave();
+        }
+      }
+      
+      if (savedAutoSaveInterval) {
+        this.$store.commit('ide/setAutoSaveInterval', parseInt(savedAutoSaveInterval));
+      }
+      
+      if (savedAutoSaveNotifications !== null) {
+        this.$store.commit('ide/setAutoSaveNotifications', savedAutoSaveNotifications === 'true');
+      }
+      
+      console.log('[AUTO-SAVE] Initialized auto-save settings:', {
+        enabled: this.$store.state.ide.ideInfo.autoSave,
+        interval: this.$store.state.ide.ideInfo.autoSaveInterval,
+        notifications: this.$store.state.ide.ideInfo.autoSaveNotifications
+      });
     },
     startAutoSave() {
       if (this.autoSaveTimer) {
         clearInterval(this.autoSaveTimer);
       }
-      const interval = this.$store.state.ide.autoSaveInterval || 60;
+      const interval = this.$store.state.ide.ideInfo.autoSaveInterval || 60;
+      console.log(`[AUTO-SAVE] Starting auto-save timer with ${interval}s interval`);
       this.autoSaveTimer = setInterval(() => {
         this.saveAllFiles();
       }, interval * 1000);
@@ -996,14 +1048,44 @@ export default {
       if (this.autoSaveTimer) {
         clearInterval(this.autoSaveTimer);
         this.autoSaveTimer = null;
+        console.log(`[AUTO-SAVE] Auto-save timer stopped`);
       }
     },
     saveAllFiles() {
-      // Auto-save all open files
-      this.ideInfo.codeItems.forEach(item => {
-        if (item.changed) {
-          this.saveFile(item);
-        }
+      // Auto-save all open files that have been modified
+      const filesToSave = this.ideInfo.codeItems.filter(item => item.content);
+      
+      if (filesToSave.length === 0) {
+        console.log(`[AUTO-SAVE] No files to auto-save`);
+        return;
+      }
+
+      console.log(`[AUTO-SAVE] Auto-saving ${filesToSave.length} files`);
+      let savedCount = 0;
+      
+      filesToSave.forEach(item => {
+        // Emit activity for session renewal
+        sessionManager.constructor.emitIDEActivity('file-save', { filename: item.fileName });
+        
+        this.$store.dispatch('ide/saveFile', { 
+          codeItem: item, 
+          isAutoSave: true 
+        }).then(() => {
+          savedCount++;
+          if (savedCount === filesToSave.length) {
+            // All files saved, show notification if enabled
+            if (this.$store.state.ide.ideInfo.autoSaveNotifications) {
+              ElMessage({
+                message: `Auto-saved ${savedCount} file${savedCount > 1 ? 's' : ''}`,
+                type: 'info',
+                duration: 2000,
+                showClose: false
+              });
+            }
+          }
+        }).catch(error => {
+          console.error(`[AUTO-SAVE] Failed to auto-save ${item.path}:`, error);
+        });
       });
     },
     toggleConsoleExpand() {
@@ -1762,6 +1844,15 @@ export default {
       // Refresh the project tree
       this.refreshProjectTree();
     },
+    handleFilesImported(data) {
+      // Handle files imported from import file dialog
+      console.log('[handleFilesImported] Files imported:', data);
+      
+      // Refresh the project tree to show the new files
+      this.refreshProjectTree();
+      
+      // Optionally show a success message (already handled by the dialog component)
+    },
     refreshProjectTree() {
       // Refresh the project tree by re-fetching the project data
       this.refreshProjectTreeWithCallback(null);
@@ -1972,7 +2063,7 @@ export default {
       
       if (role === 'professor') {
         // Professor: Load all main folders including Local for full access
-        const professorProjects = ['Local', 'Lecture Notes', 'Assignments', 'Tests'];
+        const professorProjects = ['Local', 'Lecture Notes'];
         professorProjects.forEach(proj => {
           if (this.ideInfo.projList.some(p => p.name === proj)) {
             projectsToLoad.push(proj);
@@ -1986,7 +2077,7 @@ export default {
         }
         
         // Add other standard projects if they exist
-        const standardProjects = ['Lecture Notes', 'Assignments', 'Tests'];
+        const standardProjects = ['Lecture Notes'];
         standardProjects.forEach(proj => {
           if (this.ideInfo.projList.some(p => p.name === proj)) {
             projectsToLoad.push(proj);
@@ -2394,10 +2485,6 @@ export default {
       this.fileToMove = null;
       this.showFileBrowserDialog = true;
     },
-    shareProject() {
-      // Handle share project functionality
-      this.$message.info('Share project feature coming soon!');
-    },
     handleSignIn() {
       console.log('handleSignIn called');
       
@@ -2446,6 +2533,10 @@ export default {
       
       // Handle successful login
       if (userData) {
+        // Start session manager immediately after login
+        console.log('🔄 [VmIde] Starting session manager after login...');
+        sessionManager.startTracking();
+        
         // currentUser is now a computed property based on localStorage
         // so no need to set it here
         
@@ -2504,9 +2595,17 @@ export default {
       }
       this.showNewFolderDialog = true;
     },
-    shareFile() {
-      // Handle share file functionality
-      this.$message.info('Share file feature coming soon!');
+    handleImportFileFromTree() {
+      // Open import file dialog - only for admin users
+      const nodeSelected = this.ideInfo.nodeSelected;
+      if (!nodeSelected || (nodeSelected.type !== 'dir' && nodeSelected.type !== 'folder')) {
+        // Select the root folder if no folder is selected
+        const rootFolder = this.ideInfo.currProj?.data;
+        if (rootFolder) {
+          this.$store.commit('ide/setNodeSelected', rootFolder);
+        }
+      }
+      this.showImportFileDialog = true;
     },
     // Edit menu handlers
     handleUndo() {
@@ -3776,6 +3875,9 @@ export default {
         this.saveFileConsoleState(previousFile.path);
       }
       
+      // Emit activity for session renewal when opening/switching files
+      sessionManager.constructor.emitIDEActivity('file-open', { filename: item.fileName });
+      
       // Update store first to ensure tab switches properly
       this.$store.commit('ide/setPathSelected', item.path);
       this.$store.commit('ide/setCodeSelected', item);
@@ -3958,6 +4060,9 @@ export default {
       this.$forceUpdate();
     },
     runPathSelected() {
+      // Emit activity for session renewal
+      sessionManager.constructor.emitIDEActivity('code-run');
+      
       // Check if there's a file selected
       const currentFilePath = this.ideInfo.currProj.pathSelected;
       
@@ -5171,50 +5276,64 @@ Advanced packages (install with micropip):
 }
 
 .console-expand-arrow {
-  background: transparent;
-  border: 1px solid var(--console-header-button-border, #3c3c3c);
-  border-radius: 4px;
-  padding: 4px;
+  background: var(--console-expand-bg, rgba(0, 122, 204, 0.1));
+  border: 1.5px solid var(--console-header-button-border, #007ACC);
+  border-radius: 6px;
+  padding: 6px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--console-header-button-text, #B5B5B5);
+  color: var(--console-header-button-text, #007ACC);
   transition: all 0.2s;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
+  box-shadow: 0 1px 3px rgba(0, 122, 204, 0.2);
 }
 
 .console-expand-arrow:hover {
   background: var(--accent-color, #007ACC);
   color: white;
   border-color: var(--accent-color, #007ACC);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 122, 204, 0.4);
 }
 
 [data-theme="light"] .console-expand-arrow {
-  border: 1px solid #adb5bd;
-  color: #6c757d;
+  background: rgba(0, 102, 204, 0.08);
+  border: 1.5px solid #0066cc;
+  color: #0066cc;
+  box-shadow: 0 1px 3px rgba(0, 102, 204, 0.15);
 }
 
 [data-theme="light"] .console-expand-arrow:hover {
   background: #0066cc;
   border-color: #0066cc;
+  color: white;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 102, 204, 0.3);
 }
 
 [data-theme="dark"] .console-expand-arrow {
-  border: 1px solid #565656;
-  color: #b5b5b5;
+  background: rgba(0, 122, 204, 0.1);
+  border: 1.5px solid #007acc;
+  color: #007acc;
+  box-shadow: 0 1px 3px rgba(0, 122, 204, 0.2);
 }
 
 [data-theme="contrast"] .console-expand-arrow {
-  border: 2px solid #4a4a4a;
+  background: rgba(255, 255, 255, 0.08);
+  border: 2px solid #ffffff;
   color: #ffffff;
+  box-shadow: 0 1px 3px rgba(255, 255, 255, 0.15);
 }
 
 [data-theme="contrast"] .console-expand-arrow:hover {
   background: #ffffff;
   color: #000000;
   border-color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(255, 255, 255, 0.3);
 }
 
 .collapse-icon {
@@ -5260,53 +5379,69 @@ Advanced packages (install with micropip):
 }
 
 .console-action-btn {
-  background: transparent;
-  border: 1px solid var(--console-header-button-border, #464647);
-  color: var(--console-header-button-text, #969696);
-  padding: 4px 12px;
-  border-radius: 3px;
+  background: var(--console-action-bg, rgba(0, 122, 204, 0.15));
+  border: 1.5px solid var(--console-header-button-border, #007ACC);
+  color: var(--console-header-button-text, #007ACC);
+  padding: 6px 14px;
+  border-radius: 4px;
   cursor: pointer;
   font-size: 12px;
+  font-weight: 500;
   transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 122, 204, 0.25);
 }
 
 .console-action-btn:hover {
-  background: var(--console-header-button-hover, #3A3A3C);
+  background: var(--console-header-button-hover, #007ACC);
   border-color: var(--accent-color, #007ACC);
   color: var(--text-primary, #FFFFFF);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 122, 204, 0.4);
 }
 
 [data-theme="light"] .console-action-btn {
-  border: 1px solid #adb5bd;
-  color: #6c757d;
+  background: rgba(0, 102, 204, 0.1);
+  border: 1.5px solid #0066cc;
+  color: #0066cc;
+  box-shadow: 0 1px 3px rgba(0, 102, 204, 0.2);
 }
 
 [data-theme="light"] .console-action-btn:hover {
-  background: #e9ecef;
+  background: #0066cc;
   border-color: #0066cc;
-  color: #212529;
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 102, 204, 0.3);
 }
 
 [data-theme="dark"] .console-action-btn {
-  border: 1px solid #565656;
-  color: #969696;
+  background: rgba(0, 122, 204, 0.15);
+  border: 1.5px solid #007acc;
+  color: #007acc;
+  box-shadow: 0 1px 3px rgba(0, 122, 204, 0.25);
 }
 
 [data-theme="dark"] .console-action-btn:hover {
-  background: #3a3a3c;
+  background: #007acc;
   border-color: #007acc;
   color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 122, 204, 0.4);
 }
 
 [data-theme="contrast"] .console-action-btn {
-  border: 2px solid #4a4a4a;
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid #ffffff;
   color: #ffffff;
+  box-shadow: 0 1px 3px rgba(255, 255, 255, 0.2);
 }
 
 [data-theme="contrast"] .console-action-btn:hover {
-  background: #2a2a2a;
+  background: #ffffff;
   border-color: #ffffff;
-  color: #ffffff;
+  color: #000000;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(255, 255, 255, 0.3);
 }
 
 .console-body {
@@ -5330,7 +5465,7 @@ Advanced packages (install with micropip):
   background: var(--bg-primary, #1E1E1E);
   padding: 12px;
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 13px;
+  font-size: 20px;
   line-height: 1.4;
   min-height: 0; /* Important for flexbox overflow to work properly */
 }
@@ -5346,7 +5481,7 @@ Advanced packages (install with micropip):
   white-space: pre-wrap;
   word-wrap: break-word;
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 13px;
+  font-size: 20px;
   line-height: 1.4;
   font-weight: 400;
   letter-spacing: 0.02em; /* Consistent character spacing for output */
@@ -5365,7 +5500,7 @@ Advanced packages (install with micropip):
   align-items: flex-start;
   gap: 8px;
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 13px;
+  font-size: 20px;
   line-height: 1.4;
 }
 
@@ -5394,7 +5529,7 @@ Advanced packages (install with micropip):
   word-wrap: break-word;
   font-weight: 500;
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 13px;
+  font-size: 20px;
   line-height: 1.4;
   letter-spacing: 0.02em; /* Match output character spacing for consistency */
 }
@@ -5416,7 +5551,7 @@ Advanced packages (install with micropip):
   color: var(--accent-color, #007ACC);
   font-weight: 500;
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 13px;
+  font-size: 20px;
   line-height: 1.4;
   flex-shrink: 0;
 }
@@ -5427,7 +5562,7 @@ Advanced packages (install with micropip):
   white-space: pre-wrap;
   word-wrap: break-word;
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 13px;
+  font-size: 20px;
   line-height: 1.4;
   font-weight: 500;
   flex: 1;
@@ -5583,7 +5718,7 @@ body .console-output-area .console-line .console-repl-input span {
   gap: 8px;
   margin-bottom: 8px;
   color: var(--text-secondary, #969696);
-  font-size: 13px;
+  font-size: 20px;
 }
 
 .prompt-icon {
@@ -5603,7 +5738,7 @@ body .console-output-area .console-line .console-repl-input span {
   padding: 6px 10px;
   border-radius: 3px;
   font-family: 'Courier New', monospace;
-  font-size: 13px;
+  font-size: 20px;
   outline: none;
   resize: none; /* Prevent manual resize */
   overflow-y: auto; /* Scroll when exceeds max-height */
@@ -5660,8 +5795,9 @@ body .console-output-area .console-line .console-repl-input span {
   background: var(--bg-primary, #1E1E1E);
   border: 1px solid var(--border-secondary, #464647);
   color: var(--text-primary, #FFFFFF);
-  font-family: 'Courier New', monospace;
-  font-size: 14px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace !important;
+  font-size: 20px !important;
+  line-height: 1.4 !important;
   padding: 6px 8px;
   border-radius: 3px;
   outline: none;
@@ -5669,7 +5805,6 @@ body .console-output-area .console-line .console-repl-input span {
   overflow-y: auto; /* Scroll when exceeds max-height */
   min-height: 32px; /* Approximately 1 line */
   max-height: 150px; /* Approximately 7 lines */
-  line-height: 20px;
   transition: border-color 0.2s ease, height 0.15s ease;
 }
 

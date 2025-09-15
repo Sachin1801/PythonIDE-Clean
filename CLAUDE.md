@@ -3,29 +3,34 @@
 ## Project Overview
 PythonIDE-Clean is a web-based Python IDE designed for educational use at a college. It supports 60+ concurrent students, allowing them to write, execute, and submit Python code for assignments and tests.
 
-## Current Status (Updated: December 2024)
+## Current Status (Updated: January 2025)
 
 ### ✅ Implemented Features:
 1. **User authentication** - Login system with bcrypt password hashing
-2. **File isolation** - Each student has `Local/{username}/` folder
-3. **PostgreSQL database** - Migrated from SQLite for scalability
+2. **File isolation** - Each student has `Local/{username}/` folder (41 students) + two test accounts now added admin_viewer and test_studnet
+3. **PostgreSQL database** - AWS RDS PostgreSQL for production
 4. **Authenticated WebSockets** - Secure real-time connections
-5. **Role-based permissions** - Student vs Professor access control
-6. **Cloud deployment** - Railway platform with automatic scaling
+5. **Role-based permissions** - Student vs Professor access control (3 admin accounts: sl7927, sa9082, et2434, admin_editor, test_admin)
+6. **AWS deployment** - ECS Fargate with EFS persistent storage
 7. **Session management** - Token-based authentication
 8. **File synchronization** - Database tracks file metadata
 9. **Hybrid REPL System** - Scripts transition to REPL with variable persistence
+10. **Admin permissions** - Professors can see all student directories in Local/
 
-### ⚠️ Remaining Issues:
-1. **Resource limits** - Need CPU/memory limits per execution
-2. **Rate limiting** - No request throttling implemented
-3. **Process cleanup** - Abandoned processes not cleaned automatically
-4. **Monitoring** - Basic logging only, no APM integration
-5. **Backups** - Manual process, not automated
+### ✅ Production Status:
+- **AWS ECS Service**: Running and stable
+- **GitHub Actions CI/CD**: Automated deployment from main branch only
+- **Student Account Management**: 60+ students + test account system
+- **Security**: Cleaned repository with no exposed credentials
 
-### Current Capacity:
-- **With PostgreSQL: 60+ concurrent users** (previously 5-10 with SQLite)
-- Tested up to 20 concurrent users successfully
+### 🎯 Working Configuration:
+- **Account ID**: 653306034507
+- **Region**: us-east-2
+- **EFS ID**: fs-0ba3b6fecab24774a
+- **RDS Endpoint**: pythonide-db.c1u6aa2mqwwf.us-east-2.rds.amazonaws.com
+- **Load Balancer**: pythonide-alb-456687384.us-east-2.elb.amazonaws.com
+- **Student Count**: 60+ active students (recent additions: aas10176, bh2854)
+- **Database**: pythonide (AWS RDS PostgreSQL)
 
 ## Current Architecture
 
@@ -46,15 +51,12 @@ PythonIDE-Clean is a web-based Python IDE designed for educational use at a coll
 │   ├── jd1234/         # Another student's workspace
 │   └── ...
 ├── Lecture Notes/      # Professor uploads, students read-only
-├── Assignments/        # Assignment descriptions and submissions
-└── Tests/             # Test descriptions and submissions
 ```
 
 ### User Roles & Permissions:
 - **Students:**
   - Full access: `Local/{username}/`
   - Read-only: `Lecture Notes/`
-  - Write own files by students but assignment and test material uploaded by professor which is read only for students: `Assignments/`, `Tests/`
   
 - **Professors:**
   - Full access to everything
@@ -63,33 +65,44 @@ PythonIDE-Clean is a web-based Python IDE designed for educational use at a coll
 
 ## Deployment & Infrastructure
 
-### Production Environment (Railway):
-- **Platform**: Railway.app cloud hosting
-- **Database**: PostgreSQL (managed by Railway)
-- **URL**: Accessible via Railway-generated domain
-- **Scaling**: Automatic based on load
-- **Cost**: $0-20/month on free tier
+### Production Environment (AWS):
+- **Platform**: AWS ECS Fargate
+- **Database**: AWS RDS PostgreSQL (pythonide-db.c1u6aa2mqwwf.us-east-2.rds.amazonaws.com)
+- **Storage**: AWS EFS (fs-0ba3b6fecab24774a) mounted at /mnt/efs/pythonide-data
+- **Load Balancer**: pythonide-alb-456687384.us-east-2.elb.amazonaws.com
+- **Region**: us-east-2
+- **Container Registry**: ECR (653306034507.dkr.ecr.us-east-2.amazonaws.com/pythonide-backend)
+- **Status**: Infrastructure ready, service failing due to Docker image platform issues
 
-### Environment Variables:
+### Environment Variables (AWS):
 ```bash
-DATABASE_URL=postgresql://...  # Auto-set by Railway
-PORT=8080                       # Auto-set by Railway
-IDE_SECRET_KEY=<secure-key>
+DATABASE_URL=postgresql://pythonide_admin:Sachinadlakha9082@pythonide-db.c1u6aa2mqwwf.us-east-2.rds.amazonaws.com:5432/pythonide
+IDE_SECRET_KEY=@ok#N2q0%!F2zGUuC^rYvtY2Op#hkEWsMtBRDsk@5Bq7D8x#Y18kajwIrozM0YE6
+IDE_DATA_PATH=/mnt/efs/pythonide-data
+PORT=8080
 MAX_CONCURRENT_EXECUTIONS=60
 EXECUTION_TIMEOUT=30
 MEMORY_LIMIT_MB=128
 ```
 
-### Deployment Process:
+### Deployment Process (AWS):
+**Automated via GitHub Actions:**
+- Push to `main` branch triggers production deployment
+- Feature branches run tests only (no deployment)
+- Manual deployment available via `workflow_dispatch`
+
+**Manual deployment (if needed):**
 ```bash
-# Deploy to Railway
-railway up
+# Build with explicit platform
+docker build --platform linux/amd64 -f Dockerfile -t pythonide-backend:latest .
 
-# Initialize users
-railway run python server/migrations/create_users.py
+# Push to ECR
+aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 653306034507.dkr.ecr.us-east-2.amazonaws.com
+docker tag pythonide-backend:latest 653306034507.dkr.ecr.us-east-2.amazonaws.com/pythonide-backend:latest
+docker push 653306034507.dkr.ecr.us-east-2.amazonaws.com/pythonide-backend:latest
 
-# Monitor logs
-railway logs
+# Update ECS service
+aws ecs update-service --cluster pythonide-cluster --service pythonide-service --force-new-deployment --region us-east-2
 ```
 
 ## Hybrid REPL System

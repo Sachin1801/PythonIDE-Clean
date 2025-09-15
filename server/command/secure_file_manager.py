@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from common.database import db_manager
+from common.file_storage import file_storage
 from command.file_sync import file_sync
 
 class SecureFileManager:
@@ -22,30 +23,11 @@ class SecureFileManager:
         # Use the global database manager
         self.db = db_manager
         
-        # Determine the correct base path based on current working directory
-        # Check multiple possible paths in order of preference
-        possible_paths = [
-            Path('projects/ide'),          # When running from server/
-            Path('server/projects/ide'),  # When running from root
-            Path('../server/projects/ide'), # Alternative path
-        ]
+        # Use persistent storage (AWS EFS or local)
+        self.base_path = Path(file_storage.ide_base)
         
-        self.base_path = None
-        for path in possible_paths:
-            if path.exists():
-                self.base_path = path.resolve()  # Use absolute path
-                break
-        
-        # If no existing path found, create it based on where we are
-        if self.base_path is None:
-            # Check if we're in server directory
-            if Path('projects/ide').parent.exists():
-                self.base_path = Path('projects/ide').resolve()
-            else:
-                self.base_path = Path('server/projects/ide').resolve()
-            self.base_path.mkdir(parents=True, exist_ok=True)
-        
-        logger.info(f"SecureFileManager initialized with base_path: {self.base_path}")
+        logger.info(f"SecureFileManager initialized with persistent storage: {self.base_path}")
+        logger.info(f"Storage info: {file_storage.get_storage_info()}")
     
     def get_connection(self):
         """Get database connection"""
@@ -85,21 +67,6 @@ class SecureFileManager:
             logger.info(f"Read-only access granted for: {requested_path}")
             return 'read_only'
         
-        # 3. Students can read assignment descriptions but only write in their own submission folders
-        if requested_path.startswith('Assignments/'):
-            if f'/{username}/' in requested_path or requested_path.endswith(f'/{username}'):
-                logger.info(f"Write access granted for assignment: {requested_path}")
-                return True
-            logger.info(f"Read-only access granted for assignment: {requested_path}")
-            return 'read_only'
-        
-        # 4. Similar for tests
-        if requested_path.startswith('Tests/'):
-            if f'/{username}/' in requested_path or requested_path.endswith(f'/{username}'):
-                logger.info(f"Write access granted for test: {requested_path}")
-                return True
-            logger.info(f"Read-only access granted for test: {requested_path}")
-            return 'read_only'
         
         # No access to other locations
         logger.warning(f"Path rejected: '{requested_path}' - no permission for student")
@@ -207,20 +174,54 @@ class SecureFileManager:
     def list_directory(self, username, role, data):
         """List directory contents with permission checking"""
         dir_path = data.get('path', '')
+        logger.info(f"Directory listing request: user={username}, role={role}, path='{dir_path}'")
         
         # Root directory is always accessible (to see top-level folders)
         if dir_path == '' or dir_path == '/':
             # Show top-level directories based on role
             if role == 'professor':
-                dirs = ['Local', 'Lecture Notes', 'Assignments', 'Tests']
+                dirs = ['Local', 'Lecture Notes']
             else:
-                dirs = [f'Local/{username}', 'Lecture Notes', 'Assignments', 'Tests']
+                dirs = [f'Local/{username}', 'Lecture Notes']
             
             return {
                 'success': True,
                 'directories': dirs,
                 'files': []
             }
+        
+        # Special handling for professors accessing Local directory
+        if dir_path == 'Local' and role == 'professor':
+            # List all student directories for professors
+            logger.info(f"Professor {username} accessing Local directory")
+            local_path = self.base_path / 'Local'
+            logger.info(f"Local path: {local_path}, exists: {local_path.exists()}")
+            
+            if local_path.exists():
+                try:
+                    subdirs = []
+                    all_items = list(local_path.iterdir())
+                    logger.info(f"Found {len(all_items)} items in Local directory")
+                    
+                    for item in all_items:
+                        if item.is_dir():
+                            subdirs.append({
+                                'name': item.name,
+                                'path': f'Local/{item.name}'
+                            })
+                    
+                    logger.info(f"Returning {len(subdirs)} directories for professor")
+                    return {
+                        'success': True,
+                        'directories': sorted(subdirs, key=lambda x: x['name']),
+                        'files': []
+                    }
+                except Exception as e:
+                    logger.error(f"Error listing Local directory for professor: {e}")
+                    return {'success': False, 'error': str(e)}
+            else:
+                logger.error(f"Local directory not found: {local_path}")
+                return {'success': False, 'error': 'Local directory not found'}
         
         permission = self.validate_path(username, role, dir_path)
         if not permission:
@@ -354,109 +355,5 @@ class SecureFileManager:
         except Exception as e:
             return {'success': False, 'error': str(e)}
     
-    def submit_assignment(self, username, role, data):
-        """Create submission with unique ID"""
-        if role != 'student':
-            return {'success': False, 'error': 'Only students can submit'}
-        
-        file_path = data.get('path')
-        assignment_name = data.get('assignment_name')
-        
-        # Validate the file exists and user has access
-        permission = self.validate_path(username, role, file_path)
-        if not permission:
-            return {'success': False, 'error': 'Permission denied'}
-        
-        full_path = self.base_path / file_path
-        if not full_path.exists():
-            return {'success': False, 'error': 'File not found'}
-        
-        # Generate unique submission ID
-        submission_id = f"{username}_{assignment_name}_{uuid.uuid4().hex[:8]}"
-        
-        # Copy file to submissions folder
-        submission_dir = self.base_path / 'Assignments' / assignment_name / username
-        submission_dir.mkdir(parents=True, exist_ok=True)
-        
-        submission_file = submission_dir / f"submission_{datetime.now().strftime('%Y%m%d_%H%M%S')}.py"
-        shutil.copy2(full_path, submission_file)
-        
-        # Update database
-        conn = self.get_connection()
-        conn.execute('''
-            INSERT INTO file_metadata 
-            (username, file_path, is_submitted, submission_id, last_modified)
-            VALUES (?, ?, 1, ?, CURRENT_TIMESTAMP)
-        ''', (username, str(submission_file.relative_to(self.base_path)), submission_id))
-        conn.commit()
-        conn.close()
-        
-        return {
-            'success': True,
-            'submission_id': submission_id,
-            'message': f'Submitted successfully! ID: {submission_id}'
-        }
     
-    def get_submissions(self, username, role, data):
-        """Get submissions for grading (professor only)"""
-        if role != 'professor':
-            return {'success': False, 'error': 'Only professors can view submissions'}
-        
-        assignment_name = data.get('assignment_name', '')
-        
-        conn = self.get_connection()
-        
-        if assignment_name:
-            cursor = conn.execute('''
-                SELECT * FROM file_metadata 
-                WHERE is_submitted = 1 AND file_path LIKE ?
-                ORDER BY last_modified DESC
-            ''', (f'%Assignments/{assignment_name}/%',))
-        else:
-            cursor = conn.execute('''
-                SELECT * FROM file_metadata 
-                WHERE is_submitted = 1
-                ORDER BY last_modified DESC
-            ''')
-        
-        submissions = []
-        for row in cursor:
-            submissions.append({
-                'id': row['id'],
-                'username': row['username'],
-                'file_path': row['file_path'],
-                'submission_id': row['submission_id'],
-                'submitted_at': row['last_modified'],
-                'grade': row['grade'],
-                'feedback': row['feedback'],
-                'graded_by': row['graded_by'],
-                'graded_at': row['graded_at']
-            })
-        
-        conn.close()
-        return {'success': True, 'submissions': submissions}
     
-    def grade_submission(self, username, role, data):
-        """Grade a submission (professor only)"""
-        if role != 'professor':
-            return {'success': False, 'error': 'Only professors can grade'}
-        
-        submission_id = data.get('submission_id')
-        grade = data.get('grade')
-        feedback = data.get('feedback', '')
-        
-        conn = self.get_connection()
-        conn.execute('''
-            UPDATE file_metadata 
-            SET grade = ?, feedback = ?, graded_by = ?, graded_at = CURRENT_TIMESTAMP
-            WHERE submission_id = ?
-        ''', (grade, feedback, username, submission_id))
-        
-        affected = conn.total_changes
-        conn.commit()
-        conn.close()
-        
-        if affected > 0:
-            return {'success': True, 'message': 'Submission graded'}
-        else:
-            return {'success': False, 'error': 'Submission not found'}

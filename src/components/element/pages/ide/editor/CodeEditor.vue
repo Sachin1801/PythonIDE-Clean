@@ -182,8 +182,13 @@ export default {
               CodeMirror.commands.smartBackspace(cm);
           },
           'F5' : (cm) => {
-            if (this.isPython && !this.consoleLimit)
+            console.log('[F5-DEBUG] F5 key pressed, isPython:', this.isPython, 'consoleLimit:', this.consoleLimit);
+            if (this.isPython && !this.consoleLimit) {
+              console.log('[F5-DEBUG] Emitting run-item event from F5');
               this.$emit('run-item');
+            } else {
+              console.log('[F5-DEBUG] F5 not processed - isPython:', this.isPython, 'consoleLimit:', this.consoleLimit);
+            }
           }
         },
       }
@@ -220,6 +225,20 @@ export default {
     observer.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ['data-theme']
+    });
+    
+    // Listen for localStorage changes (font size, line numbers, etc.)
+    window.addEventListener('storage', (e) => {
+      if (e.key === 'fontSize') {
+        this.applySavedSettings();
+      } else if (e.key === 'showLineNumbers') {
+        this.applySavedSettings();
+      }
+    });
+    
+    // Listen for custom font size change events (for same-tab changes)
+    window.addEventListener('fontSizeChanged', () => {
+      this.applySavedSettings();
     });
   },
   watch: {
@@ -351,19 +370,34 @@ export default {
         clearTimeout(this.writeTimeout);
       }
       
-      this.writeTimeout = setTimeout(() => {
-        // Write file without autocomplete
-        this.$store.dispatch(`ide/${types.IDE_WRITE_FILE}`, {
-          filePath: this.codeItem.path,
-          fileData: value,
-          complete: false, // Autocomplete disabled
-          line: 0,
-          column: 0,
-          callback: (dict) => {
-            // No autocomplete callback needed
-          }
-        });
-      }, 500); // Debounce for 500ms
+      // Only auto-save on character change if auto-save is disabled in settings
+      // When auto-save is enabled, the time-based system handles saving
+      // Check localStorage directly as the source of truth for auto-save setting
+      const autoSaveFromLocalStorage = localStorage.getItem('autoSave') === 'true';
+      const autoSaveFromStore = this.$store.state.ide.ideInfo?.autoSave || false;
+      
+      console.log('[AUTO-SAVE-DEBUG] localStorage autoSave:', localStorage.getItem('autoSave'), 'parsed:', autoSaveFromLocalStorage);
+      console.log('[AUTO-SAVE-DEBUG] Store autoSave value:', autoSaveFromStore);
+      console.log('[AUTO-SAVE-DEBUG] Will use localStorage value:', autoSaveFromLocalStorage);
+      
+      if (!autoSaveFromLocalStorage) {
+        this.writeTimeout = setTimeout(() => {
+          // Write file without autocomplete (character-based save when auto-save is off)
+          console.log('[CHARACTER-SAVE] Saving due to character change (auto-save disabled)');
+          this.$store.dispatch(`ide/${types.IDE_WRITE_FILE}`, {
+            filePath: this.codeItem.path,
+            fileData: value,
+            complete: false, // Autocomplete disabled
+            line: 0,
+            column: 0,
+            callback: (dict) => {
+              // No autocomplete callback needed
+            }
+          });
+        }, 500); // Debounce for 500ms
+      } else {
+        console.log('[CHARACTER-SAVE] Skipping character-based save (auto-save enabled in localStorage)');
+      }
     },
     anywordHint(editor, options) {
       var WORD = /[\w$]+/, RANGE = 500;

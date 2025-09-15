@@ -12,34 +12,16 @@ from datetime import datetime
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from common.database import db_manager
+from common.file_storage import file_storage
 
 class FileSync:
     def __init__(self):
         self.db = db_manager
-        # Determine the correct base path based on current working directory
-        # Check multiple possible paths in order of preference
-        possible_paths = [
-            Path('projects/ide'),          # When running from server/
-            Path('server/projects/ide'),  # When running from root
-            Path('../server/projects/ide'), # Alternative path
-        ]
+        # Use persistent storage (AWS EFS or local)
+        self.base_path = Path(file_storage.ide_base)
         
-        self.base_path = None
-        for path in possible_paths:
-            if path.exists():
-                self.base_path = path.resolve()  # Use absolute path
-                break
-        
-        # If no existing path found, create it based on where we are
-        if self.base_path is None:
-            # Check if we're in server directory
-            if Path('projects/ide').parent.exists():
-                self.base_path = Path('projects/ide').resolve()
-            else:
-                self.base_path = Path('server/projects/ide').resolve()
-            self.base_path.mkdir(parents=True, exist_ok=True)
-        
-        print(f"FileSync initialized with base_path: {self.base_path}")
+        print(f"FileSync initialized with persistent storage: {self.base_path}")
+        print(f"Storage type: {file_storage.get_storage_info()['type']}")
     
     def sync_user_files(self, user_id, username):
         """Sync all files for a specific user"""

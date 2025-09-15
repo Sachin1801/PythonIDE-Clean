@@ -16,11 +16,15 @@ from command.processor import RequestProcessor, ResponseProcessor
 from handlers.ws_handler import WebSocketHandler
 from handlers.authenticated_ws_handler import AuthenticatedWebSocketHandler
 from handlers.vue_handler import VueHandler
-from handlers.auth_handler import LoginHandler, LogoutHandler, ValidateSessionHandler, ChangePasswordHandler
+from handlers.auth_handler import LoginHandler, LogoutHandler, ValidateSessionHandler, ChangePasswordHandler, RenewSessionHandler, ForgotPasswordHandler, ResetPasswordHandler
+from handlers.admin_handler import get_admin_handlers
+from handlers.migration_handler import get_migration_handler  # TEMPORARY - REMOVE AFTER MIGRATION
+from handlers.upload_handler import UploadFileHandler
 from setup_route import SetupHandler, ResetDatabaseHandler
 from common.database import db_manager
 from health_monitor import health_monitor
 from migrations.migration_manager import run_auto_migrations
+from auto_init_users import init_users_if_needed
 
 # Load environment variables
 load_dotenv()
@@ -69,41 +73,68 @@ class ProcessCleanupService:
     """Service to clean up abandoned Python processes"""
     
     def __init__(self):
-        self.max_process_age = int(os.environ.get('MAX_PROCESS_AGE', '1800'))  # 30 minutes default
-        self.max_repl_age = int(os.environ.get('MAX_REPL_AGE', '3600'))  # 60 minutes for REPL
+        # Optimized for 1 vCPU, 4GB RAM - support 8-10 users
+        self.max_process_age = int(os.environ.get('MAX_PROCESS_AGE', '3600'))  # 1 hour default (increased)
+        self.max_repl_age = int(os.environ.get('MAX_REPL_AGE', '7200'))  # 2 hours for REPL (increased)
+        self.max_concurrent_processes = 20  # Limit total user processes for current hardware
         
     def cleanup_abandoned_processes(self):
-        """Kill Python processes older than the age limit"""
+        """Kill Python processes older than the age limit or exceeding limits"""
         try:
             current_time = time.time()
             cleanup_count = 0
+            user_processes = []  # Track user processes for limit enforcement
             
             for proc in psutil.process_iter(['pid', 'create_time', 'cmdline', 'name']):
                 try:
                     # Check if it's a Python process
                     if proc.info['name'] and 'python' in proc.info['name'].lower():
+                        # Skip the main server process to prevent 30-minute crashes
+                        if proc.info['pid'] == os.getpid():
+                            continue
+                        
                         # Get command line arguments
                         cmdline = proc.info.get('cmdline', [])
                         if cmdline and any('.py' in str(arg) for arg in cmdline):
-                            # Check process age
-                            age = current_time - proc.info['create_time']
-                            
-                            # Determine max age based on process type
-                            max_age = self.max_repl_age if 'repl' in str(cmdline).lower() else self.max_process_age
-                            
-                            if age > max_age:
-                                # Kill the process
-                                try:
-                                    proc.kill()
-                                    cleanup_count += 1
-                                    logger.info(f"Killed abandoned process PID {proc.info['pid']} (age: {int(age)}s)")
-                                except psutil.NoSuchProcess:
-                                    pass
-                                except Exception as e:
-                                    logger.error(f"Failed to kill process {proc.info['pid']}: {e}")
+                            # Track user processes for resource limits
+                            user_processes.append({
+                                'pid': proc.info['pid'],
+                                'age': current_time - proc.info['create_time'],
+                                'cmdline': str(cmdline),
+                                'proc': proc
+                            })
                                     
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
+            
+            # Sort by age (oldest first) and enforce limits
+            user_processes.sort(key=lambda p: p['age'], reverse=True)
+            
+            # Clean up processes that exceed limits
+            for i, proc_info in enumerate(user_processes):
+                should_kill = False
+                reason = ""
+                
+                # Check age limits
+                max_age = self.max_repl_age if 'repl' in proc_info['cmdline'].lower() else self.max_process_age
+                if proc_info['age'] > max_age:
+                    should_kill = True
+                    reason = f"age limit ({int(proc_info['age'])}s > {max_age}s)"
+                
+                # Check total process count limit (kill oldest processes first)
+                elif i >= self.max_concurrent_processes:
+                    should_kill = True
+                    reason = f"process limit exceeded (keeping newest {self.max_concurrent_processes})"
+                
+                if should_kill:
+                    try:
+                        proc_info['proc'].kill()
+                        cleanup_count += 1
+                        logger.info(f"Killed process PID {proc_info['pid']}: {reason}")
+                    except psutil.NoSuchProcess:
+                        pass
+                    except Exception as e:
+                        logger.error(f"Failed to kill process {proc_info['pid']}: {e}")
                     
             if cleanup_count > 0:
                 logger.info(f"Process cleanup: killed {cleanup_count} abandoned processes")
@@ -159,8 +190,9 @@ def main():
     port = args.port or int(os.getenv('PORT', 10086))
     address = args.address
 
-    template_path = os.path.join(os.path.dirname(__file__), '..', 'dist', 'templates')
-    static_path = os.path.join(os.path.dirname(__file__), '..', 'dist', 'static')
+    # Use absolute paths that work in Docker container
+    template_path = '/app/dist/templates' if os.path.exists('/app/dist/templates') else os.path.join(os.path.dirname(__file__), '..', 'dist', 'templates')
+    static_path = '/app/dist/static' if os.path.exists('/app/dist/static') else os.path.join(os.path.dirname(__file__), '..', 'dist', 'static')
     settings = {
         'template_path': template_path,
         'static_path': static_path,
@@ -174,7 +206,13 @@ def main():
         (r'/api/login', LoginHandler),
         (r'/api/logout', LogoutHandler),
         (r'/api/validate-session', ValidateSessionHandler),
+        (r'/api/renew-session', RenewSessionHandler),
         (r'/api/change-password', ChangePasswordHandler),
+        (r'/api/forgot-password', ForgotPasswordHandler),
+        (r'/api/reset-password', ResetPasswordHandler),
+        (r'/api/upload-file', UploadFileHandler),
+        *get_admin_handlers(),                    # Admin password management endpoints
+        get_migration_handler(),                  # TEMPORARY migration endpoint - REMOVE AFTER USE
         (r'^.*$', VueHandler),
     ]
 
@@ -184,7 +222,7 @@ def main():
     # Ensure project directories exist
     logger.info("Ensuring project directories exist...")
     project_base = os.path.join(os.path.dirname(__file__), 'projects', 'ide')
-    directories = ['Local', 'Lecture Notes', 'Assignments', 'Tests']
+    directories = ['Local', 'Lecture Notes']
     for dir_name in directories:
         dir_path = os.path.join(project_base, dir_name)
         os.makedirs(dir_path, exist_ok=True)
@@ -203,6 +241,13 @@ def main():
             logger.error("Database migrations failed! Server startup aborted.")
             sys.exit(1)
         logger.info("Database migrations completed successfully")
+        
+        # Auto-initialize users if needed
+        logger.info("Checking if users need initialization...")
+        try:
+            init_users_if_needed()
+        except Exception as e:
+            logger.error(f"Failed to initialize users: {e}")
     else:
         logger.warning("DATABASE_URL not set - using local PostgreSQL fallback")
         logger.warning("Migrations will be skipped without DATABASE_URL")

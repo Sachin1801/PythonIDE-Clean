@@ -11,12 +11,12 @@
       <div class="login-body">
         <form @submit.prevent="handleLogin">
           <div class="form-group">
-            <label for="username">Username (Student ID)</label>
+            <label for="username">Username (Net ID)</label>
             <input
               id="username"
               v-model="username"
               type="text"
-              placeholder="e.g., sa9082"
+              placeholder="Enter your net id"
               required
               :disabled="loading"
               @input="clearError"

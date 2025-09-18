@@ -60,12 +60,6 @@
                   <span class="nav__keyboard-shortcut">Ctrl+D</span>
                 </button>
               </li>
-              <li class="nav__dropdown-item">
-                <button @click="deleteFile()" :disabled="!hasSelectedFile" class="delete-option">
-                  <span>Delete File</span>
-                  <span class="nav__keyboard-shortcut">Delete</span>
-                </button>
-              </li>
             </ul>
           </li>
           
@@ -270,14 +264,6 @@
           <Save :size="20" />
         </div>
 
-        <!-- Delete Button -->
-        <div 
-          class="icon-btn delete-btn" 
-          @click="deleteSelectedFile()" 
-          :class="{ 'disabled': !canDeleteFile }"
-          :title="deleteButtonTitle">
-          <Trash2 :size="20" />
-        </div>
 
       </div>
 
@@ -458,13 +444,6 @@ export default {
         if (this.hasSelectedFile) {
           this.moveFile();
         }
-        return;
-      }
-      // Delete - Delete File
-      if (e.key === 'Delete' && this.hasSelectedFile) {
-        e.preventDefault();
-        e.stopPropagation();
-        this.deleteFile();
         return;
       }
       
@@ -1170,12 +1149,11 @@ export default {
 }
 
 .save-btn {
-  background: var(--info-color, #17a2b8);
-  color: white;
+  color: var(--text-primary, #ccc);
 }
 
 .save-btn:hover {
-  background: var(--info-hover, #138496);
+  background: rgba(255, 255, 255, 0.1);
 }
 
 /* Theme-specific adjustments */
@@ -1235,13 +1213,10 @@ export default {
 }
 
 [data-theme="light"] .save-btn {
-  background: #17a2b8;
-  color: white;
-  border: 1px solid #138496;
+  color: #333;
 }
 
 [data-theme="light"] .save-btn:hover {
-  background: #138496;
-  box-shadow: 0 2px 4px rgba(23, 162, 184, 0.2);
+  background: rgba(0, 0, 0, 0.08);
 }
 </style>

@@ -21,22 +21,42 @@
               <ChevronRight v-else :size="16" class="chevron" />
             </div>
             <div class="directory-tree" v-if="showDirectoryTree">
-              <div 
-                v-for="dir in directories" 
+              <div
+                v-for="dir in visibleDirectories"
                 :key="dir.path"
                 class="directory-item"
-                :class="{ 
+                :class="{
                   selected: currentPath === dir.path,
-                  'root-item': dir.isRoot 
+                  'root-item': dir.isRoot,
+                  'collapsible': dir.hasChildren,
+                  'collapsed': isCollapsed(dir.path)
                 }"
                 :style="{ paddingLeft: (dir.level * 20 + 12) + 'px' }"
                 @click="selectDirectory(dir)"
               >
-                <Home v-if="dir.isRoot" :size="14" />
-                <template v-else>
-                  <ChevronRight :size="14" />
-                  <Folder :size="14" />
+                <!-- Chevron for all folders with children -->
+                <template v-if="dir.hasChildren">
+                  <ChevronDown
+                    v-if="!isCollapsed(dir.path)"
+                    :size="14"
+                    class="folder-chevron"
+                    @click.stop="toggleCollapse(dir)"
+                  />
+                  <ChevronRight
+                    v-else
+                    :size="14"
+                    class="folder-chevron"
+                    @click.stop="toggleCollapse(dir)"
+                  />
                 </template>
+                <template v-else>
+                  <span class="folder-spacer"></span>
+                </template>
+
+                <!-- Icons for different folder types -->
+                <Home v-if="dir.isRoot" :size="14" />
+                <Folder v-else :size="14" />
+
                 <span>{{ dir.displayName || dir.name }}</span>
               </div>
             </div>
@@ -114,6 +134,7 @@ export default {
       folderNameError: '',
       creating: false,
       showDirectoryTree: false,
+      collapsedFolders: new Set(), // Track which folders are collapsed
     }
   },
   components: {
@@ -184,46 +205,64 @@ export default {
         }
       }
     },
-    buildDirectoryTree(node, level = 0, projectName = null) {
+    buildDirectoryTree(node, level = 0, projectName = null, parentPath = '') {
       let dirs = [];
-      
+
       // Add the root directory
       if (level === 0) {
+        const hasChildren = node.children && node.children.some(child =>
+          (child.type === 'dir' || child.type === 'folder') &&
+          this.isDirectoryVisibleToStudent(child.path)
+        );
+
         dirs.push({
           name: projectName || node.label || '/',
           displayName: projectName || node.label || '/',
           path: node.path || '/',
           level: 0,
           isRoot: true,
+          hasChildren: hasChildren,
+          parentPath: '',
           projectName: projectName || node.label,
           fullPath: projectName ? `${projectName}${node.path}` : node.path
         });
       }
-      
+
       // Process children
       if (node.children) {
         node.children.forEach(child => {
           if (child.type === 'dir' || child.type === 'folder') {
             // Check if this directory should be visible to the current user
             if (this.isDirectoryVisibleToStudent(child.path)) {
+              // Check if this directory has children
+              const hasChildren = child.children && child.children.some(grandchild =>
+                (grandchild.type === 'dir' || grandchild.type === 'folder') &&
+                this.isDirectoryVisibleToStudent(grandchild.path)
+              );
+
+              const currentParentPath = level === 0 ? (node.path || '/') : parentPath;
+
               dirs.push({
                 name: child.label,
                 displayName: child.label,
                 path: child.path,
                 level: level + 1,
                 isRoot: false,
+                hasChildren: hasChildren,
+                parentPath: currentParentPath,
                 projectName: projectName || child.projectName,
                 fullPath: projectName ? `${projectName}${child.path}` : child.path
               });
+
               // Recursively add subdirectories
               if (child.children) {
-                dirs = dirs.concat(this.buildDirectoryTree(child, level + 1, projectName));
+                dirs = dirs.concat(this.buildDirectoryTree(child, level + 1, projectName, child.path));
               }
             }
           }
         });
       }
-      
+
       return dirs;
     },
     selectDirectory(dir) {
@@ -233,6 +272,38 @@ export default {
     },
     toggleDirectoryTree() {
       this.showDirectoryTree = !this.showDirectoryTree;
+    },
+    toggleCollapse(dir) {
+      if (!dir.hasChildren) return;
+
+      if (this.collapsedFolders.has(dir.path)) {
+        this.collapsedFolders.delete(dir.path);
+      } else {
+        this.collapsedFolders.add(dir.path);
+      }
+
+      // Force reactivity
+      this.$forceUpdate();
+    },
+    isCollapsed(path) {
+      return this.collapsedFolders.has(path);
+    },
+    isDirectoryVisible(dir) {
+      // Always show root level directories
+      if (dir.level === 0 || dir.isRoot) return true;
+
+      // Check if any parent is collapsed
+      let parentPath = dir.parentPath;
+      while (parentPath && parentPath !== '/') {
+        if (this.collapsedFolders.has(parentPath)) {
+          return false;
+        }
+        // Find the parent directory to get its parentPath
+        const parentDir = this.directories.find(d => d.path === parentPath);
+        parentPath = parentDir ? parentDir.parentPath : null;
+      }
+
+      return true;
     },
     formatCurrentPath(path) {
       // If path already contains the project name, return as is
@@ -401,6 +472,9 @@ export default {
         return { session_id: sessionId, username: username, role: role, full_name: fullName };
       }
       return null;
+    },
+    visibleDirectories() {
+      return this.directories.filter(dir => this.isDirectoryVisible(dir));
     }
   }
 }
@@ -548,6 +622,33 @@ export default {
 .directory-item.root-item {
   font-weight: 500;
   border-bottom: 1px solid var(--border-color, #464647);
+}
+
+.directory-item.collapsible {
+  cursor: pointer;
+}
+
+.directory-item:hover {
+  background: var(--hover-bg, #094771);
+}
+
+.folder-chevron {
+  cursor: pointer;
+  transition: transform 0.2s ease;
+  padding: 2px;
+  border-radius: 2px;
+  margin-right: 4px;
+}
+
+.folder-chevron:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.folder-spacer {
+  width: 14px;
+  height: 14px;
+  display: inline-block;
+  margin-right: 4px;
 }
 
 .foldername-input-wrapper {

@@ -379,8 +379,27 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler, WebSocketKeepali
                 print(f"Error scanning directories: {e}")
                 projects = ['Local', 'Lecture Notes']  # Fallback
         else:
-            # Students see only their personal directory and shared resources
-            projects = [f'Local/{self.username}', 'Lecture Notes']
+            # Students see all root directories (same filesystem scan as professors)
+            # but will have read-only access to professor-created folders (enforced by SecureFileManager)
+            projects = []
+            try:
+                if os.path.exists(self.file_manager.base_path):
+                    raw_items = os.listdir(self.file_manager.base_path)
+                    print(f"Student scanning directories: {raw_items}")
+                    for item in raw_items:
+                        item_path = os.path.join(self.file_manager.base_path, item)
+                        print(f"  Student checking item: '{item}' at path: '{item_path}' - isdir: {os.path.isdir(item_path)}")
+                        if os.path.isdir(item_path):
+                            projects.append(item)
+                    projects.sort()  # Keep consistent ordering
+                    print(f"Student found root directories: {projects}")
+                else:
+                    # Fallback if ide_base doesn't exist
+                    projects = [f'Local/{self.username}', 'Lecture Notes']
+                    print(f"Student fallback - IDE base doesn't exist: {projects}")
+            except Exception as e:
+                print(f"Student error scanning directories: {e}")
+                projects = [f'Local/{self.username}', 'Lecture Notes']  # Fallback
             print(f"Student projects: {projects}")
 
         print(f"Final projects list: {projects}")

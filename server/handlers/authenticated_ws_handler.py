@@ -379,28 +379,41 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler, WebSocketKeepali
                 print(f"Error scanning directories: {e}")
                 projects = ['Local', 'Lecture Notes']  # Fallback
         else:
-            # Students see all root directories (same filesystem scan as professors)
-            # but will have read-only access to professor-created folders (enforced by SecureFileManager)
+            # Students get a curated list: their own Local directory + read-only root folders
+            # This prevents them from seeing other students' Local/{other-username} directories
             projects = []
             try:
                 if os.path.exists(self.file_manager.base_path):
+                    # Always add the student's own Local directory as "Local"
+                    student_local_path = os.path.join(self.file_manager.base_path, 'Local', self.username)
+                    if os.path.exists(student_local_path):
+                        projects.append('Local')
+                        print(f"Student {self.username}: Added Local project (points to Local/{self.username})")
+
+                    # Scan for other root directories (but exclude the Local container)
                     raw_items = os.listdir(self.file_manager.base_path)
-                    print(f"Student scanning directories: {raw_items}")
+                    print(f"Student scanning for additional root directories: {raw_items}")
                     for item in raw_items:
+                        if item == 'Local':
+                            # Skip the Local container - we already handled the student's personal Local above
+                            print(f"  Student skipping 'Local' container to prevent access to other students")
+                            continue
+
                         item_path = os.path.join(self.file_manager.base_path, item)
                         print(f"  Student checking item: '{item}' at path: '{item_path}' - isdir: {os.path.isdir(item_path)}")
                         if os.path.isdir(item_path):
                             projects.append(item)
+
                     projects.sort()  # Keep consistent ordering
-                    print(f"Student found root directories: {projects}")
+                    print(f"Student found additional root directories: {[p for p in projects if p != 'Local']}")
                 else:
                     # Fallback if ide_base doesn't exist
-                    projects = [f'Local/{self.username}', 'Lecture Notes']
+                    projects = ['Local', 'Lecture Notes']
                     print(f"Student fallback - IDE base doesn't exist: {projects}")
             except Exception as e:
                 print(f"Student error scanning directories: {e}")
-                projects = [f'Local/{self.username}', 'Lecture Notes']  # Fallback
-            print(f"Student projects: {projects}")
+                projects = ['Local', 'Lecture Notes']  # Fallback
+            print(f"Student final projects list: {projects}")
 
         print(f"Final projects list: {projects}")
         print(f"================================================\n")
@@ -414,9 +427,17 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler, WebSocketKeepali
     def handle_get_project(self, data):
         """Handle ide_get_project command - returns directory tree for a project"""
         project_name = data.get('data', {}).get('projectName', '')
-        
+
+        # Special handling for students accessing "Local" project
+        # For students, "Local" project should map to their personal "Local/{username}" directory
+        if self.role == 'student' and project_name == 'Local':
+            actual_project_path = f'Local/{self.username}'
+            print(f"Student {self.username} requesting 'Local' project, mapping to: {actual_project_path}")
+        else:
+            actual_project_path = project_name
+
         # Build file tree for the project
-        result = self.build_file_tree(project_name)
+        result = self.build_file_tree(actual_project_path)
         
         return {
             'code': 0 if result else -1,

@@ -2075,19 +2075,15 @@ export default {
           }
         });
       } else {
-        // Student: Load user's personal directory and standard folders
-        const userProject = this.ideInfo.projList.find(p => p.name === `Local/${username}`);
-        if (userProject) {
-          projectsToLoad.push(userProject.name);
-        }
-        
-        // Add other standard projects if they exist
-        const standardProjects = ['Lecture Notes'];
-        standardProjects.forEach(proj => {
-          if (this.ideInfo.projList.some(p => p.name === proj)) {
-            projectsToLoad.push(proj);
+        // Student: Load ALL available projects (including professor-created root folders) with read-only restrictions handled by backend
+        this.ideInfo.projList.forEach(project => {
+          const projectName = typeof project === 'string' ? project : project.name;
+          if (projectName) {
+            projectsToLoad.push(projectName);
           }
         });
+
+        console.log(`🎓 [loadAllDefaultProjects] Student ${username} loading all visible projects:`, projectsToLoad);
       }
       
       console.log('📋 [loadAllDefaultProjects] Projects to load:', projectsToLoad);

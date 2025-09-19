@@ -66,8 +66,20 @@ class SecureFileManager:
         if requested_path.startswith('Lecture Notes/'):
             logger.info(f"Read-only access granted for: {requested_path}")
             return 'read_only'
-        
-        
+
+        # 3. Read-only access to professor-created root folders (anything that doesn't contain '/' is a root folder)
+        # Allow access to root-level folders created by professors, but read-only
+        if '/' not in requested_path and requested_path not in ['Local', 'Lecture Notes']:
+            logger.info(f"Read-only access granted to professor-created root folder: {requested_path}")
+            return 'read_only'
+
+        # 4. Read-only access to files inside professor-created root folders
+        # Check if the path starts with a professor-created root folder
+        root_folder = requested_path.split('/')[0]
+        if root_folder not in ['Local', 'Lecture Notes'] and root_folder != username:
+            logger.info(f"Read-only access granted to file in professor-created root folder: {requested_path}")
+            return 'read_only'
+
         # No access to other locations
         logger.warning(f"Path rejected: '{requested_path}' - no permission for student")
         return False

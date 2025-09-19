@@ -219,14 +219,12 @@ def main():
     # app = web.Application(handlers, **settings, autoreload=True)
     app = web.Application(handlers, **settings)
 
-    # Ensure project directories exist
+    # Ensure project directories exist using file storage system
     logger.info("Ensuring project directories exist...")
-    project_base = os.path.join(os.path.dirname(__file__), 'projects', 'ide')
-    directories = ['Local', 'Lecture Notes']
-    for dir_name in directories:
-        dir_path = os.path.join(project_base, dir_name)
-        os.makedirs(dir_path, exist_ok=True)
-        logger.info(f"Directory ensured: {dir_path}")
+    from common.file_storage import file_storage
+    file_storage._ensure_base_directories()
+    logger.info(f"Directory ensured: {file_storage.ide_base}/Local")
+    logger.info(f"Directory ensured: {file_storage.ide_base}/Lecture Notes")
     
     # Initialize database
     logger.info("Initializing database...")

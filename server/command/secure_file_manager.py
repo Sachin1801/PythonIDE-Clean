@@ -265,17 +265,29 @@ class SecureFileManager:
     def create_directory(self, username, role, data):
         """Create a new directory"""
         dir_path = data.get('path')
-        
+
+        print(f"\n--- CREATE_DIRECTORY DEBUG ---")
+        print(f"username: {username}, role: {role}")
+        print(f"dir_path: '{dir_path}'")
+        print(f"base_path: {self.base_path}")
+
         permission = self.validate_path(username, role, dir_path)
+        print(f"validate_path result: {permission}")
+
         if not permission or permission == 'read_only':
+            print(f"PERMISSION DENIED: permission={permission}")
             return {'success': False, 'error': 'Permission denied'}
-        
+
         full_path = self.base_path / dir_path
-        
+        print(f"full_path to create: {full_path}")
+
         try:
             full_path.mkdir(parents=True, exist_ok=True)
+            print(f"Directory created successfully: {full_path}")
+            print(f"Directory exists after creation: {full_path.exists()}")
             return {'success': True, 'message': 'Directory created'}
         except Exception as e:
+            print(f"ERROR creating directory: {e}")
             return {'success': False, 'error': str(e)}
     
     def delete_file(self, username, role, data):

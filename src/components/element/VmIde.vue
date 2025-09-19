@@ -1085,6 +1085,11 @@ export default {
           }
         }).catch(error => {
           console.error(`[AUTO-SAVE] Failed to auto-save ${item.path}:`, error);
+
+          // Handle permission errors silently for auto-save
+          if (error.code === 403) {
+            console.warn(`[AUTO-SAVE] Permission denied for ${item.path}, skipping auto-save`);
+          }
         });
       });
     },
@@ -2062,11 +2067,11 @@ export default {
       const projectsToLoad = [];
       
       if (role === 'professor') {
-        // Professor: Load all main folders including Local for full access
-        const professorProjects = ['Local', 'Lecture Notes'];
-        professorProjects.forEach(proj => {
-          if (this.ideInfo.projList.some(p => p.name === proj)) {
-            projectsToLoad.push(proj);
+        // Professor: Load all available projects (Local, Lecture Notes, and any professor-created root folders)
+        this.ideInfo.projList.forEach(project => {
+          const projectName = typeof project === 'string' ? project : project.name;
+          if (projectName) {
+            projectsToLoad.push(projectName);
           }
         });
       } else {
@@ -3493,18 +3498,51 @@ export default {
         callback: (dict) => {
           console.log('[deleteFolder] Response:', dict);
           if (dict.code == 0) {
-            const parentData = self.getParentData(folderPath);
-            if (parentData)
-              self.$store.commit('ide/handleDelFolder', {parentData, folderPath});
-            
-            // Refresh the tree to show changes
-            self.refreshProjectTree();
-            
-            ElMessage({
-              type: 'success',
-              message: 'Folder deleted successfully',
-              duration: 2000
-            });
+            // Detect if this is a root-level folder operation
+            const isRootLevelOperation = !folderPath.includes('/') ||
+              ['Local', 'Lecture Notes'].includes(folderPath) ||
+              (folderPath.split('/').length === 1);
+
+            console.log('[deleteFolder] Is root-level operation?', isRootLevelOperation, 'for path:', folderPath);
+
+            if (isRootLevelOperation) {
+              // For root-level folders, refresh the project list first, then load all projects
+              console.log('[deleteFolder] Root-level folder delete - refreshing project list');
+              self.$store.dispatch(`ide/${types.IDE_LIST_PROJECTS}`, {
+                callback: (listResponse) => {
+                  console.log('[deleteFolder] Project list refresh response:', listResponse);
+                  if (listResponse.code === 0) {
+                    // Update the project list in store
+                    self.$store.commit('ide/handleProjects', listResponse.data);
+
+                    // Now load all default projects with the updated list
+                    if (self.ideInfo.multiRootData) {
+                      self.loadAllDefaultProjects();
+                    }
+
+                    ElMessage({
+                      type: 'success',
+                      message: 'Folder deleted successfully',
+                      duration: 2000
+                    });
+                  }
+                }
+              });
+            } else {
+              // For regular project folders, use the existing refresh logic
+              const parentData = self.getParentData(folderPath);
+              if (parentData)
+                self.$store.commit('ide/handleDelFolder', {parentData, folderPath});
+
+              // Refresh the tree to show changes
+              self.refreshProjectTree();
+
+              ElMessage({
+                type: 'success',
+                message: 'Folder deleted successfully',
+                duration: 2000
+              });
+            }
           } else {
             ElMessage({
               type: 'error',
@@ -3699,26 +3737,56 @@ export default {
               }
             }
             
-            // Refresh the project tree - use the actual project name
-            self.$store.dispatch(`ide/${types.IDE_GET_PROJECT}`, {
-              projectName: actualProjectName,
-              callback: (projectDict) => {
-                if (projectDict.code == 0) {
-                  self.$store.commit('ide/handleProject', projectDict.data);
-                  
-                  // Update path selection to the new path
-                  self.$store.commit('ide/setPathSelected', newPath);
-                  
-                  // If we're in multi-root mode, also refresh all projects
-                  if (self.ideInfo.multiRootData) {
-                    console.log('[renameFolder] Refreshing all projects in multi-root mode');
-                    self.loadAllDefaultProjects();
+            // Detect if this is a root-level folder operation
+            const isRootLevelOperation = !actualOldPath.includes('/') ||
+              ['Local', 'Lecture Notes'].includes(actualOldPath) ||
+              (actualOldPath.split('/').length === 1);
+
+            console.log('[renameFolder] Is root-level operation?', isRootLevelOperation, 'for path:', actualOldPath);
+
+            if (isRootLevelOperation) {
+              // For root-level folders, refresh the project list first, then load all projects
+              console.log('[renameFolder] Root-level folder rename - refreshing project list');
+              self.$store.dispatch(`ide/${types.IDE_LIST_PROJECTS}`, {
+                callback: (listResponse) => {
+                  console.log('[renameFolder] Project list refresh response:', listResponse);
+                  if (listResponse.code === 0) {
+                    // Update the project list in store
+                    self.$store.commit('ide/handleProjects', listResponse.data);
+
+                    // Now load all default projects with the updated list
+                    if (self.ideInfo.multiRootData) {
+                      self.loadAllDefaultProjects();
+                    }
+
+                    // Update path selection to the new path
+                    self.$store.commit('ide/setPathSelected', newPath);
+                    ElMessage.success('Folder renamed successfully');
                   }
-                  
-                  ElMessage.success('Folder renamed successfully');
                 }
-              }
-            });
+              });
+            } else {
+              // For regular project folders, refresh the specific project
+              self.$store.dispatch(`ide/${types.IDE_GET_PROJECT}`, {
+                projectName: actualProjectName,
+                callback: (projectDict) => {
+                  if (projectDict.code == 0) {
+                    self.$store.commit('ide/handleProject', projectDict.data);
+
+                    // Update path selection to the new path
+                    self.$store.commit('ide/setPathSelected', newPath);
+
+                    // If we're in multi-root mode, also refresh all projects
+                    if (self.ideInfo.multiRootData) {
+                      console.log('[renameFolder] Refreshing all projects in multi-root mode');
+                      self.loadAllDefaultProjects();
+                    }
+
+                    ElMessage.success('Folder renamed successfully');
+                  }
+                }
+              });
+            }
           } else {
             console.error('[renameFolder] Rename failed:', dict);
             const errorMsg = dict.data?.message || dict.message || 'Unknown error';

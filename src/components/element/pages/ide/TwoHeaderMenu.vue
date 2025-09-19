@@ -610,11 +610,17 @@ export default {
     saveFile() {
       this.closeDropdowns();
       if (this.ideInfo.codeSelected) {
-        this.$store.dispatch('ide/saveFile', { 
-          codeItem: this.ideInfo.codeSelected, 
-          isAutoSave: false 
+        this.$store.dispatch('ide/saveFile', {
+          codeItem: this.ideInfo.codeSelected,
+          isAutoSave: false
+        }).then(() => {
+          ElMessage.success('File saved');
+        }).catch((error) => {
+          // Handle permission denied or other errors
+          const errorMsg = error.message || 'Failed to save file';
+          ElMessage.error(errorMsg);
+          console.error('[SAVE-ERROR]', error);
         });
-        ElMessage.success('File saved');
       }
     },
     downloadFile() {

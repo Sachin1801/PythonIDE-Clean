@@ -329,13 +329,23 @@ def write_project_file(project_path, file_path, data):
 
 
 def create_project_folder(project_path, folder_path):
+    print(f"\n--- create_project_folder DEBUG ---")
+    print(f"project_path: '{project_path}'")
+    print(f"folder_path: '{folder_path}'")
+
     code, _ = create(folder_path)
+    print(f"create() result: code={code}, message='{_}'")
+    print(f"Folder exists after create: {os.path.exists(folder_path)}")
+
     if code == 0:
         _config_path = os.path.join(project_path, '.config')
+        print(f"Updating config at: '{_config_path}'")
         _code, config_data = read(_config_path, is_json=True)
         if _code != 0:
             config_data = {}
         config_data['lastAccessTime'] = time.time()
         write(_config_path, config_data, is_json=True)
+
+    print(f"--- create_project_folder END ---\n")
     return code, _
 

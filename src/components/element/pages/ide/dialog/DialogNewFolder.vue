@@ -54,7 +54,8 @@
                 </template>
 
                 <!-- Icons for different folder types -->
-                <Home v-if="dir.isRoot" :size="14" />
+                <Home v-if="dir.isRoot && !dir.isRootCreation" :size="14" />
+                <FolderPlus v-else-if="dir.isRootCreation" :size="14" />
                 <Folder v-else :size="14" />
 
                 <span>{{ dir.displayName || dir.name }}</span>
@@ -117,7 +118,7 @@
 </template>
 
 <script>
-import { X, FolderOpen, Folder, ChevronRight, ChevronDown, Home } from 'lucide-vue-next';
+import { X, FolderOpen, Folder, ChevronRight, ChevronDown, Home, FolderPlus } from 'lucide-vue-next';
 import * as types from '../../../../../store/mutation-types';
 import { ElMessage } from 'element-plus';
 
@@ -143,7 +144,8 @@ export default {
     Folder,
     ChevronRight,
     ChevronDown,
-    Home
+    Home,
+    FolderPlus
   },
   mounted() {
     this.loadDirectoryStructure();
@@ -177,6 +179,22 @@ export default {
       } else if (this.ideInfo.currProj && this.ideInfo.currProj.data) {
         // Fallback to single project mode
         this.directories = this.buildDirectoryTree(this.ideInfo.currProj.data, 0, this.ideInfo.currProj.data.label);
+      }
+
+      // For professors, add the "../" option to create folders at root level (same level as Local/ and Lecture Notes/)
+      if (this.currentUser && this.currentUser.role === 'professor') {
+        this.directories.unshift({
+          name: '../',
+          displayName: '../ (Root Level)',
+          path: 'ROOT_LEVEL',
+          level: -1,
+          isRoot: true,
+          hasChildren: false,
+          parentPath: '',
+          projectName: '',
+          fullPath: 'ROOT_LEVEL',
+          isRootCreation: true
+        });
       }
       
       // Set current path to selected node if it's a directory
@@ -306,6 +324,11 @@ export default {
       return true;
     },
     formatCurrentPath(path) {
+      // Handle root-level creation display
+      if (this.currentPath === 'ROOT_LEVEL') {
+        return '../ (Root Level)';
+      }
+
       // If path already contains the project name, return as is
       if (path && path !== '/') {
         // Check if path already starts with a known project name
@@ -316,7 +339,7 @@ export default {
           }
         }
       }
-      
+
       if (this.currentProject) {
         if (path === '/') {
           return this.currentProject;
@@ -327,7 +350,7 @@ export default {
         }
         return path;
       }
-      
+
       // Fallback to current project if no specific project context
       if (path === '/' && this.ideInfo.currProj) {
         return this.ideInfo.currProj.data?.label || this.ideInfo.currProj.config?.name;
@@ -379,10 +402,16 @@ export default {
     },
     getFullFolderPath() {
       const folderName = this.folderName || 'new_folder';
-      const path = this.currentPath === '/' 
-        ? `/${folderName}` 
+
+      // Handle root-level creation
+      if (this.currentPath === 'ROOT_LEVEL') {
+        return `${folderName} (at root level)`;
+      }
+
+      const path = this.currentPath === '/'
+        ? `/${folderName}`
         : `${this.currentPath}/${folderName}`;
-      
+
       return this.formatCurrentPath(path);
     },
     async onCreate() {
@@ -394,19 +423,39 @@ export default {
         const folderName = this.folderName;
         const parentPath = this.currentPath;
         const projectName = this.currentProject || this.ideInfo.currProj?.data?.name || this.ideInfo.currProj?.config?.name;
-        
-        console.log('[DialogNewFolder] Creating folder:', {
+
+        // Handle root-level folder creation for professors
+        const isRootCreation = parentPath === 'ROOT_LEVEL';
+        const actualParentPath = isRootCreation ? '' : parentPath;
+        const actualProjectName = isRootCreation ? '' : projectName;
+
+        console.log('[DialogNewFolder] ========== FOLDER CREATION DEBUG ==========');
+        console.log('[DialogNewFolder] Input values:', {
           folderName,
           parentPath,
-          projectName
+          projectName,
+          'this.currentPath': this.currentPath,
+          'this.currentProject': this.currentProject
         });
-        
+        console.log('[DialogNewFolder] Computed values:', {
+          actualParentPath,
+          actualProjectName,
+          isRootCreation
+        });
+        console.log('[DialogNewFolder] Will send to server:', {
+          projectName: actualProjectName,
+          parentPath: actualParentPath,
+          folderName: folderName,
+          isRootCreation: isRootCreation
+        });
+
         // Create the folder using the IDE store action
         await new Promise((resolve, reject) => {
           this.$store.dispatch(`ide/${types.IDE_CREATE_FOLDER}`, {
-            projectName: projectName,
-            parentPath: parentPath,
+            projectName: actualProjectName,
+            parentPath: actualParentPath,
             folderName: folderName,
+            isRootCreation: isRootCreation,
             callback: (response) => {
               console.log('[DialogNewFolder] Create folder response:', response);
               
@@ -415,25 +464,46 @@ export default {
                 ElMessage.success(`Folder "${folderName}" created successfully`);
                 
                 // Refresh the project tree
-                this.$store.dispatch(`ide/${types.IDE_GET_PROJECT}`, {
-                  projectName: projectName,
-                  callback: (projectResponse) => {
-                    if (projectResponse.code === 0) {
-                      this.$store.commit('ide/handleProject', projectResponse.data);
-                      
-                      // If in multi-root mode, refresh all projects
-                      if (this.ideInfo.multiRootData) {
-                        this.$parent.loadAllDefaultProjects?.();
+                if (isRootCreation) {
+                  // For root-level creation, first refresh the project list, then load all projects
+                  this.$store.dispatch(`ide/${types.IDE_LIST_PROJECTS}`, {
+                    callback: (listResponse) => {
+                      console.log('[DialogNewFolder] Project list refresh response:', listResponse);
+                      if (listResponse.code === 0) {
+                        // Update the project list in store
+                        this.$store.commit('ide/handleProjects', listResponse.data);
+
+                        // Now load all default projects with the updated list
+                        if (this.ideInfo.multiRootData) {
+                          this.$parent.loadAllDefaultProjects?.();
+                        }
                       }
                     }
-                  }
-                });
-                
+                  });
+                } else {
+                  // For regular folder creation, refresh the specific project
+                  this.$store.dispatch(`ide/${types.IDE_GET_PROJECT}`, {
+                    projectName: actualProjectName,
+                    callback: (projectResponse) => {
+                      if (projectResponse.code === 0) {
+                        this.$store.commit('ide/handleProject', projectResponse.data);
+
+                        // If in multi-root mode, refresh all projects
+                        if (this.ideInfo.multiRootData) {
+                          this.$parent.loadAllDefaultProjects?.();
+                        }
+                      }
+                    }
+                  });
+                }
+
                 // Emit folder created event
-                const newFolderPath = parentPath === '/' ? `/${folderName}` : `${parentPath}/${folderName}`;
+                const newFolderPath = isRootCreation ? `/${folderName}` :
+                  (actualParentPath === '/' ? `/${folderName}` : `${actualParentPath}/${folderName}`);
                 this.$emit('folder-created', {
                   path: newFolderPath,
-                  projectName: projectName
+                  projectName: actualProjectName,
+                  isRootCreation: isRootCreation
                 });
                 
                 // Close dialog

@@ -376,9 +376,15 @@ export default {
     
     isProtectedFolder(data) {
       // Check if this is a protected project folder (root level)
-      const protectedFolders = ['Lecture Notes'];
       const name = data.label || data.name;
-      // Protected folders can't be renamed or deleted
+
+      // For students: all root-level folders except Local are protected
+      if (this.currentUser && this.currentUser.role === 'student') {
+        return data.path === '/' && name !== 'Local';
+      }
+
+      // For professors: only specific system folders are protected (currently none)
+      const protectedFolders = [];
       return data.path === '/' && protectedFolders.includes(name);
     },
     

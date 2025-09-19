@@ -1,6 +1,35 @@
 import * as types from '../mutation-types';
 const path = require('path');
 
+// Utility function to check if user can edit a file
+function canUserEditFile(filePath) {
+  // Get current user from localStorage
+  const sessionId = localStorage.getItem('session_id');
+  const username = localStorage.getItem('username');
+  const role = localStorage.getItem('role');
+
+  // If not logged in, deny access
+  if (!sessionId || !username || !role) {
+    return false;
+  }
+
+  // Professors can edit everything
+  if (role === 'professor') {
+    return true;
+  }
+
+  // Students can only edit files in their own Local/{username}/ directory
+  if (role === 'student') {
+    const userPath = `Local/${username}`;
+
+    // Allow if the file is inside the user's Local folder
+    // Deny access to all other root-level folders (Lecture Notes, professor-created folders, etc.)
+    return filePath && filePath.startsWith(userPath + '/');
+  }
+
+  return false;
+}
+
 const ideInfo = {
   codeHeight: 0,
   codeItems: [],
@@ -858,6 +887,23 @@ const actions = {
     }, { root: true });
   },
   [types.IDE_WRITE_FILE](context, { wsKey, projectName, filePath, fileData, complete, line, column, callback }) {
+    // Check if user has permission to write this file
+    if (!canUserEditFile(filePath)) {
+      const errorMsg = 'You do not have permission to save files in this directory. Students can only save files in their own Local folder.';
+      console.error('[WRITE-PERMISSION-DENIED]', errorMsg, filePath);
+
+      // Call callback with error if provided
+      if (callback) {
+        callback({
+          code: 403,
+          message: errorMsg,
+          msg: errorMsg,
+          path: filePath
+        });
+      }
+      return;
+    }
+
     context.dispatch('websocket/sendCmd', {
       wsKey: wsKey,
       cmd: types.IDE_WRITE_FILE,
@@ -868,7 +914,7 @@ const actions = {
         complete: complete,
         line: line,
         column: column
-      }, 
+      },
       callback: callback,
     }, { root: true });
   },
@@ -919,7 +965,7 @@ const actions = {
       callback: callback,
     }, { root: true });
   },
-  [types.IDE_CREATE_FOLDER](context, { wsKey, projectName, parentPath, folderName, callback }) {
+  [types.IDE_CREATE_FOLDER](context, { wsKey, projectName, parentPath, folderName, isRootCreation, callback }) {
     // Construct the full folder path
     let folderPath = '';
     if (parentPath === '/' || parentPath === '') {
@@ -927,14 +973,15 @@ const actions = {
     } else {
       folderPath = `${parentPath}/${folderName}`;
     }
-    
+
     context.dispatch('websocket/sendCmd', {
       wsKey: wsKey,
       cmd: types.IDE_CREATE_FOLDER,
       data: {
-        projectName: projectName || context.state.ideInfo.currProj.data.name,
+        projectName: isRootCreation ? '' : (projectName || context.state.ideInfo.currProj.data.name),
         folderPath: folderPath,
-      }, 
+        isRootCreation: isRootCreation || false,
+      },
       callback: callback,
     }, { root: true });
   },
@@ -1050,10 +1097,23 @@ const actions = {
     });
   },
   saveFile(context, { codeItem, isAutoSave = false }) {
+    // Check if user has permission to edit this file
+    if (!canUserEditFile(codeItem.path)) {
+      const errorMsg = 'You do not have permission to save files in this directory. Students can only save files in their own Local folder.';
+      console.error('[SAVE-PERMISSION-DENIED]', errorMsg, codeItem.path);
+
+      // Return a rejected promise with error details
+      return Promise.reject({
+        code: 403,
+        message: errorMsg,
+        path: codeItem.path
+      });
+    }
+
     // Use the existing IDE_WRITE_FILE action to save the file
     const logPrefix = isAutoSave ? '[AUTO-SAVE]' : '[MANUAL-SAVE]';
     console.log(`${logPrefix} Saving file: ${codeItem.path}`);
-    
+
     return context.dispatch(types.IDE_WRITE_FILE, {
       filePath: codeItem.path,
       fileData: codeItem.content,

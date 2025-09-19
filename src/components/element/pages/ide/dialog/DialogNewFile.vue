@@ -173,38 +173,62 @@ export default {
         // Build directory tree from all projects
         this.directories = [];
         this.ideInfo.multiRootData.children.forEach(project => {
+          // For students, only show the Local project (where they can create files)
+          if (this.currentUser && this.currentUser.role === 'student') {
+            if (project.label !== 'Local') {
+              return; // Skip non-Local projects for students
+            }
+          }
+
           // Add each project and its subdirectories
           const projectDirs = this.buildDirectoryTree(project, 0, project.label);
           this.directories = this.directories.concat(projectDirs);
         });
       } else if (this.ideInfo.currProj && this.ideInfo.currProj.data) {
         // Fallback to single project mode
-        this.directories = this.buildDirectoryTree(this.ideInfo.currProj.data, 0, this.ideInfo.currProj.data.label);
-      }
-      
-      // Set current path to selected node if it's a directory
-      if (this.ideInfo.nodeSelected) {
-        if (this.ideInfo.nodeSelected.type === 'dir' || this.ideInfo.nodeSelected.type === 'folder') {
-          this.currentPath = this.ideInfo.nodeSelected.path;
-          this.currentProject = this.ideInfo.nodeSelected.projectName || this.ideInfo.currProj?.data?.name;
-        } else if (this.ideInfo.nodeSelected.type === 'file') {
-          // If a file is selected, use its parent directory
-          const parentPath = this.ideInfo.nodeSelected.path.substring(0, this.ideInfo.nodeSelected.path.lastIndexOf('/')) || '/';
-          this.currentPath = parentPath;
-          this.currentProject = this.ideInfo.nodeSelected.projectName || this.ideInfo.currProj?.data?.name;
+        const projectLabel = this.ideInfo.currProj.data.label || this.ideInfo.currProj.data.name;
+
+        // For students, only process if it's the Local project
+        if (this.currentUser && this.currentUser.role === 'student') {
+          if (projectLabel !== 'Local') {
+            this.directories = []; // Don't show any directories for non-Local projects
+            return;
+          }
         }
-      } else {
-        // Default to current project root
-        this.currentProject = this.ideInfo.currProj?.data?.name || this.ideInfo.currProj?.config?.name;
+
+        this.directories = this.buildDirectoryTree(this.ideInfo.currProj.data, 0, projectLabel);
       }
       
-      // For students, default to their Local directory if no specific path is set
-      if (this.currentUser && this.currentUser.role === 'student' && this.currentPath === '/') {
+      // For students, always force default to Local project and their Local directory
+      if (this.currentUser && this.currentUser.role === 'student') {
+        // Always default students to the Local project
+        this.currentProject = 'Local';
+
+        // Always default to their user directory, regardless of current selection
         const userPath = `Local/${this.currentUser.username}`;
         // Check if the user's directory exists in the directories list
         const userDir = this.directories.find(dir => dir.path === userPath);
         if (userDir) {
           this.currentPath = userPath;
+        } else {
+          // Fallback to Local root if user directory not found
+          this.currentPath = '/';
+        }
+      } else {
+        // For professors, set current path to selected node if it's a directory
+        if (this.ideInfo.nodeSelected) {
+          if (this.ideInfo.nodeSelected.type === 'dir' || this.ideInfo.nodeSelected.type === 'folder') {
+            this.currentPath = this.ideInfo.nodeSelected.path;
+            this.currentProject = this.ideInfo.nodeSelected.projectName || this.ideInfo.currProj?.data?.name;
+          } else if (this.ideInfo.nodeSelected.type === 'file') {
+            // If a file is selected, use its parent directory
+            const parentPath = this.ideInfo.nodeSelected.path.substring(0, this.ideInfo.nodeSelected.path.lastIndexOf('/')) || '/';
+            this.currentPath = parentPath;
+            this.currentProject = this.ideInfo.nodeSelected.projectName || this.ideInfo.currProj?.data?.name;
+          }
+        } else {
+          // Default to current project root
+          this.currentProject = this.ideInfo.currProj?.data?.name || this.ideInfo.currProj?.config?.name;
         }
       }
     },

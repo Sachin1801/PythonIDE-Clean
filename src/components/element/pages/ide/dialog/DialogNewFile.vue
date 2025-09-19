@@ -22,7 +22,7 @@
             </div>
             <div class="directory-tree" v-if="showDirectoryTree">
               <div 
-                v-for="dir in directories" 
+                v-for="dir in visibleDirectories"
                 :key="dir.path"
                 class="directory-item"
                 :class="{ 
@@ -137,6 +137,12 @@ export default {
       if (!this.fileName) return '';
       const lastDot = this.fileName.lastIndexOf('.');
       return lastDot > 0 ? this.fileName.substring(lastDot) : '';
+    },
+    visibleDirectories() {
+      return this.directories.filter(dir => {
+        // Apply student visibility filtering
+        return this.isDirectoryVisibleToStudent(dir.path);
+      });
     }
   },
   components: {
@@ -160,11 +166,11 @@ export default {
       if (!this.currentUser || this.currentUser.role !== 'student') {
         return true; // Show all directories to professors and when not logged in
       }
-      
-      const userPath = `Local/${this.currentUser.username}`;
-      
-      // Show only the student's own Local/{username}/ directory and its subdirectories
-      return path === '/' || path.startsWith(userPath);
+
+      // For students, since they have their own isolated project (Local/username),
+      // all directories within their project should be visible to them.
+      // The project-level filtering already ensures they only see their own project.
+      return true;
     },
     
     loadDirectoryStructure() {
@@ -173,10 +179,12 @@ export default {
         // Build directory tree from all projects
         this.directories = [];
         this.ideInfo.multiRootData.children.forEach(project => {
-          // For students, only show the Local project (where they can create files)
+          // For students, only show projects that start with "Local" (student's own directory)
           if (this.currentUser && this.currentUser.role === 'student') {
-            if (project.label !== 'Local') {
-              return; // Skip non-Local projects for students
+            // For students, the project is named "Local/username" not just "Local"
+            const expectedProjectPrefix = `Local/${this.currentUser.username}`;
+            if (!project.label.startsWith('Local/') || project.label !== expectedProjectPrefix) {
+              return; // Skip projects that aren't the student's own Local directory
             }
           }
 
@@ -188,10 +196,11 @@ export default {
         // Fallback to single project mode
         const projectLabel = this.ideInfo.currProj.data.label || this.ideInfo.currProj.data.name;
 
-        // For students, only process if it's the Local project
+        // For students, only process if it's their own Local project
         if (this.currentUser && this.currentUser.role === 'student') {
-          if (projectLabel !== 'Local') {
-            this.directories = []; // Don't show any directories for non-Local projects
+          const expectedProjectName = `Local/${this.currentUser.username}`;
+          if (projectLabel !== expectedProjectName) {
+            this.directories = []; // Don't show any directories for non-student projects
             return;
           }
         }
@@ -201,8 +210,8 @@ export default {
       
       // For students, always force default to Local project and their Local directory
       if (this.currentUser && this.currentUser.role === 'student') {
-        // Always default students to the Local project
-        this.currentProject = 'Local';
+        // Always default students to the Local project (which is named Local/{username})
+        this.currentProject = `Local/${this.currentUser.username}`;
 
         // Always default to their user directory, regardless of current selection
         const userPath = `Local/${this.currentUser.username}`;
@@ -211,8 +220,18 @@ export default {
         if (userDir) {
           this.currentPath = userPath;
         } else {
-          // Fallback to Local root if user directory not found
-          this.currentPath = '/';
+          // For students, since their "Local" project maps to their personal directory,
+          // default to the root of the Local project, which should display as "Local/{username}"
+          // We need to find the first available directory or use the project root
+          if (this.directories.length > 0) {
+            // Use the first directory that's not a root-level project
+            const expectedProjectName = `Local/${this.currentUser.username}`;
+            const firstDir = this.directories.find(dir => !dir.isRoot && dir.projectName === expectedProjectName);
+            this.currentPath = firstDir ? firstDir.path : '/';
+          } else {
+            // If no directories are found, use root which will display as the project name
+            this.currentPath = '/';
+          }
         }
       } else {
         // For professors, set current path to selected node if it's a directory
@@ -296,6 +315,10 @@ export default {
       
       if (this.currentProject) {
         if (path === '/') {
+          // Special case for students: when they're in Local project root, show their username
+          if (this.currentUser && this.currentUser.role === 'student' && this.currentProject === 'Local') {
+            return `Local/${this.currentUser.username}`;
+          }
           return this.currentProject;
         }
         // Only add project name if path doesn't already contain it
@@ -429,10 +452,27 @@ export default {
     },
     async onCreate() {
       if (!this.fileName || this.fileNameError) return;
-      
+
       const fileName = this.fileName;
-      const parentPath = this.currentPath;
-      const projectName = this.currentProject || this.ideInfo.currProj?.data?.name || this.ideInfo.currProj?.config?.name;
+      let parentPath = this.currentPath;
+      let projectName = this.currentProject || this.ideInfo.currProj?.data?.name || this.ideInfo.currProj?.config?.name;
+
+      // Special handling for students: translate Local project paths to actual student directory
+      if (this.currentUser && this.currentUser.role === 'student' && projectName === 'Local') {
+        // For students, when they're in the "Local" project, we need to send the actual student path
+        if (parentPath === '/' || parentPath === `Local/${this.currentUser.username}`) {
+          // Student is at their root directory, send the actual path
+          parentPath = `Local/${this.currentUser.username}`;
+          projectName = '';  // Clear project name since we're sending the full path
+        } else if (parentPath.startsWith(`Local/${this.currentUser.username}/`)) {
+          // Student is in a subdirectory, path is already correct
+          projectName = '';  // Clear project name since we're sending the full path
+        } else {
+          // Fallback: ensure student path is correct
+          parentPath = `Local/${this.currentUser.username}${parentPath === '/' ? '' : parentPath}`;
+          projectName = '';  // Clear project name since we're sending the full path
+        }
+      }
       
       // Check if file already exists
       const existingFile = this.checkFileExists(fileName, parentPath, projectName);

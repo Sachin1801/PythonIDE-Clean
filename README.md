@@ -1,7 +1,7 @@
 # PythonIDE-Clean: Educational Python IDE Platform
 
 > A secure, multi-user web-based Python IDE designed for educational institutions
-> Built with Vue3 + Python3.10 + Tornado6.1 + SQLite
+> Built with Vue3 + Python3.10 + Tornado6.1 + PostgreSQL
 > Supporting 60+ concurrent students with isolated workspaces
 
 ## 🎯 Project Overview
@@ -32,7 +32,7 @@ PythonIDE-Clean is a comprehensive web-based Python development environment spec
 - **Isolated user workspaces** - Each student has their own directory
 - **File permission system** preventing unauthorized access
 - **Resource-limited code execution** (CPU, memory, timeout limits)
-- **SQLite database** for user management and file metadata
+- **PostgreSQL database** for user management and file metadata
 
 ### Educational Features
 - **Assignment submission system** with unique submission IDs
@@ -63,9 +63,9 @@ PythonIDE-Clean is a comprehensive web-based Python development environment spec
 ### Tech Stack
 - **Frontend**: Vue 3, Vuex, CodeMirror, Element Plus UI
 - **Backend**: Python 3.10, Tornado WebSocket Server
-- **Database**: SQLite for user management and metadata
+- **Database**: PostgreSQL (AWS RDS in production, Docker for local development)
 - **Authentication**: bcrypt password hashing, session-based auth
-- **File Storage**: Local filesystem with permission validation
+- **File Storage**: Local filesystem with permission validation (AWS EFS in production)
 
 ### System Requirements
 - **Capacity**: Supports 60+ concurrent users
@@ -79,7 +79,7 @@ PythonIDE-Clean is a comprehensive web-based Python development environment spec
 - Node.js 16.13.2+
 - npm 8.1.2+
 - Python 3.10+
-- SQLite 3
+- PostgreSQL 15+ OR Docker (recommended for local development)
 
 ### Quick Start
 
@@ -94,23 +94,69 @@ npm install
 
 # Install backend dependencies
 cd server
+# create virtual environment : advised 
+
 pip install -r requirements.txt
 cd ..
 ```
 
 #### 2. Database Setup
+
+**Production Environment (AWS RDS PostgreSQL):**
+The main application uses AWS RDS PostgreSQL in production:
+- **Database**: pythonide-db.c1u6aa2mqwwf.us-east-2.rds.amazonaws.com
+- **Environment**: Fully managed PostgreSQL on AWS
+- **Connection**: Configured via `DATABASE_URL` environment variable
+
+**Local Development Setup:**
+
+Option A: **Docker PostgreSQL (Recommended)**
 ```bash
-# Initialize database schema
+# Start PostgreSQL container and application
+docker-compose up -d
+
+# The docker-compose.yml includes:
+# - PostgreSQL 15.7 container on port 5433
+# - Automatic schema initialization
+# - User creation with full class data
+# - Persistent volumes for data storage
+```
+
+Option B: **Manual PostgreSQL Setup**
+```bash
+# Install PostgreSQL locally (if not using Docker)
+# On Ubuntu/Debian:
+sudo apt-get install postgresql postgresql-contrib
+
+# On macOS:
+brew install postgresql
+
+# Create database and user
+sudo -u postgres createdb pythonide
+sudo -u postgres psql -c "CREATE USER pythonide_user WITH PASSWORD 'your_password';"
+sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE pythonide TO pythonide_user;"
+
+# Set environment variable
+export DATABASE_URL="postgresql://pythonide_user:your_password@localhost:5432/pythonide"
+
+# Initialize schema and create users
 cd server
-sqlite3 ide.db < migrations/001_initial_schema.sql
-
-# Create initial users
-python migrations/create_users.py
-
-# Set up directory structure
-python migrations/setup_directories.py
+python migrations/reset_database.py  # Creates PostgreSQL schema
+python migrations/create_full_class_with_consistent_passwords.py
 cd ..
 ```
+
+**Database Schema:**
+- **users**: User accounts with bcrypt password hashing
+- **sessions**: Session management with token-based auth
+- **files**: File metadata tracking
+- **file_submissions**: Assignment submissions and grading
+- **password_reset_tokens**: Secure password reset functionality
+
+**Key Migration Files:**
+- `reset_database.py`: Creates PostgreSQL schema from scratch
+- `create_full_class_with_consistent_passwords.py`: Populates with 60+ student accounts
+- `001_initial_schema.sql`: Legacy SQLite schema (for reference only)
 
 #### 3. Run Development Environment
 ```bash
@@ -246,8 +292,12 @@ MAX_EXECUTION_TIME=30
 # Check server status
 curl http://localhost:10086/health
 
-# View active sessions
-sqlite3 server/ide.db "SELECT * FROM sessions WHERE expires_at > datetime('now');"
+# View active sessions (Docker environment)
+docker-compose exec postgres psql -U postgres -d pythonide \
+  -c "SELECT * FROM sessions WHERE expires_at > now();"
+
+# View active sessions (manual PostgreSQL)
+psql $DATABASE_URL -c "SELECT * FROM sessions WHERE expires_at > now();"
 
 # Monitor WebSocket connections
 python server/monitor.py
@@ -255,11 +305,16 @@ python server/monitor.py
 
 ### Backup & Recovery
 ```bash
-# Backup database and files
-tar -czf backup_$(date +%Y%m%d).tar.gz server/projects/ide/ server/ide.db
+# Backup database and files (Docker environment)
+docker-compose exec postgres pg_dump -U postgres pythonide > backup_$(date +%Y%m%d).sql
+tar -czf backup_$(date +%Y%m%d).tar.gz server/projects/ide/ backup_$(date +%Y%m%d).sql
 
-# Restore from backup
-tar -xzf backup_20240101.tar.gz
+# Backup database and files (manual PostgreSQL)
+pg_dump $DATABASE_URL > backup_$(date +%Y%m%d).sql
+tar -czf backup_$(date +%Y%m%d).tar.gz server/projects/ide/ backup_$(date +%Y%m%d).sql
+
+# Restore database from backup
+psql $DATABASE_URL < backup_20240101.sql
 ```
 
 ## 📚 Documentation

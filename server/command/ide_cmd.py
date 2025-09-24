@@ -307,12 +307,50 @@ print("="*50)
             await response(client, cmd_id, code, error_msg)
 
     async def ide_create_folder(self, client, cmd_id, data):
+        print(f"\n========== SERVER: IDE_CREATE_FOLDER DEBUG ==========")
+        print(f"Raw data received: {data}")
+
         prj_name = data.get('projectName')
-        prj_path = os.path.join(file_storage.ide_base, prj_name)
         parent_path = convert_path(data.get('parentPath'))
         folder_name = data.get('folderName')
-        folder_path = os.path.join(prj_path, parent_path, folder_name)
-        code, _ = create_project_folder(prj_path, folder_path)
+        is_root_creation = data.get('isRootCreation', False)
+
+        print(f"Parsed values:")
+        print(f"  prj_name: '{prj_name}'")
+        print(f"  parent_path: '{parent_path}'")
+        print(f"  folder_name: '{folder_name}'")
+        print(f"  is_root_creation: {is_root_creation}")
+        print(f"  file_storage.ide_base: '{file_storage.ide_base}'")
+        print(f"  file_storage info: {file_storage.get_debug_info()}")
+
+        # Check what exists in ide_base currently
+        if os.path.exists(file_storage.ide_base):
+            existing_items = os.listdir(file_storage.ide_base)
+            print(f"  Current items in ide_base: {existing_items}")
+        else:
+            print(f"  ide_base does not exist!")
+
+        # Handle root-level folder creation (same level as Local/ and Lecture Notes/)
+        if is_root_creation:
+            # Create folder directly in ide_base (root level) using resource.create()
+            folder_path = os.path.join(file_storage.ide_base, folder_name)
+            print(f"ROOT CREATION - folder_path: '{folder_path}'")
+            print(f"ROOT CREATION - calling resource.create('{folder_path}')")
+            code, _ = resource.create(folder_path)
+        else:
+            # Regular folder creation within a project
+            # Only fallback to current project if not root creation
+            if not prj_name:
+                prj_name = client.curr_project_name
+            prj_path = os.path.join(file_storage.ide_base, prj_name)
+            folder_path = os.path.join(prj_path, parent_path, folder_name)
+            print(f"REGULAR CREATION - prj_path: '{prj_path}'")
+            print(f"REGULAR CREATION - folder_path: '{folder_path}'")
+            print(f"REGULAR CREATION - calling create_project_folder('{prj_path}', '{folder_path}')")
+            code, _ = create_project_folder(prj_path, folder_path)
+
+        print(f"Creation result - code: {code}, message: {_}")
+        print(f"================================================\n")
         await response(client, cmd_id, code, _)
 
     async def ide_delete_folder(self, client, cmd_id, data):

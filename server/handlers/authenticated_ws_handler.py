@@ -351,13 +351,73 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler, WebSocketKeepali
     
     def handle_list_projects(self, data):
         """Handle ide_list_projects command - returns available projects for user"""
+        import os
+
+        print(f"\n========== HANDLE_LIST_PROJECTS DEBUG ==========")
+        print(f"User: {self.username}, Role: {self.role}")
+        print(f"IDE base path: {self.file_manager.base_path}")
+
         if self.role == 'professor':
-            # Professor can see all top-level directories
-            projects = ['Local', 'Lecture Notes']
+            # Professor can see all top-level directories (scan actual filesystem)
+            projects = []
+            try:
+                if os.path.exists(self.file_manager.base_path):
+                    raw_items = os.listdir(self.file_manager.base_path)
+                    print(f"Raw directory listing: {raw_items}")
+                    for item in raw_items:
+                        item_path = os.path.join(self.file_manager.base_path, item)
+                        print(f"  Checking item: '{item}' at path: '{item_path}' - isdir: {os.path.isdir(item_path)}")
+                        if os.path.isdir(item_path):
+                            projects.append(item)
+                    projects.sort()  # Keep consistent ordering
+                    print(f"Found root directories: {projects}")
+                else:
+                    # Fallback if ide_base doesn't exist
+                    projects = ['Local', 'Lecture Notes']
+                    print(f"IDE base doesn't exist, using fallback: {projects}")
+            except Exception as e:
+                print(f"Error scanning directories: {e}")
+                projects = ['Local', 'Lecture Notes']  # Fallback
         else:
-            # Students see only their personal directory and shared resources
-            projects = [f'Local/{self.username}', 'Lecture Notes']
-        
+            # Students get a curated list: their own Local directory + read-only root folders
+            # This prevents them from seeing other students' Local/{other-username} directories
+            projects = []
+            try:
+                if os.path.exists(self.file_manager.base_path):
+                    # Always add the student's own Local directory as "Local"
+                    student_local_path = os.path.join(self.file_manager.base_path, 'Local', self.username)
+                    if os.path.exists(student_local_path):
+                        projects.append('Local')
+                        print(f"Student {self.username}: Added Local project (points to Local/{self.username})")
+
+                    # Scan for other root directories (but exclude the Local container)
+                    raw_items = os.listdir(self.file_manager.base_path)
+                    print(f"Student scanning for additional root directories: {raw_items}")
+                    for item in raw_items:
+                        if item == 'Local':
+                            # Skip the Local container - we already handled the student's personal Local above
+                            print(f"  Student skipping 'Local' container to prevent access to other students")
+                            continue
+
+                        item_path = os.path.join(self.file_manager.base_path, item)
+                        print(f"  Student checking item: '{item}' at path: '{item_path}' - isdir: {os.path.isdir(item_path)}")
+                        if os.path.isdir(item_path):
+                            projects.append(item)
+
+                    projects.sort()  # Keep consistent ordering
+                    print(f"Student found additional root directories: {[p for p in projects if p != 'Local']}")
+                else:
+                    # Fallback if ide_base doesn't exist
+                    projects = ['Local', 'Lecture Notes']
+                    print(f"Student fallback - IDE base doesn't exist: {projects}")
+            except Exception as e:
+                print(f"Student error scanning directories: {e}")
+                projects = ['Local', 'Lecture Notes']  # Fallback
+            print(f"Student final projects list: {projects}")
+
+        print(f"Final projects list: {projects}")
+        print(f"================================================\n")
+
         return {
             'code': 0,
             'data': projects,
@@ -367,9 +427,17 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler, WebSocketKeepali
     def handle_get_project(self, data):
         """Handle ide_get_project command - returns directory tree for a project"""
         project_name = data.get('data', {}).get('projectName', '')
-        
+
+        # Special handling for students accessing "Local" project
+        # For students, "Local" project should map to their personal "Local/{username}" directory
+        if self.role == 'student' and project_name == 'Local':
+            actual_project_path = f'Local/{self.username}'
+            print(f"Student {self.username} requesting 'Local' project, mapping to: {actual_project_path}")
+        else:
+            actual_project_path = project_name
+
         # Build file tree for the project
-        result = self.build_file_tree(project_name)
+        result = self.build_file_tree(actual_project_path)
         
         return {
             'code': 0 if result else -1,
@@ -394,7 +462,7 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler, WebSocketKeepali
                     return None
         
         # Use the correct storage path (EFS in production, local in dev)
-        base_path = Path(file_storage.ide_base)
+        base_path = Path(self.file_manager.base_path)
         full_path = base_path / project_path
         
         if not full_path.exists():
@@ -520,7 +588,7 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler, WebSocketKeepali
                 # Convert relative path to absolute path for REPL registry
                 import os
                 from common.config import Config
-                abs_path = os.path.normpath(os.path.join(file_storage.ide_base, full_path))
+                abs_path = os.path.normpath(os.path.join(self.file_manager.base_path, full_path))
                 terminated = repl_registry.terminate_repl(self.username, abs_path)
                 if terminated:
                     logger.info(f"Terminated existing REPL for {abs_path} after file save")
@@ -635,18 +703,34 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler, WebSocketKeepali
         request_data = data.get('data', {})
         project_name = request_data.get('projectName', '')
         folder_path = request_data.get('folderPath', '') or request_data.get('path', '')
-        
+        is_root_creation = request_data.get('isRootCreation', False)
+
+        print(f"\n========== HANDLE_CREATE_FOLDER DEBUG ==========")
+        print(f"Raw request_data: {request_data}")
+        print(f"project_name: '{project_name}'")
+        print(f"folder_path: '{folder_path}'")
+        print(f"is_root_creation: {is_root_creation}")
+
         # Construct full path
-        if project_name and folder_path:
+        if is_root_creation:
+            # For root creation, folder_path is the folder name and should be created at root level
+            full_path = folder_path
+            print(f"ROOT CREATION - full_path: '{full_path}'")
+        elif project_name and folder_path:
             if folder_path.startswith(project_name):
                 full_path = folder_path
             else:
                 full_path = f"{project_name}/{folder_path}"
+            print(f"PROJECT CREATION - full_path: '{full_path}'")
         else:
             full_path = folder_path
-        
+            print(f"DEFAULT CREATION - full_path: '{full_path}'")
+
+        print(f"Final full_path to create: '{full_path}'")
+        print(f"================================================\n")
+
         result = self.file_manager.create_directory(self.username, self.role, {'path': full_path})
-        
+
         return {
             'code': 0 if result['success'] else -1,
             'msg': result.get('error', 'Folder created') if not result['success'] else 'Folder created',

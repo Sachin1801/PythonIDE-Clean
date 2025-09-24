@@ -384,7 +384,10 @@ export default {
         this.writeTimeout = setTimeout(() => {
           // Write file without autocomplete (character-based save when auto-save is off)
           console.log('[CHARACTER-SAVE] Saving due to character change (auto-save disabled)');
+          // Use the projectName from the codeItem if available
+          const projectName = this.codeItem.projectName || this.ideInfo.currProj?.data?.name || this.ideInfo.currProj?.config?.name;
           this.$store.dispatch(`ide/${types.IDE_WRITE_FILE}`, {
+            projectName: projectName,
             filePath: this.codeItem.path,
             fileData: value,
             complete: false, // Autocomplete disabled

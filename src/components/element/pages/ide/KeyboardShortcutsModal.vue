@@ -38,10 +38,6 @@
                 <span class="shortcut-action">Download</span>
                 <span class="shortcut-keys">Ctrl+D</span>
               </div>
-              <div class="shortcut-item">
-                <span class="shortcut-action">Delete File</span>
-                <span class="shortcut-keys">Delete</span>
-              </div>
             </div>
           </div>
 

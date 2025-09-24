@@ -21,22 +21,43 @@
               <ChevronRight v-else :size="16" class="chevron" />
             </div>
             <div class="directory-tree" v-if="showDirectoryTree">
-              <div 
-                v-for="dir in directories" 
+              <div
+                v-for="dir in visibleDirectories"
                 :key="dir.path"
                 class="directory-item"
-                :class="{ 
+                :class="{
                   selected: currentPath === dir.path,
-                  'root-item': dir.isRoot 
+                  'root-item': dir.isRoot,
+                  'collapsible': dir.hasChildren,
+                  'collapsed': isCollapsed(dir.path)
                 }"
                 :style="{ paddingLeft: (dir.level * 20 + 12) + 'px' }"
                 @click="selectDirectory(dir)"
               >
-                <Home v-if="dir.isRoot" :size="14" />
-                <template v-else>
-                  <ChevronRight :size="14" />
-                  <Folder :size="14" />
+                <!-- Chevron for all folders with children -->
+                <template v-if="dir.hasChildren">
+                  <ChevronDown
+                    v-if="!isCollapsed(dir.path)"
+                    :size="14"
+                    class="folder-chevron"
+                    @click.stop="toggleCollapse(dir)"
+                  />
+                  <ChevronRight
+                    v-else
+                    :size="14"
+                    class="folder-chevron"
+                    @click.stop="toggleCollapse(dir)"
+                  />
                 </template>
+                <template v-else>
+                  <span class="folder-spacer"></span>
+                </template>
+
+                <!-- Icons for different folder types -->
+                <Home v-if="dir.isRoot && !dir.isRootCreation" :size="14" />
+                <FolderPlus v-else-if="dir.isRootCreation" :size="14" />
+                <Folder v-else :size="14" />
+
                 <span>{{ dir.displayName || dir.name }}</span>
               </div>
             </div>
@@ -97,7 +118,7 @@
 </template>
 
 <script>
-import { X, FolderOpen, Folder, ChevronRight, ChevronDown, Home } from 'lucide-vue-next';
+import { X, FolderOpen, Folder, ChevronRight, ChevronDown, Home, FolderPlus } from 'lucide-vue-next';
 import * as types from '../../../../../store/mutation-types';
 import { ElMessage } from 'element-plus';
 
@@ -114,6 +135,7 @@ export default {
       folderNameError: '',
       creating: false,
       showDirectoryTree: false,
+      collapsedFolders: new Set(), // Track which folders are collapsed
     }
   },
   components: {
@@ -122,7 +144,8 @@ export default {
     Folder,
     ChevronRight,
     ChevronDown,
-    Home
+    Home,
+    FolderPlus
   },
   mounted() {
     this.loadDirectoryStructure();
@@ -136,11 +159,11 @@ export default {
       if (!this.currentUser || this.currentUser.role !== 'student') {
         return true; // Show all directories to professors and when not logged in
       }
-      
-      const userPath = `Local/${this.currentUser.username}`;
-      
-      // Show only the student's own Local/{username}/ directory and its subdirectories
-      return path === '/' || path.startsWith(userPath);
+
+      // For students, since they have their own isolated project (Local/username),
+      // all directories within their project should be visible to them.
+      // The project-level filtering already ensures they only see their own project.
+      return true;
     },
     
     loadDirectoryStructure() {
@@ -149,81 +172,134 @@ export default {
         // Build directory tree from all projects
         this.directories = [];
         this.ideInfo.multiRootData.children.forEach(project => {
+          // For students, only show projects that start with "Local" (student's own directory)
+          if (this.currentUser && this.currentUser.role === 'student') {
+            // For students, the project is named "Local/username" not just "Local"
+            const expectedProjectPrefix = `Local/${this.currentUser.username}`;
+            if (!project.label.startsWith('Local/') || project.label !== expectedProjectPrefix) {
+              return; // Skip projects that aren't the student's own Local directory
+            }
+          }
+
           // Add each project and its subdirectories
           const projectDirs = this.buildDirectoryTree(project, 0, project.label);
           this.directories = this.directories.concat(projectDirs);
         });
       } else if (this.ideInfo.currProj && this.ideInfo.currProj.data) {
         // Fallback to single project mode
-        this.directories = this.buildDirectoryTree(this.ideInfo.currProj.data, 0, this.ideInfo.currProj.data.label);
-      }
-      
-      // Set current path to selected node if it's a directory
-      if (this.ideInfo.nodeSelected) {
-        if (this.ideInfo.nodeSelected.type === 'dir' || this.ideInfo.nodeSelected.type === 'folder') {
-          this.currentPath = this.ideInfo.nodeSelected.path;
-          this.currentProject = this.ideInfo.nodeSelected.projectName || this.ideInfo.currProj?.data?.name;
-        } else if (this.ideInfo.nodeSelected.type === 'file') {
-          // If a file is selected, use its parent directory
-          const parentPath = this.ideInfo.nodeSelected.path.substring(0, this.ideInfo.nodeSelected.path.lastIndexOf('/')) || '/';
-          this.currentPath = parentPath;
-          this.currentProject = this.ideInfo.nodeSelected.projectName || this.ideInfo.currProj?.data?.name;
+        const projectLabel = this.ideInfo.currProj.data.label || this.ideInfo.currProj.data.name;
+
+        // For students, only process if it's their own Local project
+        if (this.currentUser && this.currentUser.role === 'student') {
+          const expectedProjectName = `Local/${this.currentUser.username}`;
+          if (projectLabel !== expectedProjectName) {
+            this.directories = []; // Don't show any directories for non-student projects
+            return;
+          }
         }
-      } else {
-        // Default to current project root
-        this.currentProject = this.ideInfo.currProj?.data?.name || this.ideInfo.currProj?.config?.name;
+
+        this.directories = this.buildDirectoryTree(this.ideInfo.currProj.data, 0, projectLabel);
+      }
+
+      // For professors, add the "../" option to create folders at root level (same level as Local/ and Lecture Notes/)
+      if (this.currentUser && this.currentUser.role === 'professor') {
+        this.directories.unshift({
+          name: '../',
+          displayName: '../ (Root Level)',
+          path: 'ROOT_LEVEL',
+          level: -1,
+          isRoot: true,
+          hasChildren: false,
+          parentPath: '',
+          projectName: '',
+          fullPath: 'ROOT_LEVEL',
+          isRootCreation: true
+        });
       }
       
-      // For students, default to their Local directory if no specific path is set
-      if (this.currentUser && this.currentUser.role === 'student' && this.currentPath === '/') {
-        const userPath = `Local/${this.currentUser.username}`;
-        // Check if the user's directory exists in the directories list
-        const userDir = this.directories.find(dir => dir.path === userPath);
-        if (userDir) {
-          this.currentPath = userPath;
+      // For students, always force default to their Local project and directory
+      if (this.currentUser && this.currentUser.role === 'student') {
+        // Always default students to their Local/username project
+        this.currentProject = `Local/${this.currentUser.username}`;
+
+        // Always default to their user directory root (which is the project root for them)
+        this.currentPath = '/';
+      } else {
+        // For professors, set current path to selected node if it's a directory
+        if (this.ideInfo.nodeSelected) {
+          if (this.ideInfo.nodeSelected.type === 'dir' || this.ideInfo.nodeSelected.type === 'folder') {
+            this.currentPath = this.ideInfo.nodeSelected.path;
+            this.currentProject = this.ideInfo.nodeSelected.projectName || this.ideInfo.currProj?.data?.name;
+          } else if (this.ideInfo.nodeSelected.type === 'file') {
+            // If a file is selected, use its parent directory
+            const parentPath = this.ideInfo.nodeSelected.path.substring(0, this.ideInfo.nodeSelected.path.lastIndexOf('/')) || '/';
+            this.currentPath = parentPath;
+            this.currentProject = this.ideInfo.nodeSelected.projectName || this.ideInfo.currProj?.data?.name;
+          }
+        } else {
+          // Default to current project root
+          this.currentProject = this.ideInfo.currProj?.data?.name || this.ideInfo.currProj?.config?.name;
         }
       }
     },
-    buildDirectoryTree(node, level = 0, projectName = null) {
+    buildDirectoryTree(node, level = 0, projectName = null, parentPath = '') {
       let dirs = [];
-      
+
       // Add the root directory
       if (level === 0) {
+        const hasChildren = node.children && node.children.some(child =>
+          (child.type === 'dir' || child.type === 'folder') &&
+          this.isDirectoryVisibleToStudent(child.path)
+        );
+
         dirs.push({
           name: projectName || node.label || '/',
           displayName: projectName || node.label || '/',
           path: node.path || '/',
           level: 0,
           isRoot: true,
+          hasChildren: hasChildren,
+          parentPath: '',
           projectName: projectName || node.label,
           fullPath: projectName ? `${projectName}${node.path}` : node.path
         });
       }
-      
+
       // Process children
       if (node.children) {
         node.children.forEach(child => {
           if (child.type === 'dir' || child.type === 'folder') {
             // Check if this directory should be visible to the current user
             if (this.isDirectoryVisibleToStudent(child.path)) {
+              // Check if this directory has children
+              const hasChildren = child.children && child.children.some(grandchild =>
+                (grandchild.type === 'dir' || grandchild.type === 'folder') &&
+                this.isDirectoryVisibleToStudent(grandchild.path)
+              );
+
+              const currentParentPath = level === 0 ? (node.path || '/') : parentPath;
+
               dirs.push({
                 name: child.label,
                 displayName: child.label,
                 path: child.path,
                 level: level + 1,
                 isRoot: false,
+                hasChildren: hasChildren,
+                parentPath: currentParentPath,
                 projectName: projectName || child.projectName,
                 fullPath: projectName ? `${projectName}${child.path}` : child.path
               });
+
               // Recursively add subdirectories
               if (child.children) {
-                dirs = dirs.concat(this.buildDirectoryTree(child, level + 1, projectName));
+                dirs = dirs.concat(this.buildDirectoryTree(child, level + 1, projectName, child.path));
               }
             }
           }
         });
       }
-      
+
       return dirs;
     },
     selectDirectory(dir) {
@@ -234,7 +310,44 @@ export default {
     toggleDirectoryTree() {
       this.showDirectoryTree = !this.showDirectoryTree;
     },
+    toggleCollapse(dir) {
+      if (!dir.hasChildren) return;
+
+      if (this.collapsedFolders.has(dir.path)) {
+        this.collapsedFolders.delete(dir.path);
+      } else {
+        this.collapsedFolders.add(dir.path);
+      }
+
+      // Force reactivity
+      this.$forceUpdate();
+    },
+    isCollapsed(path) {
+      return this.collapsedFolders.has(path);
+    },
+    isDirectoryVisible(dir) {
+      // Always show root level directories
+      if (dir.level === 0 || dir.isRoot) return true;
+
+      // Check if any parent is collapsed
+      let parentPath = dir.parentPath;
+      while (parentPath && parentPath !== '/') {
+        if (this.collapsedFolders.has(parentPath)) {
+          return false;
+        }
+        // Find the parent directory to get its parentPath
+        const parentDir = this.directories.find(d => d.path === parentPath);
+        parentPath = parentDir ? parentDir.parentPath : null;
+      }
+
+      return true;
+    },
     formatCurrentPath(path) {
+      // Handle root-level creation display
+      if (this.currentPath === 'ROOT_LEVEL') {
+        return '../ (Root Level)';
+      }
+
       // If path already contains the project name, return as is
       if (path && path !== '/') {
         // Check if path already starts with a known project name
@@ -245,9 +358,13 @@ export default {
           }
         }
       }
-      
+
       if (this.currentProject) {
         if (path === '/') {
+          // Special case for students: when they're in Local project root, show their username
+          if (this.currentUser && this.currentUser.role === 'student' && this.currentProject === 'Local') {
+            return `Local/${this.currentUser.username}`;
+          }
           return this.currentProject;
         }
         // Only add project name if path doesn't already contain it
@@ -256,7 +373,7 @@ export default {
         }
         return path;
       }
-      
+
       // Fallback to current project if no specific project context
       if (path === '/' && this.ideInfo.currProj) {
         return this.ideInfo.currProj.data?.label || this.ideInfo.currProj.config?.name;
@@ -308,34 +425,80 @@ export default {
     },
     getFullFolderPath() {
       const folderName = this.folderName || 'new_folder';
-      const path = this.currentPath === '/' 
-        ? `/${folderName}` 
+
+      // Handle root-level creation
+      if (this.currentPath === 'ROOT_LEVEL') {
+        return `${folderName} (at root level)`;
+      }
+
+      const path = this.currentPath === '/'
+        ? `/${folderName}`
         : `${this.currentPath}/${folderName}`;
-      
+
       return this.formatCurrentPath(path);
     },
     async onCreate() {
       if (!this.folderName || this.folderNameError) return;
-      
+
       this.creating = true;
-      
+
       try {
         const folderName = this.folderName;
-        const parentPath = this.currentPath;
-        const projectName = this.currentProject || this.ideInfo.currProj?.data?.name || this.ideInfo.currProj?.config?.name;
-        
-        console.log('[DialogNewFolder] Creating folder:', {
+        let parentPath = this.currentPath;
+        let projectName = this.currentProject || this.ideInfo.currProj?.data?.name || this.ideInfo.currProj?.config?.name;
+
+        // Handle root-level folder creation for professors
+        const isRootCreation = parentPath === 'ROOT_LEVEL';
+
+        if (!isRootCreation) {
+          // Special handling for students: translate Local project paths to actual student directory
+          if (this.currentUser && this.currentUser.role === 'student' && projectName === 'Local') {
+            // For students, when they're in the "Local" project, we need to send the actual student path
+            if (parentPath === '/' || parentPath === `Local/${this.currentUser.username}`) {
+              // Student is at their root directory, send the actual path
+              parentPath = `Local/${this.currentUser.username}`;
+              projectName = '';  // Clear project name since we're sending the full path
+            } else if (parentPath.startsWith(`Local/${this.currentUser.username}/`)) {
+              // Student is in a subdirectory, path is already correct
+              projectName = '';  // Clear project name since we're sending the full path
+            } else {
+              // Fallback: ensure student path is correct
+              parentPath = `Local/${this.currentUser.username}${parentPath === '/' ? '' : parentPath}`;
+              projectName = '';  // Clear project name since we're sending the full path
+            }
+          }
+        }
+
+        const actualParentPath = isRootCreation ? '' : parentPath;
+        const actualProjectName = isRootCreation ? '' : projectName;
+
+        console.log('[DialogNewFolder] ========== FOLDER CREATION DEBUG ==========');
+        console.log('[DialogNewFolder] Input values:', {
           folderName,
           parentPath,
-          projectName
+          projectName,
+          'this.currentPath': this.currentPath,
+          'this.currentProject': this.currentProject
         });
-        
+        console.log('[DialogNewFolder] Computed values:', {
+          actualParentPath,
+          actualProjectName,
+          isRootCreation
+        });
+        console.log('[DialogNewFolder] Will send to server:', {
+          projectName: actualProjectName,
+          parentPath: actualParentPath,
+          folderName: folderName,
+          isRootCreation: isRootCreation
+        });
+
         // Create the folder using the IDE store action
         await new Promise((resolve, reject) => {
           this.$store.dispatch(`ide/${types.IDE_CREATE_FOLDER}`, {
-            projectName: projectName,
-            parentPath: parentPath,
+            projectName: actualProjectName,
+            parentPath: actualParentPath,
             folderName: folderName,
+            isRootCreation: isRootCreation,
             callback: (response) => {
               console.log('[DialogNewFolder] Create folder response:', response);
               
@@ -344,25 +507,46 @@ export default {
                 ElMessage.success(`Folder "${folderName}" created successfully`);
                 
                 // Refresh the project tree
-                this.$store.dispatch(`ide/${types.IDE_GET_PROJECT}`, {
-                  projectName: projectName,
-                  callback: (projectResponse) => {
-                    if (projectResponse.code === 0) {
-                      this.$store.commit('ide/handleProject', projectResponse.data);
-                      
-                      // If in multi-root mode, refresh all projects
-                      if (this.ideInfo.multiRootData) {
-                        this.$parent.loadAllDefaultProjects?.();
+                if (isRootCreation) {
+                  // For root-level creation, first refresh the project list, then load all projects
+                  this.$store.dispatch(`ide/${types.IDE_LIST_PROJECTS}`, {
+                    callback: (listResponse) => {
+                      console.log('[DialogNewFolder] Project list refresh response:', listResponse);
+                      if (listResponse.code === 0) {
+                        // Update the project list in store
+                        this.$store.commit('ide/handleProjects', listResponse.data);
+
+                        // Now load all default projects with the updated list
+                        if (this.ideInfo.multiRootData) {
+                          this.$parent.loadAllDefaultProjects?.();
+                        }
                       }
                     }
-                  }
-                });
-                
+                  });
+                } else {
+                  // For regular folder creation, refresh the specific project
+                  this.$store.dispatch(`ide/${types.IDE_GET_PROJECT}`, {
+                    projectName: actualProjectName,
+                    callback: (projectResponse) => {
+                      if (projectResponse.code === 0) {
+                        this.$store.commit('ide/handleProject', projectResponse.data);
+
+                        // If in multi-root mode, refresh all projects
+                        if (this.ideInfo.multiRootData) {
+                          this.$parent.loadAllDefaultProjects?.();
+                        }
+                      }
+                    }
+                  });
+                }
+
                 // Emit folder created event
-                const newFolderPath = parentPath === '/' ? `/${folderName}` : `${parentPath}/${folderName}`;
+                const newFolderPath = isRootCreation ? `/${folderName}` :
+                  (actualParentPath === '/' ? `/${folderName}` : `${actualParentPath}/${folderName}`);
                 this.$emit('folder-created', {
                   path: newFolderPath,
-                  projectName: projectName
+                  projectName: actualProjectName,
+                  isRootCreation: isRootCreation
                 });
                 
                 // Close dialog
@@ -401,6 +585,14 @@ export default {
         return { session_id: sessionId, username: username, role: role, full_name: fullName };
       }
       return null;
+    },
+    visibleDirectories() {
+      return this.directories.filter(dir => {
+        // Apply both collapse filtering and student visibility filtering
+        const isVisible = this.isDirectoryVisible(dir);
+        const isStudentVisible = this.isDirectoryVisibleToStudent(dir.path);
+        return isVisible && isStudentVisible;
+      });
     }
   }
 }
@@ -548,6 +740,33 @@ export default {
 .directory-item.root-item {
   font-weight: 500;
   border-bottom: 1px solid var(--border-color, #464647);
+}
+
+.directory-item.collapsible {
+  cursor: pointer;
+}
+
+.directory-item:hover {
+  background: var(--hover-bg, #094771);
+}
+
+.folder-chevron {
+  cursor: pointer;
+  transition: transform 0.2s ease;
+  padding: 2px;
+  border-radius: 2px;
+  margin-right: 4px;
+}
+
+.folder-chevron:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.folder-spacer {
+  width: 14px;
+  height: 14px;
+  display: inline-block;
+  margin-right: 4px;
 }
 
 .foldername-input-wrapper {

@@ -66,8 +66,20 @@ class SecureFileManager:
         if requested_path.startswith('Lecture Notes/'):
             logger.info(f"Read-only access granted for: {requested_path}")
             return 'read_only'
-        
-        
+
+        # 3. Read-only access to professor-created root folders (anything that doesn't contain '/' is a root folder)
+        # Allow access to root-level folders created by professors, but read-only
+        if '/' not in requested_path and requested_path not in ['Local', 'Lecture Notes']:
+            logger.info(f"Read-only access granted to professor-created root folder: {requested_path}")
+            return 'read_only'
+
+        # 4. Read-only access to files inside professor-created root folders
+        # Check if the path starts with a professor-created root folder
+        root_folder = requested_path.split('/')[0]
+        if root_folder not in ['Local', 'Lecture Notes'] and root_folder != username:
+            logger.info(f"Read-only access granted to file in professor-created root folder: {requested_path}")
+            return 'read_only'
+
         # No access to other locations
         logger.warning(f"Path rejected: '{requested_path}' - no permission for student")
         return False
@@ -265,17 +277,29 @@ class SecureFileManager:
     def create_directory(self, username, role, data):
         """Create a new directory"""
         dir_path = data.get('path')
-        
+
+        print(f"\n--- CREATE_DIRECTORY DEBUG ---")
+        print(f"username: {username}, role: {role}")
+        print(f"dir_path: '{dir_path}'")
+        print(f"base_path: {self.base_path}")
+
         permission = self.validate_path(username, role, dir_path)
+        print(f"validate_path result: {permission}")
+
         if not permission or permission == 'read_only':
+            print(f"PERMISSION DENIED: permission={permission}")
             return {'success': False, 'error': 'Permission denied'}
-        
+
         full_path = self.base_path / dir_path
-        
+        print(f"full_path to create: {full_path}")
+
         try:
             full_path.mkdir(parents=True, exist_ok=True)
+            print(f"Directory created successfully: {full_path}")
+            print(f"Directory exists after creation: {full_path.exists()}")
             return {'success': True, 'message': 'Directory created'}
         except Exception as e:
+            print(f"ERROR creating directory: {e}")
             return {'success': False, 'error': str(e)}
     
     def delete_file(self, username, role, data):

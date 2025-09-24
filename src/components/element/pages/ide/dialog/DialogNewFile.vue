@@ -30,14 +30,28 @@
                   'root-item': dir.isRoot 
                 }"
                 :style="{ paddingLeft: (dir.level * 20 + 12) + 'px' }"
-                @click="selectDirectory(dir)"
               >
-                <Home v-if="dir.isRoot" :size="14" />
-                <template v-else>
-                  <ChevronRight :size="14" />
-                  <Folder :size="14" />
-                </template>
-                <span>{{ dir.displayName || dir.name }}</span>
+                <div 
+                  class="directory-expand-icon"
+                  @click.stop="toggleDirectory(dir)"
+                  v-if="dir.hasChildren"
+                >
+                  <ChevronDown v-if="isExpanded(dir.path)" :size="14" />
+                  <ChevronRight v-else :size="14" />
+                </div>
+                <div 
+                  class="directory-expand-placeholder"
+                  v-else
+                >
+                </div>
+                <div 
+                  class="directory-content"
+                  @click="selectDirectory(dir)"
+                >
+                  <Home v-if="dir.isRoot" :size="14" />
+                  <Folder v-else :size="14" />
+                  <span>{{ dir.displayName || dir.name }}</span>
+                </div>
               </div>
             </div>
           </div>
@@ -112,6 +126,7 @@ export default {
       currentPath: '/',
       currentProject: null,
       directories: [],
+      expandedDirectories: new Set(),
       fileName: '',
       fileNameError: '',
       creating: false,
@@ -141,7 +156,18 @@ export default {
     visibleDirectories() {
       return this.directories.filter(dir => {
         // Apply student visibility filtering
-        return this.isDirectoryVisibleToStudent(dir.path);
+        if (!this.isDirectoryVisibleToStudent(dir.path)) {
+          return false;
+        }
+
+        // Show root directories
+        if (dir.isRoot) {
+          return true;
+        }
+
+        // Show directories if their parent is expanded
+        const parentPath = this.getParentPath(dir.path);
+        return parentPath === '/' || this.expandedDirectories.has(parentPath);
       });
     }
   },
@@ -256,15 +282,28 @@ export default {
       
       // Add the root directory
       if (level === 0) {
-        dirs.push({
+        const hasChildren = node.children && node.children.some(child => 
+          (child.type === 'dir' || child.type === 'folder') && 
+          this.isDirectoryVisibleToStudent(child.path)
+        );
+        
+        const rootDir = {
           name: projectName || node.label || '/',
           displayName: projectName || node.label || '/',
           path: node.path || '/',
           level: 0,
           isRoot: true,
+          hasChildren: hasChildren,
           projectName: projectName || node.label,
           fullPath: projectName ? `${projectName}${node.path}` : node.path
-        });
+        };
+        
+        dirs.push(rootDir);
+        
+        // Auto-expand root directories
+        if (hasChildren) {
+          this.expandedDirectories.add(rootDir.path);
+        }
       }
       
       // Process children
@@ -273,15 +312,23 @@ export default {
           if (child.type === 'dir' || child.type === 'folder') {
             // Check if this directory should be visible to the current user
             if (this.isDirectoryVisibleToStudent(child.path)) {
+              // Check if this child has subdirectories
+              const hasChildren = child.children && child.children.some(grandchild => 
+                (grandchild.type === 'dir' || grandchild.type === 'folder') && 
+                this.isDirectoryVisibleToStudent(grandchild.path)
+              );
+              
               dirs.push({
                 name: child.label,
                 displayName: child.label,
                 path: child.path,
                 level: level + 1,
                 isRoot: false,
+                hasChildren: hasChildren,
                 projectName: projectName || child.projectName,
                 fullPath: projectName ? `${projectName}${child.path}` : child.path
               });
+              
               // Recursively add subdirectories
               if (child.children) {
                 dirs = dirs.concat(this.buildDirectoryTree(child, level + 1, projectName));
@@ -292,6 +339,23 @@ export default {
       }
       
       return dirs;
+    },
+    getParentPath(path) {
+      if (path === '/' || !path) return '/';
+      const lastSlash = path.lastIndexOf('/');
+      return lastSlash === 0 ? '/' : path.substring(0, lastSlash);
+    },
+    isExpanded(path) {
+      return this.expandedDirectories.has(path);
+    },
+    toggleDirectory(dir) {
+      if (dir.hasChildren) {
+        if (this.expandedDirectories.has(dir.path)) {
+          this.expandedDirectories.delete(dir.path);
+        } else {
+          this.expandedDirectories.add(dir.path);
+        }
+      }
     },
     selectDirectory(dir) {
       this.currentPath = dir.path;
@@ -712,19 +776,51 @@ export default {
 .directory-item {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  cursor: pointer;
+  padding: 4px 8px;
   transition: background 0.2s;
   color: var(--text-primary, #cccccc);
   font-size: 13px;
 }
 
-.directory-item:hover {
+.directory-expand-icon {
+  cursor: pointer;
+  padding: 4px;
+  margin-right: 4px;
+  border-radius: 2px;
+  transition: background 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+}
+
+.directory-expand-icon:hover {
+  background: var(--hover-bg, rgba(255, 255, 255, 0.1));
+}
+
+.directory-expand-placeholder {
+  width: 22px;
+  height: 22px;
+  margin-right: 4px;
+}
+
+.directory-content {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.directory-content:hover {
   background: var(--hover-bg, #094771);
 }
 
-.directory-item.selected {
+.directory-item.selected .directory-content {
   background: var(--selected-bg, #094771);
 }
 

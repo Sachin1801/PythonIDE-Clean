@@ -13,7 +13,7 @@ services:
       # Persistent database storage
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5433:5432"
+      - "5432:5432"
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
@@ -54,17 +54,6 @@ services:
       "
 
 volumes:
-  # Named volumes for persistent storage
+  # Named volumes for persistent storage (works on both Mac and WSL2)
   postgres_data:
-    driver: local
-    driver_opts:
-      type: none
-      device: ${PWD}/data/postgres
-      o: bind
-  
   user_files:
-    driver: local
-    driver_opts:
-      type: none
-      device: ${PWD}/data/user_files
-      o: bind

@@ -1114,7 +1114,11 @@ const actions = {
     const logPrefix = isAutoSave ? '[AUTO-SAVE]' : '[MANUAL-SAVE]';
     console.log(`${logPrefix} Saving file: ${codeItem.path}`);
 
+    // Use the projectName from the codeItem if available
+    const projectName = codeItem.projectName || context.state.ideInfo.currProj?.data?.name || context.state.ideInfo.currProj?.config?.name;
+
     return context.dispatch(types.IDE_WRITE_FILE, {
+      projectName: projectName,
       filePath: codeItem.path,
       fileData: codeItem.content,
       complete: false,

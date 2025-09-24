@@ -1833,13 +1833,9 @@ export default {
     handleFileCreated(data) {
       // Handle file creation from new file dialog
       console.log('[handleFileCreated] File created:', data);
-      
-      if (data && data.path && data.projectName) {
-        // Open the newly created file
-        this.getFile(data.path, true, data.projectName);
-      }
-      
-      // Refresh the project tree
+
+      // Simply refresh the project tree to show the new file
+      // Do not automatically open the file - let the user click on it in the sidebar
       this.refreshProjectTree();
     },
     handleFolderCreated(data) {

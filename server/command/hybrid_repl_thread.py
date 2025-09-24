@@ -158,30 +158,51 @@ import builtins
 import base64
 import io
 
-# Capture matplotlib if available
-try:
-    import matplotlib
-    matplotlib.use('Agg')
-    import matplotlib.pyplot as plt
-    
-    _original_show = plt.show
-    
-    def _custom_show(*args, **kwargs):
-        """Custom show function that captures matplotlib figures"""
-        buf = io.BytesIO()
-        plt.savefig(buf, format='png', bbox_inches='tight', dpi=100)
-        buf.seek(0)
-        img_base64 = base64.b64encode(buf.read()).decode('utf-8')
-        print("__MATPLOTLIB_FIGURE_START__")
-        print(img_base64)
-        print("__MATPLOTLIB_FIGURE_END__")
-        sys.stdout.flush()
-        plt.clf()
-        plt.close('all')
-    
-    plt.show = _custom_show
-except ImportError:
-    pass
+# Lazy load matplotlib only when actually imported by user code
+_matplotlib_hooked = False
+
+def _hook_matplotlib():
+    """Hook matplotlib.pyplot.show only when matplotlib is actually imported"""
+    global _matplotlib_hooked
+    if _matplotlib_hooked:
+        return
+
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+
+        _original_show = plt.show
+
+        def _custom_show(*args, **kwargs):
+            """Custom show function that captures matplotlib figures"""
+            buf = io.BytesIO()
+            plt.savefig(buf, format='png', bbox_inches='tight', dpi=100)
+            buf.seek(0)
+            img_base64 = base64.b64encode(buf.read()).decode('utf-8')
+            print("__MATPLOTLIB_FIGURE_START__")
+            print(img_base64)
+            print("__MATPLOTLIB_FIGURE_END__")
+            sys.stdout.flush()
+            plt.clf()
+            plt.close('all')
+
+        plt.show = _custom_show
+        _matplotlib_hooked = True
+    except ImportError:
+        pass
+
+# Override __import__ to detect matplotlib usage
+_original_builtins_import = builtins.__import__
+
+def _custom_import(name, *args, **kwargs):
+    result = _original_builtins_import(name, *args, **kwargs)
+    # Hook matplotlib after it's imported by user code
+    if 'matplotlib' in name and not _matplotlib_hooked:
+        _hook_matplotlib()
+    return result
+
+builtins.__import__ = _custom_import
 
 # Store original input for REPL mode
 _original_input = builtins.input

@@ -3,11 +3,11 @@
 ## Project Overview
 PythonIDE-Clean is a web-based Python IDE designed for educational use at a college. It supports 60+ concurrent students, allowing them to write, execute, and submit Python code for assignments and tests.
 
-## Current Status (Updated: January 2025)
+## Current Status (Updated: 25 September 2025)
 
 ### ✅ Implemented Features:
 1. **User authentication** - Login system with bcrypt password hashing
-2. **File isolation** - Each student has `Local/{username}/` folder (41 students) + two test accounts now added admin_viewer and test_studnet
+2. **File isolation** - Each student has `Local/{username}/` folder (41 students) + two test accounts now added admin_viewer and test_studnet ( these both are also testing accounts based from student's perspective)
 3. **PostgreSQL database** - AWS RDS PostgreSQL for production
 4. **Authenticated WebSockets** - Secure real-time connections
 5. **Role-based permissions** - Student vs Professor access control (3 admin accounts: sl7927, sa9082, et2434, admin_editor, test_admin)

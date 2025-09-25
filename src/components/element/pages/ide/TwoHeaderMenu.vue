@@ -462,49 +462,59 @@ export default {
         this.redo();
         return;
       }
-      // Ctrl+X - Cut (but allow native cut in REPL input)
-      if (e.ctrlKey && !e.shiftKey && e.key === 'x') {
-        // Check if the focused element is the REPL input
+      // Helper function to check if the focused element should handle copy/paste natively
+      const shouldAllowNativeCopyPaste = () => {
         const activeElement = document.activeElement;
-        const isReplInput = activeElement && activeElement.classList.contains('repl-input');
-        
-        if (isReplInput) {
-          // Let the REPL input handle cut naturally
+        if (!activeElement) return false;
+
+        // Allow native behavior for all text input contexts
+        return (
+          // Standard input elements
+          activeElement.tagName === 'INPUT' ||
+          activeElement.tagName === 'TEXTAREA' ||
+          // REPL input (existing logic)
+          activeElement.classList.contains('repl-input') ||
+          // Contenteditable elements
+          activeElement.contentEditable === 'true' ||
+          // Modal input fields (common classes)
+          activeElement.classList.contains('filename-input') ||
+          activeElement.classList.contains('el-input__inner') ||
+          // Any element with input-like role
+          activeElement.getAttribute('role') === 'textbox'
+        );
+      };
+
+      // Ctrl+X - Cut (allow native cut in all text inputs)
+      if (e.ctrlKey && !e.shiftKey && e.key === 'x') {
+        if (shouldAllowNativeCopyPaste()) {
+          // Let the input handle cut naturally
           return;
         }
-        
+
         e.preventDefault();
         e.stopPropagation();
         this.cut();
         return;
       }
-      // Ctrl+C - Copy (but allow native copy in REPL input)
+      // Ctrl+C - Copy (allow native copy in all text inputs)
       if (e.ctrlKey && !e.shiftKey && e.key === 'c') {
-        // Check if the focused element is the REPL input
-        const activeElement = document.activeElement;
-        const isReplInput = activeElement && activeElement.classList.contains('repl-input');
-        
-        if (isReplInput) {
-          // Let the REPL input handle copy naturally
+        if (shouldAllowNativeCopyPaste()) {
+          // Let the input handle copy naturally
           return;
         }
-        
+
         e.preventDefault();
         e.stopPropagation();
         this.copy();
         return;
       }
-      // Ctrl+V - Paste (but allow native paste in REPL input)
+      // Ctrl+V - Paste (allow native paste in all text inputs)
       if (e.ctrlKey && !e.shiftKey && e.key === 'v') {
-        // Check if the focused element is the REPL input
-        const activeElement = document.activeElement;
-        const isReplInput = activeElement && activeElement.classList.contains('repl-input');
-        
-        if (isReplInput) {
-          // Let the REPL input handle paste naturally
+        if (shouldAllowNativeCopyPaste()) {
+          // Let the input handle paste naturally
           return;
         }
-        
+
         e.preventDefault();
         e.stopPropagation();
         this.paste();

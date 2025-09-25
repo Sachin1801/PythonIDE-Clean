@@ -59,6 +59,7 @@ import 'codemirror/keymap/sublime';
 // import PythonHint from '@/assets/lib/python-hint';
 
 import * as types from '../../../../../store/mutation-types';
+import clipboardTracker from '../../../../../utils/clipboardTracker';
 
 export default {
   props: {
@@ -188,6 +189,66 @@ export default {
               this.$emit('run-item');
             } else {
               console.log('[F5-DEBUG] F5 not processed - isPython:', this.isPython, 'consoleLimit:', this.consoleLimit);
+            }
+          },
+
+          // Copy operation - track content for students
+          'Ctrl-C': (cm) => {
+            const selectedText = cm.getSelection();
+            if (selectedText) {
+              // Track copied content for clipboard validation
+              clipboardTracker.trackIDECopy(selectedText);
+              console.log('[CodeMirror] Copy tracked:', selectedText.substring(0, 50));
+
+              // Copy to clipboard
+              navigator.clipboard.writeText(selectedText).catch(() => {
+                // Fallback for older browsers
+                document.execCommand('copy');
+              });
+            }
+            return false; // Prevent default behavior
+          },
+
+          // Cut operation - track content for students
+          'Ctrl-X': (cm) => {
+            const selectedText = cm.getSelection();
+            if (selectedText) {
+              // Track cut content for clipboard validation
+              clipboardTracker.trackIDECopy(selectedText);
+              console.log('[CodeMirror] Cut tracked:', selectedText.substring(0, 50));
+
+              // Copy to clipboard and remove selection
+              navigator.clipboard.writeText(selectedText).then(() => {
+                cm.replaceSelection('');
+              }).catch(() => {
+                // Fallback for older browsers
+                document.execCommand('cut');
+              });
+            }
+            return false; // Prevent default behavior
+          },
+
+          // Paste operation - validate for students
+          'Ctrl-V': async (cm) => {
+            try {
+              // Get clipboard content
+              const clipboardText = await navigator.clipboard.readText();
+
+              // Validate paste for students
+              const isAllowed = await clipboardTracker.validatePaste(clipboardText);
+
+              if (isAllowed) {
+                // Allow paste - use CodeMirror's built-in paste
+                cm.replaceSelection(clipboardText);
+                console.log('[CodeMirror] Paste allowed:', clipboardText.substring(0, 50));
+              } else {
+                // Paste blocked - validatePaste already showed the toast
+                console.log('[CodeMirror] Paste blocked for student');
+              }
+            } catch (error) {
+              console.error('[CodeMirror] Paste error:', error);
+              // Fallback to default paste if clipboard API fails
+              document.execCommand('paste');
             }
           }
         },

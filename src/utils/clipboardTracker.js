@@ -65,7 +65,15 @@ class ClipboardTracker {
    * Get current user role from localStorage
    */
   getCurrentUserRole() {
-    return localStorage.getItem('role') || 'student';
+    const role = localStorage.getItem('role') || 'student';
+    console.log('[ClipboardTracker] Current user role:', role, {
+      allLocalStorage: {
+        role: localStorage.getItem('role'),
+        username: localStorage.getItem('username'),
+        session_id: localStorage.getItem('session_id')
+      }
+    });
+    return role;
   }
 
   /**
@@ -101,6 +109,14 @@ class ClipboardTracker {
    * Returns true if paste should be allowed, false if blocked
    */
   async validatePaste(pasteContent) {
+    console.log('[ClipboardTracker] validatePaste called:', {
+      contentLength: pasteContent?.length,
+      userRole: this.getCurrentUserRole(),
+      isStudent: this.isStudent(),
+      isProfessor: this.isProfessor(),
+      environment: window.location.origin
+    });
+
     // Always allow professors to paste anything
     if (this.isProfessor()) {
       console.log('[ClipboardTracker] Professor paste - allowed');
@@ -112,7 +128,10 @@ class ClipboardTracker {
       const isAllowed = this.isContentAllowed(pasteContent);
 
       if (!isAllowed) {
-        console.log('[ClipboardTracker] Student external paste - blocked');
+        console.log('[ClipboardTracker] Student external paste - blocked', {
+          contentPreview: pasteContent?.substring(0, 100),
+          trackedHashes: Array.from(this.allowedContentHashes)
+        });
         this.showRestrictionToast();
         return false;
       }
@@ -122,6 +141,7 @@ class ClipboardTracker {
     }
 
     // Default allow for unknown roles
+    console.log('[ClipboardTracker] Unknown role - defaulting to allow');
     return true;
   }
 

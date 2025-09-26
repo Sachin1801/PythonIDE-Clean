@@ -508,8 +508,8 @@ export default {
         this.copy();
         return;
       }
-      // Ctrl+V - Paste (allow native paste in all text inputs)
-      if (e.ctrlKey && !e.shiftKey && e.key === 'v') {
+      // Ctrl+V or Ctrl+Shift+V - Paste (allow native paste in all text inputs)
+      if (e.ctrlKey && e.key === 'v') {
         if (shouldAllowNativeCopyPaste()) {
           // Let the input handle paste naturally
           return;

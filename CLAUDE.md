@@ -7,15 +7,17 @@ PythonIDE-Clean is a web-based Python IDE designed for educational use at a coll
 
 ### ✅ Implemented Features:
 1. **User authentication** - Login system with bcrypt password hashing
-2. **File isolation** - Each student has `Local/{username}/` folder (41 students) + two test accounts now added admin_viewer and test_studnet ( these both are also testing accounts based from student's perspective)
+2. **File isolation** - Each student has `Local/{username}/` folder (60+ students) + test accounts (admin_viewer, test_student)
 3. **PostgreSQL database** - AWS RDS PostgreSQL for production
 4. **Authenticated WebSockets** - Secure real-time connections
-5. **Role-based permissions** - Student vs Professor access control (3 admin accounts: sl7927, sa9082, et2434, admin_editor, test_admin)
+5. **Role-based permissions** - Student vs Professor access control (admin accounts: sl7927, sa9082, et2434, admin_editor, test_admin)
 6. **AWS deployment** - ECS Fargate with EFS persistent storage
 7. **Session management** - Token-based authentication
 8. **File synchronization** - Database tracks file metadata
 9. **Hybrid REPL System** - Scripts transition to REPL with variable persistence
 10. **Admin permissions** - Professors can see all student directories in Local/
+11. **Universal keyboard shortcuts** - Ctrl+C/V works across all platforms (including Mac) in modals and IDE
+12. **Academic integrity controls** - Copy/paste restrictions prevent students from pasting external content
 
 ### ✅ Production Status:
 - **AWS ECS Service**: Running and stable
@@ -35,21 +37,21 @@ PythonIDE-Clean is a web-based Python IDE designed for educational use at a coll
 ## Current Architecture
 
 ### Core Components:
-1. **PostgreSQL Database** - User management, file metadata, permissions (Railway-hosted)
-2. **Local Filesystem** - Actual file storage at `/server/projects/ide/`
+1. **PostgreSQL Database** - User management, file metadata, permissions (AWS RDS hosted)
+2. **Local Filesystem** - Actual file storage at `/mnt/efs/pythonide-data` (AWS EFS)
 3. **Directory-based Isolation** - Each student gets `Local/{username}/` folder
 4. **WebSocket + Auth** - Authenticated connections with session management
 5. **Subprocess Execution** - Python execution (resource limits pending)
-6. **Railway Platform** - Cloud hosting with automatic scaling
+6. **AWS ECS Fargate** - Container hosting with auto-scaling
 7. **Database Connection Pool** - 5-20 connections for concurrent access
 
 ### Directory Structure:
 ```
-/server/projects/ide/
+/mnt/efs/pythonide-data/
 ├── Local/
 │   ├── sa9082/         # Student's personal workspace
 │   ├── jd1234/         # Another student's workspace
-│   └── ...
+│   └── ...             # 60+ student directories
 ├── Lecture Notes/      # Professor uploads, students read-only
 ```
 
@@ -128,6 +130,60 @@ The IDE features a hybrid REPL (Read-Eval-Print-Loop) system that seamlessly tra
 2. **Empty REPL**: Click "Show REPL" in View menu to open interactive Python without running a script
 3. **File Context**: Each file's REPL maintains separate context; switching files resets REPL
 
+## Keyboard Shortcuts & Academic Integrity
+
+### Universal Keyboard Shortcuts
+The IDE implements consistent keyboard shortcuts across all platforms (Windows, Mac, Linux):
+
+**Implementation:**
+- **Global keyboard handler**: Centralized shortcut management in `TwoHeaderMenu.vue`
+- **Cross-platform consistency**: Uses `Ctrl+C/V` on all platforms (including Mac, not `Cmd+C/V`)
+- **Context-aware behavior**: Allows native copy/paste in text input fields, custom behavior in code editor
+
+**Supported Shortcuts:**
+- **Copy/Cut/Paste**: `Ctrl+C/X/V` - Works in modals, IDE editor, REPL inputs
+- **File Operations**: `Ctrl+S` (Save), `Ctrl+Shift+S` (Save As), `Ctrl+Alt+N` (New File), `Ctrl+O` (Open)
+- **Edit Operations**: `Ctrl+Z/Y` (Undo/Redo), `Ctrl+A` (Select All), `Ctrl+F/H` (Find/Replace)
+- **IDE Operations**: `F5` (Run Script), `Shift+F5` (Stop Script), `Ctrl+B` (Toggle Sidebar)
+
+### Academic Integrity Controls
+
+**Purpose**: Prevent students from copying code from external websites or applications while allowing legitimate IDE usage.
+
+**Implementation:**
+- **Content fingerprinting system** (`/src/utils/clipboardTracker.js`)
+- **CodeMirror integration** with copy/paste validation
+- **Role-based permissions** distinguishing students from professors
+
+**How It Works:**
+1. **Copy Tracking**: When students copy/cut text within the IDE (CodeMirror editor), content is hashed and stored as "allowed"
+2. **Paste Validation**: When students attempt to paste, system checks if content hash exists in allowed list
+3. **Restriction Enforcement**:
+   - ✅ **Students**: Can paste only content previously copied within IDE
+   - ✅ **Professors**: Can paste from anywhere (no restrictions)
+   - ❌ **External Content**: Students see toast notification: "Cannot paste from external websites"
+
+**Technical Details:**
+```javascript
+// Content fingerprinting with normalization
+generateContentHash(content) {
+  const normalized = content.trim().replace(/\s+/g, ' ');
+  // Hash generation with length verification
+}
+
+// Role-based validation
+validatePaste(content) {
+  if (isProfessor()) return true;  // No restrictions
+  if (isStudent()) return isContentAllowed(content);  // Check fingerprint
+}
+```
+
+**Scope of Restrictions:**
+- **Applies to**: CodeMirror editor (main Python coding area)
+- **Does not apply to**: Modal text fields, REPL inputs, other text areas
+- **Cross-file copying**: Students can copy from FileA.py and paste into FileB.py within IDE
+- **No bypass protection**: Currently assumes students won't use DevTools (can be added later)
+
 ## Technical Stack
 
 ### Backend:
@@ -145,26 +201,27 @@ The IDE features a hybrid REPL (Read-Eval-Print-Loop) system that seamlessly tra
 - **Element Plus** UI components
 
 ### File Storage:
-- **Local filesystem** at `/server/projects/ide/`
-- **No external storage needed** (no S3, no cloud)
+- **AWS EFS filesystem** at `/mnt/efs/pythonide-data/`
+- **Persistent storage** across container restarts
 - **PostgreSQL tracks metadata** (ownership, permissions, grades)
 - **File synchronization** via `file_sync` module
 - **Binary file support** for PDFs, images, CSVs
 
 ## Key Design Decisions
 
-1. **Why PostgreSQL over SQLite?** (Updated)
+1. **Why PostgreSQL over SQLite?**
    - Handles 60+ concurrent users (SQLite limited to 5-10)
    - Connection pooling for better concurrency
-   - Railway provides managed PostgreSQL
+   - AWS RDS provides managed PostgreSQL with automatic backups
    - Better performance under load
    - ACID transactions with proper locking
 
-2. **Why local files over cloud storage?**
-   - Already have server infrastructure
-   - No external service costs
-   - Fast file access (no network latency)
-   - Simple deployment for college environment
+2. **Why AWS EFS over local storage?**
+   - Persistent storage across container restarts
+   - Automatic scaling and redundancy
+   - Shared access for multiple container instances
+   - Built-in backup and versioning
+   - Integration with AWS security policies
 
 3. **Why directory-based isolation?**
    - Simple permission model
@@ -172,13 +229,12 @@ The IDE features a hybrid REPL (Read-Eval-Print-Loop) system that seamlessly tra
    - Easy for professors to understand/navigate
    - Natural organization for course materials
 
-4. **Why Railway over self-hosted?**
-   - Zero infrastructure management
-   - Automatic SSL/HTTPS
-   - Built-in PostgreSQL
-   - Easy GitHub integration
-   - Automatic deployments
-   - Cost-effective for education ($0-20/month)
+4. **Why AWS ECS Fargate over self-hosted?**
+   - Zero server management
+   - Automatic scaling based on demand
+   - Built-in load balancing and SSL/HTTPS
+   - Integration with AWS security and monitoring
+   - Pay-per-use pricing model
 
 ## Implementation Guidelines
 
@@ -218,28 +274,31 @@ npm run build
 python server/server.py --port 10086
 ```
 
-### Railway Deployment:
+### AWS Deployment:
 ```bash
-# Deploy to Railway
-railway up
+# Automated deployment via GitHub Actions
+git push origin main  # Triggers production deployment
 
-# Create users in PostgreSQL
-railway run python server/migrations/create_users.py
+# Manual deployment (if needed)
+aws ecs update-service --cluster pythonide-cluster --service pythonide-service --force-new-deployment --region us-east-2
 
-# View logs
-railway logs
+# View container logs
+aws logs tail /aws/ecs/pythonide --follow --region us-east-2
 
-# Get deployment URL
-railway domain
+# Check service status
+aws ecs describe-services --cluster pythonide-cluster --services pythonide-service --region us-east-2
 ```
 
 ### Database Management:
 ```bash
-# Connect to PostgreSQL
-railway run psql $DATABASE_URL
+# Connect to AWS RDS PostgreSQL
+psql -h pythonide-db.c1u6aa2mqwwf.us-east-2.rds.amazonaws.com -U pythonide_admin -d pythonide
 
 # Backup database
-railway run pg_dump $DATABASE_URL > backup.sql
+pg_dump -h pythonide-db.c1u6aa2mqwwf.us-east-2.rds.amazonaws.com -U pythonide_admin pythonide > backup.sql
+
+# Create users in PostgreSQL
+python server/migrations/create_users.py
 ```
 
 ## FAQ for Future Development
@@ -255,11 +314,11 @@ A: Yes, architecture supports adding features like:
 - Plagiarism detection
 
 **Q: What about scaling beyond 60 users?**
-A: Current architecture with PostgreSQL can handle ~100 users. Beyond that:
+A: Current architecture with AWS can handle ~200 users. Beyond that:
 - Add Redis for session caching
-- Implement horizontal scaling on Railway
-- Add CDN for static assets
-- Consider microservices architecture
+- Implement horizontal scaling with multiple ECS tasks
+- Add CloudFront CDN for static assets
+- Consider microservices architecture with AWS Lambda
 
 **Q: How do we handle exam mode?**
 A: Can implement:
@@ -271,23 +330,25 @@ A: Can implement:
 ## Contact & Documentation
 
 - **Project Lead:** Sachin Adlakha
-- **Deployment Platform:** Railway.app cloud
-- **Database:** PostgreSQL (Railway-managed)
-- **User Base:** 60 students + 1-2 professors
+- **Deployment Platform:** AWS ECS Fargate
+- **Database:** PostgreSQL (AWS RDS managed)
+- **User Base:** 60+ students + admin accounts
 - **Course:** Introductory Python Programming
-- **Status:** Production-ready with PostgreSQL
+- **Status:** Production-ready with AWS infrastructure
 
 ## Next Steps
 
 1. ✅ ~~Implement user authentication system~~ (DONE)
 2. ✅ ~~Add directory-based file isolation~~ (DONE)
-3. ✅ ~~Deploy to Railway with PostgreSQL~~ (DONE)
+3. ✅ ~~Deploy to AWS with PostgreSQL~~ (DONE)
 4. ✅ ~~Implement Hybrid REPL System~~ (DONE)
-5. ⏳ Add resource limits for code execution
-6. ⏳ Implement rate limiting
-7. ⏳ Create professor grading interface
-8. ⏳ Add automated backups
-9. ⏳ Implement monitoring and alerting
+5. ✅ ~~Universal keyboard shortcuts~~ (DONE)
+6. ✅ ~~Academic integrity copy/paste controls~~ (DONE)
+7. ⏳ Add resource limits for code execution
+8. ⏳ Implement rate limiting
+9. ⏳ Create professor grading interface
+10. ⏳ Add automated backups
+11. ⏳ Implement monitoring and alerting
 
 ---
 

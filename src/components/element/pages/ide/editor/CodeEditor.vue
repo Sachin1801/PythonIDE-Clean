@@ -228,28 +228,12 @@ export default {
             return false; // Prevent default behavior
           },
 
-          // Paste operation - validate for students
+          // Paste operation - validate for students (handle both Ctrl+V and Ctrl+Shift+V)
           'Ctrl-V': async (cm) => {
-            try {
-              // Get clipboard content
-              const clipboardText = await navigator.clipboard.readText();
-
-              // Validate paste for students
-              const isAllowed = await clipboardTracker.validatePaste(clipboardText);
-
-              if (isAllowed) {
-                // Allow paste - use CodeMirror's built-in paste
-                cm.replaceSelection(clipboardText);
-                console.log('[CodeMirror] Paste allowed:', clipboardText.substring(0, 50));
-              } else {
-                // Paste blocked - validatePaste already showed the toast
-                console.log('[CodeMirror] Paste blocked for student');
-              }
-            } catch (error) {
-              console.error('[CodeMirror] Paste error:', error);
-              // Fallback to default paste if clipboard API fails
-              document.execCommand('paste');
-            }
+            await this.handlePasteOperation(cm);
+          },
+          'Shift-Ctrl-V': async (cm) => {
+            await this.handlePasteOperation(cm);
           }
         },
       }
@@ -461,6 +445,51 @@ export default {
         }, 500); // Debounce for 500ms
       } else {
         console.log('[CHARACTER-SAVE] Skipping character-based save (auto-save enabled in localStorage)');
+      }
+    },
+
+    /**
+     * Handle paste operations with clipboard validation
+     */
+    async handlePasteOperation(cm) {
+      try {
+        console.log('[CodeMirror] Paste operation started');
+
+        // Try to get clipboard content
+        let clipboardText;
+        if (navigator.clipboard && navigator.clipboard.readText) {
+          clipboardText = await navigator.clipboard.readText();
+        } else {
+          // Fallback for browsers without clipboard API support
+          console.log('[CodeMirror] Using fallback paste method');
+          document.execCommand('paste');
+          return;
+        }
+
+        console.log('[CodeMirror] Clipboard content retrieved:', clipboardText?.substring(0, 50));
+
+        // Validate paste for students
+        const isAllowed = await clipboardTracker.validatePaste(clipboardText);
+
+        if (isAllowed) {
+          // Allow paste - use CodeMirror's built-in paste
+          cm.replaceSelection(clipboardText);
+          console.log('[CodeMirror] Paste allowed:', clipboardText.substring(0, 50));
+        } else {
+          // Paste blocked - validatePaste already showed the toast
+          console.log('[CodeMirror] Paste blocked for student');
+        }
+      } catch (error) {
+        console.error('[CodeMirror] Paste error:', error, {
+          hasClipboardAPI: !!navigator.clipboard,
+          hasReadText: !!(navigator.clipboard && navigator.clipboard.readText),
+          isSecureContext: window.isSecureContext,
+          origin: window.location.origin
+        });
+
+        // Fallback to default paste if clipboard API fails
+        console.log('[CodeMirror] Using fallback paste due to error');
+        document.execCommand('paste');
       }
     },
     anywordHint(editor, options) {

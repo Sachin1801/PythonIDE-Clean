@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 
+
 class HandlerInfo(object):
     def __init__(self, *args, **kwargs) -> None:
         self.subprograms = {}
-    
+
     def set_subprogram(self, program_id, sub_t):
         self.stop_subprogram(program_id)
         self.subprograms[program_id] = sub_t
-    
+
     def get_subprogram(self, program_id):
         """Get a running subprogram by ID"""
         return self.subprograms.get(program_id, None)
-    
+
     def remove_subprogram(self, program_id):
         if program_id is None:
             self.stop_subprogram()
@@ -19,11 +20,11 @@ class HandlerInfo(object):
         elif program_id in self.subprograms:
             self.stop_subprogram(program_id)
             self.subprograms.pop(program_id, None)
-    
+
     def start_subprogram(self, program_id):
         if program_id in self.subprograms:
             self.subprograms[program_id].start()
-    
+
     def stop_subprogram(self, program_id):
         if program_id is None:
             # Stop all subprograms
@@ -45,4 +46,3 @@ class HandlerInfo(object):
             except Exception as e:
                 print(f"[HANDLER-INFO] Error stopping subprogram {program_id}: {e}")
                 pass
-

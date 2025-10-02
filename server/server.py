@@ -295,7 +295,14 @@ def main():
     
     # Start health monitoring service
     health_monitor.start()
-    
+
+    # Start idle session cleanup job (auto-logout after 1 hour inactivity)
+    from auth.user_manager_postgres import UserManager, IdleSessionCleanupJob
+    user_manager = UserManager()
+    idle_cleanup = IdleSessionCleanupJob(user_manager)
+    idle_cleanup.start()
+    logger.info("Idle session cleanup job started (1-hour inactivity timeout)")
+
     main_ioloop.start()
 
 

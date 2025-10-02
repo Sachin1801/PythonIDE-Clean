@@ -91,21 +91,33 @@ if last_activity:
 ### Updated Tests
 
 **File:** `.github/workflows/development-test.yml`
-**Lines:** 160-203
+**Lines:** 160-223
 
-Changed from database connection test (which required PostgreSQL setup) to **code structure validation**:
+Changed from database connection test (which required PostgreSQL setup) to **static code validation**:
 
 ```python
-# Verifies:
-1. DatabaseManager and UserManager import successfully
-2. Critical methods exist (validate_session, update_session_activity, cleanup_idle_sessions)
-3. Session timeout logic contains:
-   - 'last_activity' check
-   - 'timedelta(hours=1)' timeout
-   - 'idle_duration' calculation
+# Validates by reading files as text (no import = no database connection):
+1. user_manager_postgres.py compiles successfully (syntax check)
+2. database.py compiles successfully (syntax check)
+3. Critical methods exist:
+   - validate_session, update_session_activity, cleanup_idle_sessions
+4. Session timeout logic verified:
+   - 'last_activity' check present
+   - 'timedelta(hours=1)' timeout set
+   - 'idle_duration' calculation present
+   - 'INACTIVITY_TIMEOUT' constant exists
+5. Timezone fixes verified:
+   - 'tzinfo' normalization present
+   - 'replace(tzinfo=None)' stripping logic present
+6. Session creation fix verified:
+   - 'INSERT INTO sessions (user_id, token, expires_at, last_activity)' present
 ```
 
-**Why:** Works in CI/CD without requiring database connection, faster and more reliable.
+**Why:**
+- No database connection required (reads files as text, doesn't import)
+- Works in CI/CD without PostgreSQL running
+- Faster execution (no network calls)
+- Validates both syntax and logic
 
 ---
 

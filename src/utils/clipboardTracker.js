@@ -89,7 +89,21 @@ class ClipboardTracker {
    */
   isProfessor() {
     const role = this.getCurrentUserRole();
-    return ['admin', 'professor'].includes(role);
+    const username = localStorage.getItem('username');
+
+    // Check for admin/professor roles OR admin usernames
+    const isAdminRole = ['admin', 'professor'].includes(role);
+    const isAdminUser = ['admin_editor', 'test_admin', 'sl7927', 'sa9082', 'et2434'].includes(username);
+
+    console.log('[ClipboardTracker] Admin check:', {
+      role,
+      username,
+      isAdminRole,
+      isAdminUser,
+      finalResult: isAdminRole || isAdminUser
+    });
+
+    return isAdminRole || isAdminUser;
   }
 
   /**

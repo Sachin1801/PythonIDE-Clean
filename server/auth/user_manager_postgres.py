@@ -170,10 +170,19 @@ class UserManager:
             # AUTO-LOGOUT: Check for 1-hour inactivity timeout
             last_activity = session.get("last_activity")
             if last_activity:
-                # Handle both string and datetime types
+                # Handle both string and datetime types, ensuring timezone-naive comparison
                 if isinstance(last_activity, str):
+                    # Parse ISO format string and strip timezone info to match datetime.now()
                     last_activity = datetime.fromisoformat(last_activity.replace("Z", "+00:00"))
+                    # Convert to naive datetime by removing timezone info
+                    if last_activity.tzinfo is not None:
+                        last_activity = last_activity.replace(tzinfo=None)
+                elif isinstance(last_activity, datetime):
+                    # If datetime object has timezone, remove it for consistent comparison
+                    if last_activity.tzinfo is not None:
+                        last_activity = last_activity.replace(tzinfo=None)
 
+                # Both datetimes are now timezone-naive, safe to subtract
                 idle_duration = datetime.now() - last_activity
                 INACTIVITY_TIMEOUT = timedelta(hours=1)  # 1 hour timeout
 

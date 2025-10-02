@@ -361,7 +361,38 @@ const actions = {
         wsInfo.logger.log(`Websocket onmessage: ${evt.data}`);
       }
       const dict = JSON.parse(evt.data) || {};
-      
+
+      // SINGLE-SESSION & AUTO-LOGOUT: Handle session termination
+      if (dict.type === 'session_terminated') {
+        wsInfo.logger.warn('Session terminated:', dict.reason);
+        context.commit('setAuthenticated', { wsKey: wsKey, authenticated: false });
+        context.commit('setConnected', { wsKey: wsKey, connected: false });
+
+        // Clear local storage
+        localStorage.removeItem('session_id');
+        localStorage.removeItem('username');
+        localStorage.removeItem('role');
+
+        // Show user-friendly message
+        let message = dict.message || 'Your session has been terminated.';
+        if (dict.reason === 'logged_in_elsewhere') {
+          message = 'Another login for the same account detected. You have been logged out.';
+        } else if (dict.reason === 'inactivity') {
+          message = 'Your session expired due to inactivity (1 hour).';
+        }
+
+        // Trigger logout in app (use router to redirect to login)
+        // We'll emit a custom event that App.vue can listen for
+        window.dispatchEvent(new CustomEvent('session-terminated', {
+          detail: {
+            reason: dict.reason,
+            message: message
+          }
+        }));
+
+        return; // Don't process other handlers
+      }
+
       // Handle authentication response
       if (dict.type === 'auth_required') {
         wsInfo.logger.log('Authentication required by server');
@@ -371,14 +402,14 @@ const actions = {
         wsInfo.logger.log('Authentication successful:', dict.username);
         // Use mutation to set authenticated state
         context.commit('setAuthenticated', { wsKey: wsKey, authenticated: true });
-        
+
         // Load the user's initial project structure
         const username = dict.username || localStorage.getItem('username');
         const role = dict.role || localStorage.getItem('role');
-        
+
         // For students, load their personal directory; for professors, load all
         const projectName = role === 'student' ? `Local/${username}` : 'Local';
-        
+
         // Request the project structure
         const getProjectMsg = {
           cmd: 'ide_get_project',
@@ -386,7 +417,7 @@ const actions = {
         };
         rws.send(JSON.stringify(getProjectMsg));
         wsInfo.logger.log('Requested initial project:', projectName);
-        
+
         // Now we can process queued commands
       } else if (dict.type === 'error' && dict.message && dict.message.includes('Not authenticated')) {
         wsInfo.logger.warn('Not authenticated, waiting for authentication...');

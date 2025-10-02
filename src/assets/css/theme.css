@@ -227,6 +227,7 @@ body {
 
 :root[data-theme="light"] .cm-def {
   color: #795e26 !important;
+  font-style: normal !important;
 }
 
 :root[data-theme="light"] .cm-operator {
@@ -282,6 +283,7 @@ body {
 
 :root[data-theme="dark"] .cm-def {
   color: #dcdcaa !important;
+  font-style: normal !important;
 }
 
 :root[data-theme="dark"] .cm-operator {
@@ -346,6 +348,7 @@ body {
 
 :root[data-theme="contrast"] .cm-def {
   color: #00ff00 !important;
+  font-style: normal !important;
 }
 
 :root[data-theme="contrast"] .cm-operator {

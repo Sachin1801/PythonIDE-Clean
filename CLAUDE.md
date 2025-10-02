@@ -3,6 +3,9 @@
 ## Project Overview
 PythonIDE-Clean is a web-based Python IDE designed for educational use at a college. It supports 60+ concurrent students, allowing them to write, execute, and submit Python code for assignments and tests.
 
+## Bash command instructions
+I will run the frontend and the backend service on terminal on my own, you do not have to try to run the service on the terminal for testing after making changes in the code files. Whenever we are testing the new code changes made and we need a service refresh, then you have to tell me explicitly for this.
+
 ## Current Status (Updated: 25 September 2025)
 
 ### ✅ Implemented Features:

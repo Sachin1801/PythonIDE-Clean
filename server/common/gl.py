@@ -3,6 +3,7 @@ import os
 import sys
 from tornado import queues
 
+
 class GLOBAL:
     class Queue:
         req_msg_que = queues.Queue()
@@ -10,6 +11,4 @@ class GLOBAL:
 
     class Path:
         PYTHON = sys.executable
-        PROJECTS = os.path.join(os.path.abspath('.'), 'projects')
-
-
+        PROJECTS = os.path.join(os.path.abspath("."), "projects")

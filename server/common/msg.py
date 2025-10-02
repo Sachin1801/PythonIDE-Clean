@@ -43,4 +43,3 @@ async def req_get(timeout=None):
 
 async def res_get(timeout=None):
     return await RES_QUE.get(timeout=timeout)
-

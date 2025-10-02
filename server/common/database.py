@@ -138,9 +138,19 @@ class DatabaseManager:
                     token VARCHAR(255) UNIQUE NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     expires_at TIMESTAMP,
-                    is_active BOOLEAN DEFAULT true
+                    is_active BOOLEAN DEFAULT true,
+                    last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+
+            # Add last_activity column if it doesn't exist (migration)
+            cursor.execute("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name='sessions' AND column_name='last_activity'
+            """)
+            if not cursor.fetchone():
+                cursor.execute("ALTER TABLE sessions ADD COLUMN last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
             
             # File metadata table
             cursor.execute('''
@@ -214,7 +224,8 @@ class DatabaseManager:
                 token TEXT UNIQUE NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 expires_at TIMESTAMP,
-                is_active INTEGER DEFAULT 1
+                is_active INTEGER DEFAULT 1,
+                last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
         

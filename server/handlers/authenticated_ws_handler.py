@@ -2,6 +2,7 @@
 
 import json
 import datetime
+import threading
 from tornado import websocket
 from tornado import ioloop
 import tornado.web
@@ -77,6 +78,107 @@ class RateLimiter:
 rate_limiter = RateLimiter()
 
 
+class WebSocketConnectionRegistry:
+    """Global registry to track active WebSocket connections per user (single-session enforcement)"""
+
+    def __init__(self):
+        self._connections = {}  # username -> handler
+        self._lock = threading.Lock()
+
+    def register(self, username, handler):
+        """
+        Register new WebSocket connection for user.
+        If user already has active connection, terminate the old one.
+        """
+        with self._lock:
+            # Check if user already has active connection
+            if username in self._connections:
+                old_handler = self._connections[username]
+                logger.info(f"User {username} logging in from new location. Terminating old session.")
+
+                # Send termination message to old connection
+                try:
+                    old_handler.write_message(json.dumps({
+                        'type': 'session_terminated',
+                        'reason': 'logged_in_elsewhere',
+                        'message': 'Another login for the same account detected. You have been logged out.'
+                    }))
+                    # Close old connection gracefully
+                    old_handler.close(code=4001, reason="Logged in from another location")
+                except Exception as e:
+                    logger.error(f"Error terminating old connection for {username}: {e}")
+
+            # Register new connection
+            self._connections[username] = handler
+            logger.info(f"Registered WebSocket connection for {username}")
+
+    def unregister(self, username):
+        """Remove WebSocket connection for user"""
+        with self._lock:
+            if username in self._connections:
+                del self._connections[username]
+                logger.info(f"Unregistered WebSocket connection for {username}")
+
+    def get_handler(self, username):
+        """Get active WebSocket handler for username"""
+        with self._lock:
+            return self._connections.get(username)
+
+    def terminate_session(self, username, reason="inactivity"):
+        """Terminate active WebSocket connection for user"""
+        with self._lock:
+            if username in self._connections:
+                handler = self._connections[username]
+                try:
+                    handler.write_message(json.dumps({
+                        'type': 'session_terminated',
+                        'reason': reason,
+                        'message': f'Session terminated due to {reason}.'
+                    }))
+                    handler.close(code=4002, reason=f"Session terminated: {reason}")
+                except Exception as e:
+                    logger.error(f"Error terminating session for {username}: {e}")
+
+                del self._connections[username]
+                logger.info(f"Terminated session for {username} (reason: {reason})")
+                return True
+        return False
+
+    def terminate_sessions_by_token(self, tokens, reason="logged_in_elsewhere"):
+        """
+        Terminate WebSocket connections for sessions with given tokens.
+        Used for database-level single-session enforcement.
+        """
+        terminated_count = 0
+        with self._lock:
+            # Find handlers with matching session tokens
+            handlers_to_terminate = []
+            for username, handler in list(self._connections.items()):
+                if hasattr(handler, 'session_id') and handler.session_id in tokens:
+                    handlers_to_terminate.append((username, handler))
+
+            # Terminate each matching handler
+            for username, handler in handlers_to_terminate:
+                try:
+                    handler.write_message(json.dumps({
+                        'type': 'session_terminated',
+                        'reason': reason,
+                        'message': 'Another login for the same account detected. You have been logged out.'
+                    }))
+                    handler.close(code=4001, reason="Logged in from another location")
+                    del self._connections[username]
+                    terminated_count += 1
+                    logger.info(f"Terminated session for {username} (token: {handler.session_id[:8]}...)")
+                except Exception as e:
+                    logger.error(f"Error terminating connection for {username}: {e}")
+
+        return terminated_count
+
+
+# Global connection registry instance
+ws_connection_registry = WebSocketConnectionRegistry()
+
+
 class AuthenticatedWebSocketHandler(websocket.WebSocketHandler, WebSocketKeepaliveMixin):
     """WebSocket handler with authentication and secure file operations"""
     
@@ -130,10 +232,14 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler, WebSocketKeepali
     def on_close(self) -> None:
         self.connected = False
         self.authenticated = False
-        
+
         # Cleanup keepalive
         self.cleanup_keepalive()
-        
+
+        # SINGLE-SESSION: Unregister WebSocket connection
+        if self.username:
+            ws_connection_registry.unregister(self.username)
+
         # Cleanup REPL handlers if they exist
         if hasattr(self, 'repl_handlers'):
             for file_path, handler in self.repl_handlers.items():
@@ -144,7 +250,7 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler, WebSocketKeepali
                 except Exception as e:
                     logger.error(f"Error cleaning up REPL handler for {file_path}: {e}")
             self.repl_handlers.clear()
-        
+
         logger.info(f'WebSocket connection closed: ip={self.request.remote_ip}, user={self.username}, time={datetime.datetime.now()}')
     
     def on_message(self, message: Union[str, bytes]) -> Optional[Awaitable[None]]:
@@ -152,19 +258,26 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler, WebSocketKeepali
         try:
             data = json.loads(message)
             cmd = data.get('cmd')
-            
+
             # Handle keepalive pong responses
             if cmd == 'pong' or data.get('type') == 'pong':
                 if hasattr(self, 'last_pong_time'):
                     self.last_pong_time = time()
+                # AUTO-LOGOUT: Update activity on keepalive pong
+                if self.authenticated and self.session_id:
+                    self.user_manager.update_session_activity(self.session_id)
                 return
-            
+
             # Handle authentication first
             if cmd == 'authenticate':
                 self.handle_authentication(data)
             elif not self.authenticated:
                 self.write_error("Not authenticated. Please login first.")
             else:
+                # AUTO-LOGOUT: Update last_activity on every authenticated message
+                if self.session_id:
+                    self.user_manager.update_session_activity(self.session_id)
+
                 # Route to appropriate handler based on command
                 # Pass the entire message for legacy compatibility
                 self.handle_command(cmd, data)
@@ -208,7 +321,18 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler, WebSocketKeepali
                             file_sync.create_initial_files(result['user_id'], self.username, self.role)
                     except Exception as e:
                         logger.error(f'Error syncing files for {self.username}: {e}')
-                    
+
+                    # SINGLE-SESSION ENFORCEMENT: Database-level invalidation + WebSocket termination
+                    # Invalidate all other active sessions for this user in the database
+                    other_tokens = self.user_manager.invalidate_other_sessions(result['user_id'], self.session_id)
+                    if other_tokens:
+                        # Terminate WebSocket connections for those invalidated sessions
+                        terminated = ws_connection_registry.terminate_sessions_by_token(other_tokens)
+                        logger.info(f"Terminated {terminated} other WebSocket connections for {self.username}")
+
+                    # Register this WebSocket connection (also handles in-memory registry check)
+                    ws_connection_registry.register(self.username, self)
+
                     self.write_message(json.dumps({
                         'type': 'auth_success',
                         'username': self.username,
@@ -241,7 +365,18 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler, WebSocketKeepali
                     file_sync.create_initial_files(session['user_id'], self.username, self.role)
             except Exception as e:
                 logger.error(f'Error syncing files for {self.username}: {e}')
-            
+
+            # SINGLE-SESSION ENFORCEMENT: Database-level invalidation + WebSocket termination
+            # Invalidate all other active sessions for this user in the database
+            other_tokens = self.user_manager.invalidate_other_sessions(session['user_id'], self.session_id)
+            if other_tokens:
+                # Terminate WebSocket connections for those invalidated sessions
+                terminated = ws_connection_registry.terminate_sessions_by_token(other_tokens)
+                logger.info(f"Terminated {terminated} other WebSocket connections for {self.username}")
+
+            # Register this WebSocket connection (also handles in-memory registry check)
+            ws_connection_registry.register(self.username, self)
+
             self.write_message(json.dumps({
                 'type': 'auth_success',
                 'username': self.username,

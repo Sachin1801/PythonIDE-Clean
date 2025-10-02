@@ -3,6 +3,11 @@ import secrets
 from datetime import datetime, timedelta
 import os
 import sys
+import threading
+import time as time_module
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -74,7 +79,18 @@ class UserManager:
             
             if not bcrypt.checkpw(password.encode(), password_hash.encode()):
                 return None, "Invalid username or password"
-            
+
+            # SINGLE-SESSION ENFORCEMENT: Invalidate all existing active sessions for this user
+            invalidate_query = '''
+                UPDATE sessions SET is_active = false
+                WHERE user_id = %s AND is_active = true
+            ''' if self.db.is_postgres else '''
+                UPDATE sessions SET is_active = 0
+                WHERE user_id = ? AND is_active = 1
+            '''
+            self.db.execute_query(invalidate_query, (user_id,))
+            logger.info(f"Invalidated existing sessions for user {username} (user_id: {user_id})")
+
             # Create session token
             token = secrets.token_urlsafe(32)
             expires_at = datetime.now() + timedelta(hours=24)
@@ -111,27 +127,43 @@ class UserManager:
             return None, f"Authentication failed: {e}"
     
     def validate_session(self, token):
-        """Validate session token"""
+        """Validate session token and check for inactivity timeout (1 hour)"""
         try:
             query = '''
-                SELECT s.*, u.username, u.role, u.full_name 
-                FROM sessions s 
-                JOIN users u ON s.user_id = u.id 
+                SELECT s.*, u.username, u.role, u.full_name
+                FROM sessions s
+                JOIN users u ON s.user_id = u.id
                 WHERE s.token = %s AND s.is_active = true AND s.expires_at > %s
             ''' if self.db.is_postgres else '''
-                SELECT s.*, u.username, u.role, u.full_name 
-                FROM sessions s 
-                JOIN users u ON s.user_id = u.id 
+                SELECT s.*, u.username, u.role, u.full_name
+                FROM sessions s
+                JOIN users u ON s.user_id = u.id
                 WHERE s.token = ? AND s.is_active = 1 AND s.expires_at > ?
             '''
-            
+
             sessions = self.db.execute_query(query, (token, datetime.now()))
-            
+
             if not sessions:
                 return None
-            
+
             session = sessions[0]
-            
+
+            # AUTO-LOGOUT: Check for 1-hour inactivity timeout
+            last_activity = session.get('last_activity')
+            if last_activity:
+                # Handle both string and datetime types
+                if isinstance(last_activity, str):
+                    last_activity = datetime.fromisoformat(last_activity.replace('Z', '+00:00'))
+
+                idle_duration = datetime.now() - last_activity
+                INACTIVITY_TIMEOUT = timedelta(hours=1)  # 1 hour timeout
+
+                if idle_duration > INACTIVITY_TIMEOUT:
+                    # Session expired due to inactivity
+                    logger.info(f"Session for {session['username']} expired due to inactivity ({idle_duration})")
+                    self.logout(token)
+                    return None
+
             # With RealDictCursor, this will always be a dict
             return {
                 'user_id': session['user_id'],
@@ -139,10 +171,62 @@ class UserManager:
                 'role': session['role'],
                 'full_name': session.get('full_name', session['username'])
             }
-                
+
         except Exception as e:
             print(f"Session validation error: {e}")
             return None
+
+    def update_session_activity(self, token):
+        """Update last_activity timestamp for a session"""
+        try:
+            query = '''
+                UPDATE sessions SET last_activity = %s
+                WHERE token = %s AND is_active = true
+            ''' if self.db.is_postgres else '''
+                UPDATE sessions SET last_activity = ?
+                WHERE token = ? AND is_active = 1
+            '''
+
+            self.db.execute_query(query, (datetime.now(), token))
+            return True
+        except Exception as e:
+            logger.error(f"Failed to update session activity: {e}")
+            return False
+
+    def invalidate_other_sessions(self, user_id, current_token):
+        """
+        Invalidate all other active sessions for a user except the current one.
+        Returns list of invalidated session tokens (for WebSocket termination).
+        """
+        try:
+            # Get all other active session tokens for this user
+            query = '''
+                SELECT token FROM sessions
+                WHERE user_id = %s AND token != %s AND is_active = true
+            ''' if self.db.is_postgres else '''
+                SELECT token FROM sessions
+                WHERE user_id = ? AND token != ? AND is_active = 1
+            '''
+
+            other_sessions = self.db.execute_query(query, (user_id, current_token))
+            other_tokens = [row['token'] for row in other_sessions] if other_sessions else []
+
+            if other_tokens:
+                # Invalidate all other sessions
+                invalidate_query = '''
+                    UPDATE sessions SET is_active = false
+                    WHERE user_id = %s AND token != %s AND is_active = true
+                ''' if self.db.is_postgres else '''
+                    UPDATE sessions SET is_active = 0
+                    WHERE user_id = ? AND token != ? AND is_active = 1
+                '''
+                self.db.execute_query(invalidate_query, (user_id, current_token))
+                logger.info(f"Invalidated {len(other_tokens)} other sessions for user_id {user_id}")
+
+            return other_tokens
+        except Exception as e:
+            logger.error(f"Failed to invalidate other sessions: {e}")
+            return []
     
     def logout(self, token):
         """Invalidate a session token"""
@@ -431,3 +515,101 @@ class UserManager:
             
         except Exception as e:
             return {'success': False, 'error': f'Failed to get users: {str(e)}'}
+
+    def cleanup_idle_sessions(self):
+        """
+        Cleanup sessions that have been idle for more than 1 hour.
+        This is called periodically by background job.
+        """
+        try:
+            INACTIVITY_TIMEOUT = timedelta(hours=1)  # 1 hour timeout
+            cutoff_time = datetime.now() - INACTIVITY_TIMEOUT
+
+            query = '''
+                UPDATE sessions SET is_active = false
+                WHERE last_activity < %s AND is_active = true
+            ''' if self.db.is_postgres else '''
+                UPDATE sessions SET is_active = 0
+                WHERE last_activity < ? AND is_active = 1
+            '''
+
+            result = self.db.execute_query(query, (cutoff_time,))
+
+            # Get list of affected users to terminate their WebSocket connections
+            affected_query = '''
+                SELECT DISTINCT u.username
+                FROM sessions s
+                JOIN users u ON s.user_id = u.id
+                WHERE s.last_activity < %s AND s.is_active = false
+            ''' if self.db.is_postgres else '''
+                SELECT DISTINCT u.username
+                FROM sessions s
+                JOIN users u ON s.user_id = u.id
+                WHERE s.last_activity < ? AND s.is_active = 0
+            '''
+
+            affected_users = self.db.execute_query(affected_query, (cutoff_time,))
+
+            if affected_users:
+                logger.info(f"Cleaned up {len(affected_users)} idle sessions")
+                return [user['username'] for user in affected_users]
+
+            return []
+
+        except Exception as e:
+            logger.error(f"Error cleaning up idle sessions: {e}")
+            return []
+
+
+# Background job for idle session cleanup
+class IdleSessionCleanupJob:
+    """Background thread that periodically cleans up idle sessions"""
+
+    def __init__(self, user_manager):
+        self.user_manager = user_manager
+        self.running = False
+        self.thread = None
+
+    def start(self):
+        """Start the cleanup background job"""
+        if self.running:
+            return
+
+        self.running = True
+        self.thread = threading.Thread(target=self._cleanup_loop, daemon=True)
+        self.thread.start()
+        logger.info("Idle session cleanup job started (runs every 5 minutes)")
+
+    def stop(self):
+        """Stop the cleanup background job"""
+        self.running = False
+        if self.thread:
+            self.thread.join(timeout=5)
+        logger.info("Idle session cleanup job stopped")
+
+    def _cleanup_loop(self):
+        """Main cleanup loop"""
+        while self.running:
+            try:
+                # Run cleanup every 5 minutes
+                time_module.sleep(300)
+
+                idle_users = self.user_manager.cleanup_idle_sessions()
+
+                # Terminate WebSocket connections for idle users
+                if idle_users:
+                    # Import here to avoid circular dependency
+                    from handlers.authenticated_ws_handler import ws_connection_registry
+
+                    for username in idle_users:
+                        ws_connection_registry.terminate_session(username, reason="inactivity")
+
+                    logger.info(f"Terminated {len(idle_users)} idle WebSocket connections")
+
+            except Exception as e:
+                logger.error(f"Error in idle session cleanup loop: {e}")
+                time_module.sleep(60)  # Wait 1 minute before retrying on error
+
+
+# Global cleanup job instance (started by server.py)
+idle_cleanup_job = None

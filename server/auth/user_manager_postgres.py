@@ -106,6 +106,12 @@ class UserManager:
             current_time = datetime.now()
             expires_at = current_time + timedelta(hours=24)
 
+            # DEBUG LOGGING - Remove after debugging
+            logger.info(f"[SESSION-CREATE] Creating session for user {username}")
+            logger.info(f"[SESSION-CREATE] Current time: {current_time} (type: {type(current_time)}, tz: {current_time.tzinfo})")
+            logger.info(f"[SESSION-CREATE] Expires at: {expires_at}")
+            logger.info(f"[SESSION-CREATE] Initial last_activity: {current_time}")
+
             session_query = (
                 """
                 INSERT INTO sessions (user_id, token, expires_at, last_activity)
@@ -119,6 +125,7 @@ class UserManager:
             )
 
             self.db.execute_query(session_query, (user_id, token, expires_at, current_time))
+            logger.info(f"[SESSION-CREATE] Session created successfully for {username}")
 
             # Update last login
             update_query = (
@@ -169,28 +176,51 @@ class UserManager:
 
             # AUTO-LOGOUT: Check for 1-hour inactivity timeout
             last_activity = session.get("last_activity")
+
+            # DEBUG LOGGING - Remove after debugging
+            current_time = datetime.now()
+            logger.info(f"[SESSION-DEBUG] User: {session['username']}")
+            logger.info(f"[SESSION-DEBUG] Current time: {current_time} (type: {type(current_time)}, tz: {current_time.tzinfo})")
+            logger.info(f"[SESSION-DEBUG] Last activity raw: {last_activity} (type: {type(last_activity)})")
+
             if last_activity:
+                original_last_activity = last_activity  # Store original for logging
+
                 # Handle both string and datetime types, ensuring timezone-naive comparison
                 if isinstance(last_activity, str):
                     # Parse ISO format string and strip timezone info to match datetime.now()
                     last_activity = datetime.fromisoformat(last_activity.replace("Z", "+00:00"))
+                    logger.info(f"[SESSION-DEBUG] Parsed from string: {last_activity} (tz: {last_activity.tzinfo})")
                     # Convert to naive datetime by removing timezone info
                     if last_activity.tzinfo is not None:
                         last_activity = last_activity.replace(tzinfo=None)
+                        logger.info(f"[SESSION-DEBUG] After stripping timezone: {last_activity}")
                 elif isinstance(last_activity, datetime):
+                    logger.info(f"[SESSION-DEBUG] Already datetime: {last_activity} (tz: {last_activity.tzinfo})")
                     # If datetime object has timezone, remove it for consistent comparison
                     if last_activity.tzinfo is not None:
                         last_activity = last_activity.replace(tzinfo=None)
+                        logger.info(f"[SESSION-DEBUG] After stripping timezone: {last_activity}")
 
                 # Both datetimes are now timezone-naive, safe to subtract
-                idle_duration = datetime.now() - last_activity
+                idle_duration = current_time - last_activity
                 INACTIVITY_TIMEOUT = timedelta(hours=1)  # 1 hour timeout
+
+                # DEBUG LOGGING
+                logger.info(f"[SESSION-DEBUG] Final last_activity: {last_activity} (tz: {last_activity.tzinfo})")
+                logger.info(f"[SESSION-DEBUG] Idle duration: {idle_duration} (seconds: {idle_duration.total_seconds()})")
+                logger.info(f"[SESSION-DEBUG] Timeout threshold: {INACTIVITY_TIMEOUT} (seconds: {INACTIVITY_TIMEOUT.total_seconds()})")
+                logger.info(f"[SESSION-DEBUG] Will logout? {idle_duration > INACTIVITY_TIMEOUT}")
 
                 if idle_duration > INACTIVITY_TIMEOUT:
                     # Session expired due to inactivity
-                    logger.info(f"Session for {session['username']} expired due to inactivity ({idle_duration})")
+                    logger.warning(f"[SESSION-TIMEOUT] User {session['username']} logged out due to inactivity")
+                    logger.warning(f"[SESSION-TIMEOUT] Idle duration: {idle_duration} > threshold: {INACTIVITY_TIMEOUT}")
+                    logger.warning(f"[SESSION-TIMEOUT] Last activity was: {original_last_activity}")
                     self.logout(token)
                     return None
+            else:
+                logger.warning(f"[SESSION-DEBUG] No last_activity found for user {session['username']}")
 
             # With RealDictCursor, this will always be a dict
             return {
@@ -207,6 +237,11 @@ class UserManager:
     def update_session_activity(self, token):
         """Update last_activity timestamp for a session"""
         try:
+            current_time = datetime.now()
+
+            # DEBUG LOGGING - Remove after debugging
+            logger.info(f"[ACTIVITY-UPDATE] Updating session activity to: {current_time} (type: {type(current_time)}, tz: {current_time.tzinfo})")
+
             query = (
                 """
                 UPDATE sessions SET last_activity = %s
@@ -219,7 +254,8 @@ class UserManager:
             """
             )
 
-            self.db.execute_query(query, (datetime.now(), token))
+            self.db.execute_query(query, (current_time, token))
+            logger.info(f"[ACTIVITY-UPDATE] Session activity updated successfully")
             return True
         except Exception as e:
             logger.error(f"Failed to update session activity: {e}")

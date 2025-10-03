@@ -106,6 +106,12 @@ class UserManager:
             current_time = datetime.now()
             expires_at = current_time + timedelta(hours=24)
 
+            # DEBUG LOGGING - Remove after debugging
+            logger.info(f"[SESSION-CREATE] Creating session for user {username}")
+            logger.info(f"[SESSION-CREATE] Current time: {current_time} (type: {type(current_time)}, tz: {current_time.tzinfo})")
+            logger.info(f"[SESSION-CREATE] Expires at: {expires_at}")
+            logger.info(f"[SESSION-CREATE] Initial last_activity: {current_time}")
+
             session_query = (
                 """
                 INSERT INTO sessions (user_id, token, expires_at, last_activity)
@@ -119,6 +125,7 @@ class UserManager:
             )
 
             self.db.execute_query(session_query, (user_id, token, expires_at, current_time))
+            logger.info(f"[SESSION-CREATE] Session created successfully for {username}")
 
             # Update last login
             update_query = (
@@ -167,30 +174,25 @@ class UserManager:
 
             session = sessions[0]
 
-            # AUTO-LOGOUT: Check for 1-hour inactivity timeout
-            last_activity = session.get("last_activity")
-            if last_activity:
-                # Handle both string and datetime types, ensuring timezone-naive comparison
-                if isinstance(last_activity, str):
-                    # Parse ISO format string and strip timezone info to match datetime.now()
-                    last_activity = datetime.fromisoformat(last_activity.replace("Z", "+00:00"))
-                    # Convert to naive datetime by removing timezone info
-                    if last_activity.tzinfo is not None:
-                        last_activity = last_activity.replace(tzinfo=None)
-                elif isinstance(last_activity, datetime):
-                    # If datetime object has timezone, remove it for consistent comparison
-                    if last_activity.tzinfo is not None:
-                        last_activity = last_activity.replace(tzinfo=None)
-
-                # Both datetimes are now timezone-naive, safe to subtract
-                idle_duration = datetime.now() - last_activity
-                INACTIVITY_TIMEOUT = timedelta(hours=1)  # 1 hour timeout
-
-                if idle_duration > INACTIVITY_TIMEOUT:
-                    # Session expired due to inactivity
-                    logger.info(f"Session for {session['username']} expired due to inactivity ({idle_duration})")
-                    self.logout(token)
-                    return None
+            # AUTO-LOGOUT: TEMPORARILY DISABLED
+            #
+            # The auto-logout after 1 hour of inactivity has been temporarily disabled
+            # because users were getting logged out prematurely (5-6 minutes instead of 1 hour).
+            #
+            # Single-session enforcement (lines 89-102) is still ACTIVE and working correctly.
+            # Activity tracking (update_session_activity) is still ACTIVE for future debugging.
+            #
+            # Session still expires after 24 hours (checked at line 152 via expires_at column).
+            #
+            # TO RE-ENABLE AFTER FIXING:
+            # 1. Switch back to the feat/user-session branch (has the full implementation)
+            # 2. Review DEBUG_SESSION_TIMEOUT.md for debugging steps
+            # 3. Collect production logs to identify root cause
+            # 4. Fix the timezone/timing issue
+            # 5. Test thoroughly with debug logging
+            # 6. Merge the fix back
+            #
+            # Original code preserved in git history and feat/user-session branch
 
             # With RealDictCursor, this will always be a dict
             return {
@@ -207,6 +209,11 @@ class UserManager:
     def update_session_activity(self, token):
         """Update last_activity timestamp for a session"""
         try:
+            current_time = datetime.now()
+
+            # DEBUG LOGGING - Remove after debugging
+            logger.info(f"[ACTIVITY-UPDATE] Updating session activity to: {current_time} (type: {type(current_time)}, tz: {current_time.tzinfo})")
+
             query = (
                 """
                 UPDATE sessions SET last_activity = %s
@@ -219,7 +226,8 @@ class UserManager:
             """
             )
 
-            self.db.execute_query(query, (datetime.now(), token))
+            self.db.execute_query(query, (current_time, token))
+            logger.info(f"[ACTIVITY-UPDATE] Session activity updated successfully")
             return True
         except Exception as e:
             logger.error(f"Failed to update session activity: {e}")
@@ -608,54 +616,21 @@ class UserManager:
     def cleanup_idle_sessions(self):
         """
         Cleanup sessions that have been idle for more than 1 hour.
-        This is called periodically by background job.
+        TEMPORARILY DISABLED - Returns empty list.
+
+        This is called periodically by IdleSessionCleanupJob (every 5 minutes)
+        but does nothing until the auto-logout timeout issue is debugged and fixed.
+
+        The background job will continue running but won't terminate any sessions.
+
+        TO RE-ENABLE AFTER FIXING:
+        1. Switch back to feat/user-session branch (has full implementation)
+        2. Debug and fix the timeout calculation issue
+        3. Test thoroughly with debug logging
+        4. Restore this method from git history
         """
-        try:
-            INACTIVITY_TIMEOUT = timedelta(hours=1)  # 1 hour timeout
-            cutoff_time = datetime.now() - INACTIVITY_TIMEOUT
-
-            query = (
-                """
-                UPDATE sessions SET is_active = false
-                WHERE last_activity < %s AND is_active = true
-            """
-                if self.db.is_postgres
-                else """
-                UPDATE sessions SET is_active = 0
-                WHERE last_activity < ? AND is_active = 1
-            """
-            )
-
-            result = self.db.execute_query(query, (cutoff_time,))
-
-            # Get list of affected users to terminate their WebSocket connections
-            affected_query = (
-                """
-                SELECT DISTINCT u.username
-                FROM sessions s
-                JOIN users u ON s.user_id = u.id
-                WHERE s.last_activity < %s AND s.is_active = false
-            """
-                if self.db.is_postgres
-                else """
-                SELECT DISTINCT u.username
-                FROM sessions s
-                JOIN users u ON s.user_id = u.id
-                WHERE s.last_activity < ? AND s.is_active = 0
-            """
-            )
-
-            affected_users = self.db.execute_query(affected_query, (cutoff_time,))
-
-            if affected_users:
-                logger.info(f"Cleaned up {len(affected_users)} idle sessions")
-                return [user["username"] for user in affected_users]
-
-            return []
-
-        except Exception as e:
-            logger.error(f"Error cleaning up idle sessions: {e}")
-            return []
+        logger.debug("Idle session cleanup temporarily disabled (rollback)")
+        return []  # No users to cleanup
 
 
 # Background job for idle session cleanup

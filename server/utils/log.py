@@ -4,8 +4,8 @@ import sys
 import logging
 
 # logger_fmt = '[%(levelname)s] %(asctime)s [%(pathname)s:%(lineno)d]: %(message)s'
-logger_fmt = '[%(levelname)s] %(asctime)s [%(filename)s:%(lineno)d]: %(message)s'
-logger_date_fmt = '%Y-%m-%d %H:%M:%S'
+logger_fmt = "[%(levelname)s] %(asctime)s [%(filename)s:%(lineno)d]: %(message)s"
+logger_date_fmt = "%Y-%m-%d %H:%M:%S"
 stream_handler_fmt = logger_fmt
 stream_handler_date_fmt = logger_date_fmt
 stream_handler = logging.StreamHandler(sys.stdout)

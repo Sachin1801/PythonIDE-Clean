@@ -12,6 +12,7 @@ from common.database import db_manager
 
 logger = logging.getLogger(__name__)
 
+
 class SetupHandler(tornado.web.RequestHandler):
     def get(self):
         """Initialize database and create default users"""
@@ -22,84 +23,84 @@ class SetupHandler(tornado.web.RequestHandler):
                 cursor = conn.cursor()
                 cursor.execute("SELECT COUNT(*) FROM users")
                 count = cursor.fetchone()[0]
-                
+
                 if count > 0:
-                    self.write(json.dumps({
-                        "status": "already_setup",
-                        "message": f"Database already has {count} users",
-                        "users": ["professor", "sa9082"]
-                    }))
+                    self.write(
+                        json.dumps(
+                            {
+                                "status": "already_setup",
+                                "message": f"Database already has {count} users",
+                                "users": ["professor", "sa9082"],
+                            }
+                        )
+                    )
                     return
-            
+
             # Create default users
             results = []
-            
+
             # Create professor account
             try:
                 manager.create_user(
-                    username='professor',
-                    email='professor@university.edu',
-                    password='ChangeMeASAP2024!',
-                    full_name='Professor Account',
-                    role='professor'
+                    username="professor",
+                    email="professor@university.edu",
+                    password="ChangeMeASAP2024!",
+                    full_name="Professor Account",
+                    role="professor",
                 )
                 results.append("✓ Created professor account")
             except Exception as e:
                 results.append(f"✗ Professor: {str(e)}")
-            
+
             # Create student account
             try:
                 manager.create_user(
-                    username='sa9082',
-                    email='sa9082@university.edu',
-                    password='sa90822024',
-                    full_name='Sachin Adlakha',
-                    role='student'
+                    username="sa9082",
+                    email="sa9082@university.edu",
+                    password="sa90822024",
+                    full_name="Sachin Adlakha",
+                    role="student",
                 )
                 results.append("✓ Created student account (sa9082)")
             except Exception as e:
                 results.append(f"✗ Student: {str(e)}")
-            
+
             # Create directories
-            base_path = 'server/projects/ide'
+            base_path = "server/projects/ide"
             if not os.path.exists(base_path):
-                base_path = 'projects/ide'
-            
+                base_path = "projects/ide"
+
             directories = [
-                os.path.join(base_path, 'Local'),
-                os.path.join(base_path, 'Local', 'professor'),
-                os.path.join(base_path, 'Local', 'sa9082'),
-                os.path.join(base_path, 'Lecture Notes'),
-                os.path.join(base_path, 'Assignments'),
-                os.path.join(base_path, 'Tests')
+                os.path.join(base_path, "Local"),
+                os.path.join(base_path, "Local", "professor"),
+                os.path.join(base_path, "Local", "sa9082"),
+                os.path.join(base_path, "Lecture Notes"),
+                os.path.join(base_path, "Assignments"),
+                os.path.join(base_path, "Tests"),
             ]
-            
+
             for directory in directories:
                 os.makedirs(directory, exist_ok=True)
                 results.append(f"✓ Created directory: {directory}")
-            
-            self.write(json.dumps({
-                "status": "success",
-                "message": "Setup completed successfully",
-                "results": results,
-                "login_info": {
-                    "professor": {
-                        "username": "professor",
-                        "password": "ChangeMeASAP2024!"
+
+            self.write(
+                json.dumps(
+                    {
+                        "status": "success",
+                        "message": "Setup completed successfully",
+                        "results": results,
+                        "login_info": {
+                            "professor": {"username": "professor", "password": "ChangeMeASAP2024!"},
+                            "student": {"username": "sa9082", "password": "sa90822024"},
+                        },
                     },
-                    "student": {
-                        "username": "sa9082",
-                        "password": "sa90822024"
-                    }
-                }
-            }, indent=2))
-            
+                    indent=2,
+                )
+            )
+
         except Exception as e:
             self.set_status(500)
-            self.write(json.dumps({
-                "status": "error",
-                "message": str(e)
-            }))
+            self.write(json.dumps({"status": "error", "message": str(e)}))
 
 
 class ResetDatabaseHandler(tornado.web.RequestHandler):
@@ -108,17 +109,18 @@ class ResetDatabaseHandler(tornado.web.RequestHandler):
         try:
             with db_manager.get_connection() as conn:
                 cursor = conn.cursor()
-                
+
                 logger.info("Resetting database...")
-                
+
                 # Drop all tables
                 cursor.execute("DROP TABLE IF EXISTS file_submissions CASCADE")
                 cursor.execute("DROP TABLE IF EXISTS files CASCADE")
                 cursor.execute("DROP TABLE IF EXISTS sessions CASCADE")
                 cursor.execute("DROP TABLE IF EXISTS users CASCADE")
-                
+
                 # Recreate tables with correct schema
-                cursor.execute('''
+                cursor.execute(
+                    """
                     CREATE TABLE users (
                         id SERIAL PRIMARY KEY,
                         username VARCHAR(50) UNIQUE NOT NULL,
@@ -130,9 +132,11 @@ class ResetDatabaseHandler(tornado.web.RequestHandler):
                         last_login TIMESTAMP,
                         is_active BOOLEAN DEFAULT true
                     )
-                ''')
-                
-                cursor.execute('''
+                """
+                )
+
+                cursor.execute(
+                    """
                     CREATE TABLE sessions (
                         id SERIAL PRIMARY KEY,
                         user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -141,9 +145,11 @@ class ResetDatabaseHandler(tornado.web.RequestHandler):
                         expires_at TIMESTAMP,
                         is_active BOOLEAN DEFAULT true
                     )
-                ''')
-                
-                cursor.execute('''
+                """
+                )
+
+                cursor.execute(
+                    """
                     CREATE TABLE files (
                         id SERIAL PRIMARY KEY,
                         user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -156,9 +162,11 @@ class ResetDatabaseHandler(tornado.web.RequestHandler):
                         is_deleted BOOLEAN DEFAULT false,
                         UNIQUE(user_id, path)
                     )
-                ''')
-                
-                cursor.execute('''
+                """
+                )
+
+                cursor.execute(
+                    """
                     CREATE TABLE file_submissions (
                         id SERIAL PRIMARY KEY,
                         user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -171,48 +179,45 @@ class ResetDatabaseHandler(tornado.web.RequestHandler):
                         graded_at TIMESTAMP,
                         graded_by INTEGER REFERENCES users(id)
                     )
-                ''')
-                
+                """
+                )
+
                 conn.commit()
-                
+
                 # Now create default users
                 manager = UserManager()
-                
+
                 manager.create_user(
-                    username='professor',
-                    email='professor@university.edu',
-                    password='ChangeMeASAP2024!',
-                    full_name='Professor Account',
-                    role='professor'
+                    username="professor",
+                    email="professor@university.edu",
+                    password="ChangeMeASAP2024!",
+                    full_name="Professor Account",
+                    role="professor",
                 )
-                
+
                 manager.create_user(
-                    username='sa9082',
-                    email='sa9082@university.edu',
-                    password='sa90822024',
-                    full_name='Sachin Adlakha',
-                    role='student'
+                    username="sa9082",
+                    email="sa9082@university.edu",
+                    password="sa90822024",
+                    full_name="Sachin Adlakha",
+                    role="student",
                 )
-                
-                self.write(json.dumps({
-                    "status": "success",
-                    "message": "Database reset and users created successfully",
-                    "login_info": {
-                        "professor": {
-                            "username": "professor",
-                            "password": "ChangeMeASAP2024!"
+
+                self.write(
+                    json.dumps(
+                        {
+                            "status": "success",
+                            "message": "Database reset and users created successfully",
+                            "login_info": {
+                                "professor": {"username": "professor", "password": "ChangeMeASAP2024!"},
+                                "student": {"username": "sa9082", "password": "sa90822024"},
+                            },
                         },
-                        "student": {
-                            "username": "sa9082",
-                            "password": "sa90822024"
-                        }
-                    }
-                }, indent=2))
-                
+                        indent=2,
+                    )
+                )
+
         except Exception as e:
             logger.error(f"Database reset failed: {e}")
             self.set_status(500)
-            self.write(json.dumps({
-                "status": "error",
-                "message": str(e)
-            }))
+            self.write(json.dumps({"status": "error", "message": str(e)}))

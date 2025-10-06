@@ -470,6 +470,15 @@ while True:
         return
 
         # Only monitor during script execution, not REPL
+        consecutive_high_cpu = 0
+        last_cpu_time = 0
+
+        # Track output flooding
+        output_count = 0
+        output_window_start = time.time()
+        OUTPUT_FLOOD_THRESHOLD = 1000  # lines per second
+        OUTPUT_WINDOW_SIZE = 1  # 1 second window
+
         while self.alive and self.p and not self.repl_mode:
             elapsed = time.time() - self.start_time
 
@@ -486,6 +495,54 @@ while True:
             try:
                 if self.p and self.p.pid:
                     process = psutil.Process(self.p.pid)
+
+                    # Get CPU time (actual computation time, not wall clock)
+                    cpu_times = process.cpu_times()
+                    current_cpu_time = cpu_times.user + cpu_times.system
+
+                    # Check if process is actively computing
+                    cpu_delta = current_cpu_time - last_cpu_time
+                    last_cpu_time = current_cpu_time
+
+                    # If CPU usage is high for consecutive checks, it's likely an infinite loop
+                    if cpu_delta > 0.8:  # Using more than 80% CPU in the last second
+                        consecutive_high_cpu += 1
+                    else:
+                        consecutive_high_cpu = 0  # Reset if CPU usage drops (likely waiting for input)
+
+                    # Check total CPU time consumed
+                    if current_cpu_time > self.cpu_time_limit:
+                        print(f"[TIMEOUT] Process {self.cmd_id} exceeded CPU time limit ({self.cpu_time_limit}s)")
+                        self.response_to_client(0, {
+                            'stdout': f'\nConsole ending: Timeout 1 minute\n'
+                        })
+                        # Mark as had error to prevent REPL from opening
+                        self.had_error = True
+                        # Release execution lock
+                        self._release_execution_lock()
+                        # Send error signal to update UI (button state)
+                        self.response_to_client(4000, {'error': 'Execution timeout exceeded'})
+                        self.kill()
+                        break
+
+                    # Also check for sustained high CPU (infinite loop detection)
+                    if consecutive_high_cpu >= 10:  # 10 seconds of continuous high CPU
+                        print(f"[INFINITE LOOP] Process {self.cmd_id} detected in infinite loop")
+                        # Send message to user console FIRST
+                        self.response_to_client(0, {
+                            'stdout': f'\n\nConsole ending: Timeout 1 minute (infinite loop detected)\n'
+                        })
+                        # Mark as had error to prevent REPL from opening
+                        self.had_error = True
+                        # Release execution lock
+                        self._release_execution_lock()
+                        # Send error signal to update UI (button state)
+                        self.response_to_client(4000, {'error': 'Infinite loop detected'})
+                        # Then kill the process
+                        self.kill()
+                        break
+
+                    # Memory check
                     memory_mb = process.memory_info().rss / (1024 * 1024)
 
                     if memory_mb > self.memory_limit_mb:
@@ -495,8 +552,13 @@ while True:
                         )
                         self.kill()
                         break
-            except:
-                # psutil not available or process already dead
+
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                # Process already terminated or access denied
+                break
+            except Exception as e:
+                print(f"[TIMEOUT-MONITOR] Error monitoring process: {e}")
+                # Continue monitoring even if there's an error
                 pass
 
             time.sleep(1)

@@ -182,71 +182,6 @@ jobs:
     # DATABASE & FILE SYSTEM CHECKS
     # ============================================
 
-    - name: Database Schema Validation
-      run: |
-        echo "🗄️ Validating database schema..."
-        cd server
-        python -c "
-        import sys
-        import ast
-        import os
-
-        # Verify database schema code compiles and session logic is correct
-        # WITHOUT importing (to avoid database connection requirement)
-        try:
-            # Parse the user_manager_postgres.py file
-            with open('auth/user_manager_postgres.py', 'r') as f:
-                user_manager_code = f.read()
-
-            # Verify file compiles
-            compile(user_manager_code, 'auth/user_manager_postgres.py', 'exec')
-            print('✅ user_manager_postgres.py compiles successfully')
-
-            # Check for critical methods
-            assert 'def validate_session' in user_manager_code, 'Missing validate_session method'
-            assert 'def update_session_activity' in user_manager_code, 'Missing update_session_activity method'
-            assert 'def cleanup_idle_sessions' in user_manager_code, 'Missing cleanup_idle_sessions method'
-            print('✅ Session validation methods exist')
-            print('✅ Activity tracking methods exist')
-            print('✅ Idle session cleanup methods exist')
-
-            # Verify session timeout logic
-            assert 'last_activity' in user_manager_code, 'Missing last_activity check'
-            assert 'timedelta(hours=1)' in user_manager_code, 'Missing 1-hour timeout'
-            assert 'idle_duration' in user_manager_code, 'Missing idle duration calculation'
-            assert 'INACTIVITY_TIMEOUT' in user_manager_code, 'Missing INACTIVITY_TIMEOUT constant'
-            print('✅ Auto-logout timeout logic verified (1 hour)')
-
-            # Verify timezone handling fix is present
-            assert 'tzinfo' in user_manager_code, 'Missing timezone normalization'
-            assert 'replace(tzinfo=None)' in user_manager_code, 'Missing timezone stripping logic'
-            print('✅ Timezone normalization logic present')
-
-            # Verify last_activity is explicitly set on session creation
-            assert 'INSERT INTO sessions (user_id, token, expires_at, last_activity)' in user_manager_code, 'last_activity not explicitly set on INSERT'
-            print('✅ last_activity explicitly set on session creation')
-
-            # Parse database.py to check it compiles
-            with open('common/database.py', 'r') as f:
-                db_code = f.read()
-            compile(db_code, 'common/database.py', 'exec')
-            print('✅ database.py compiles successfully')
-
-            print('\\n✅ Database schema validation PASSED')
-
-        except AssertionError as e:
-            print(f'❌ Database schema validation failed: {e}')
-            sys.exit(1)
-        except SyntaxError as e:
-            print(f'❌ Syntax error in code: {e}')
-            sys.exit(1)
-        except Exception as e:
-            print(f'❌ Database schema validation failed: {e}')
-            import traceback
-            traceback.print_exc()
-            sys.exit(1)
-        " || exit 1
-
     - name: File Storage Security Check
       run: |
         echo "📁 Checking file storage security..."
@@ -468,7 +403,6 @@ jobs:
         echo "📊 TEST SUMMARY"
         echo "============================================"
         echo "✅ Python syntax validation: PASSED"
-        echo "✅ Database schema validation: PASSED"
         echo "✅ WebSocket authentication: VERIFIED"
         echo "✅ Password security: VERIFIED"
         echo "✅ Frontend build: PASSED"

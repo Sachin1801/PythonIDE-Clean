@@ -454,7 +454,7 @@ while True:
                     os.unlink(wrapper_path)
                 except:
                     pass
-            
+
             # Ensure process is terminated
             if self.p:
                 try:
@@ -465,51 +465,111 @@ while True:
                         self.p.kill()
                     except:
                         pass
+
+            # Always release execution lock in finally to ensure cleanup
+            self._release_execution_lock()
     
     def monitor_timeout(self):
         """Monitor execution time and kill if exceeds limit"""
-        # Disable timeout monitoring for now - it's interfering with input()
-        # TODO: Implement smarter timeout that pauses during input wait
-        return
-        
+        # Smart timeout that handles input() calls properly
+
         # Only monitor during script execution, not REPL
+        consecutive_high_cpu = 0
+        last_cpu_time = 0
+
+        # Track output flooding
+        output_count = 0
+        output_window_start = time.time()
+        OUTPUT_FLOOD_THRESHOLD = 1000  # lines per second
+        OUTPUT_WINDOW_SIZE = 1  # 1 second window
+
         while self.alive and self.p and not self.repl_mode:
-            elapsed = time.time() - self.start_time
-            
-            # Check if timeout exceeded (add grace period for REPL transition)
-            if elapsed > self.cpu_time_limit + 5:
-                print(f"[TIMEOUT] Process {self.cmd_id} exceeded time limit ({self.cpu_time_limit}s)")
-                self.response_to_client(1, {
-                    'stdout': f'\n[TIMEOUT] Execution time limit exceeded ({self.cpu_time_limit} seconds)\n'
-                })
-                self.kill()
-                break
-            
-            # Also monitor memory usage if psutil available
             try:
                 if self.p and self.p.pid:
                     process = psutil.Process(self.p.pid)
-                    memory_mb = process.memory_info().rss / (1024 * 1024)
-                    
-                    if memory_mb > self.memory_limit_mb:
-                        print(f"[MEMORY] Process {self.cmd_id} exceeded memory limit ({self.memory_limit_mb}MB)")
-                        self.response_to_client(1, {
-                            'stdout': f'\n[MEMORY LIMIT] Memory usage exceeded ({self.memory_limit_mb}MB)\n'
+
+                    # Get CPU time (actual computation time, not wall clock)
+                    cpu_times = process.cpu_times()
+                    current_cpu_time = cpu_times.user + cpu_times.system
+
+                    # Check if process is actively computing
+                    cpu_delta = current_cpu_time - last_cpu_time
+                    last_cpu_time = current_cpu_time
+
+                    # If CPU usage is high for consecutive checks, it's likely an infinite loop
+                    if cpu_delta > 0.8:  # Using more than 80% CPU in the last second
+                        consecutive_high_cpu += 1
+                    else:
+                        consecutive_high_cpu = 0  # Reset if CPU usage drops (likely waiting for input)
+
+                    # Check total CPU time consumed
+                    if current_cpu_time > self.cpu_time_limit:
+                        print(f"[TIMEOUT] Process {self.cmd_id} exceeded CPU time limit ({self.cpu_time_limit}s)")
+                        self.response_to_client(0, {
+                            'stdout': f'\nConsole ending: Timeout 1 minute\n'
                         })
+                        # Mark as had error to prevent REPL from opening
+                        self.had_error = True
+                        # Release execution lock
+                        self._release_execution_lock()
+                        # Send error signal to update UI (button state)
+                        self.response_to_client(4000, {'error': 'Execution timeout exceeded'})
                         self.kill()
                         break
-            except:
-                # psutil not available or process already dead
+
+                    # Also check for sustained high CPU (infinite loop detection)
+                    if consecutive_high_cpu >= 10:  # 10 seconds of continuous high CPU
+                        print(f"[INFINITE LOOP] Process {self.cmd_id} detected in infinite loop")
+                        # Send message to user console FIRST
+                        self.response_to_client(0, {
+                            'stdout': f'\n\nConsole ending: Timeout 1 minute (infinite loop detected)\n'
+                        })
+                        # Mark as had error to prevent REPL from opening
+                        self.had_error = True
+                        # Release execution lock
+                        self._release_execution_lock()
+                        # Send error signal to update UI (button state)
+                        self.response_to_client(4000, {'error': 'Infinite loop detected'})
+                        # Then kill the process
+                        self.kill()
+                        break
+
+                    # Memory check
+                    memory_mb = process.memory_info().rss / (1024 * 1024)
+                    if memory_mb > self.memory_limit_mb:
+                        print(f"[MEMORY] Process {self.cmd_id} exceeded memory limit ({self.memory_limit_mb}MB)")
+                        self.response_to_client(0, {
+                            'stdout': f'\n[MEMORY LIMIT] Memory usage exceeded ({self.memory_limit_mb}MB)\n'
+                        })
+                        # Mark as had error to prevent REPL from opening
+                        self.had_error = True
+                        # Release execution lock
+                        self._release_execution_lock()
+                        # Send error signal to update UI (button state)
+                        self.response_to_client(4000, {'error': 'Memory limit exceeded'})
+                        self.kill()
+                        break
+
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                # Process already terminated or access denied
+                break
+            except Exception as e:
+                print(f"[TIMEOUT-MONITOR] Error monitoring process: {e}")
+                # Continue monitoring even if there's an error
                 pass
-            
+
             time.sleep(1)
     
     def read_output(self):
         """Read output from subprocess"""
         buffer = ""
-        
+
+        # Track output rate for flood detection
+        self.output_line_count = 0
+        self.output_window_start = time.time()
+
         print(f"[HYBRID-REPL] Starting output reader for cmd_id: {self.cmd_id}")
-        
+
         while self.alive and self.p and self.p.poll() is None:
             try:
                 # Read character by character to handle input prompts without newlines
@@ -609,6 +669,30 @@ while True:
                         # Strip trailing whitespace only, preserve intentional leading spaces
                         clean_line = line.rstrip()
                         print(f"[HYBRID-REPL] Sending line: {repr(clean_line)}")
+
+                        # Track output rate for flood detection
+                        self.output_line_count += 1
+                        current_time = time.time()
+
+                        # Reset window if needed
+                        if current_time - self.output_window_start > 1:
+                            self.output_line_count = 1
+                            self.output_window_start = current_time
+
+                        # Check for output flooding (too many lines per second)
+                        if self.output_line_count > 100:  # More than 100 lines/second
+                            print(f"[OUTPUT FLOOD] Process {self.cmd_id} generating excessive output")
+                            self.response_to_client(0, {
+                                'stdout': f'\n\nConsole ending: Excessive output detected (infinite print loop)\n'
+                            })
+                            self.had_error = True
+                            # Release execution lock
+                            self._release_execution_lock()
+                            # Send error signal to update UI (button state)
+                            self.response_to_client(4000, {'error': 'Excessive output detected'})
+                            self.kill()
+                            return  # Exit the read_output function
+
                         self.response_to_client(0, {'stdout': clean_line})
                     # Keep the incomplete line in buffer
                     buffer = lines[-1]

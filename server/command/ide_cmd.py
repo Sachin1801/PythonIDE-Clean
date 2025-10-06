@@ -681,7 +681,9 @@ print("="*50)
                 lock_acquired = execution_lock_manager.acquire_execution_lock(username, file_path, cmd_id, timeout=2.0)
                 if not lock_acquired:
                     print(f"[BACKEND-DEBUG] Could not acquire execution lock for user {username}, file {file_path}, cmd_id: {cmd_id}")
-                    await response(client, cmd_id, -1, 'You already have this file running. Please wait for it to complete.')
+                    await response(client, cmd_id, -1, {
+                        'error': 'Script is already running. Please wait for it to complete or click Stop first.'
+                    })
                     return
                 
                 try:

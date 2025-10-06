@@ -125,9 +125,6 @@ class HybridREPLThread(threading.Thread):
             # CPU time limit - use extended limit for REPL or if no script (empty REPL)
             cpu_limit = self.repl_cpu_limit if (not self.script_path) else self.cpu_time_limit
             resource.setrlimit(resource.RLIMIT_CPU, (cpu_limit, cpu_limit))
-            print(
-                f"[HYBRID-REPL] Set CPU limit to {cpu_limit}s for {'REPL' if not self.script_path else 'script'} mode"
-            )
 
             # File size limit
             file_size_bytes = self.file_size_limit_mb * 1024 * 1024

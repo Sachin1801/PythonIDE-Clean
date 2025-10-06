@@ -29,7 +29,7 @@ class Config:
     # Resource limits
     MAX_CONCURRENT_EXECUTIONS = int(os.getenv('MAX_CONCURRENT_EXECUTIONS', 60))
     MAX_PROCESSES_PER_USER = int(os.getenv('MAX_PROCESSES_PER_USER', 2))  # Max 2 processes per user
-    EXECUTION_TIMEOUT = int(os.getenv('EXECUTION_TIMEOUT', 30))  # seconds
+    EXECUTION_TIMEOUT = int(os.getenv('EXECUTION_TIMEOUT', 60))  # seconds - 1 minute timeout
     MEMORY_LIMIT_MB = int(os.getenv('MEMORY_LIMIT_MB', 128))
     MAX_PROCESS_AGE = int(os.getenv('MAX_PROCESS_AGE', 1800))  # 30 minutes
     MAX_REPL_AGE = int(os.getenv('MAX_REPL_AGE', 3600))       # 60 minutes

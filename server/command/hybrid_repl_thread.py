@@ -406,11 +406,10 @@ while True:
                 "cwd": os.path.dirname(self.script_path) if self.script_path else file_storage.ide_base,
             }
 
-            # Temporarily disable resource limits to debug the issue
-            # TODO: Re-enable after fixing output streaming
-            # is_unix = os.name == 'posix'
-            # if is_unix:
-            #     popen_kwargs['preexec_fn'] = self.set_resource_limits
+            # Set resource limits on Unix-like systems (Linux/macOS)
+            is_unix = os.name == 'posix'
+            if is_unix:
+                popen_kwargs['preexec_fn'] = self.set_resource_limits
 
             self.p = subprocess.Popen([Config.PYTHON, "-u", wrapper_path], **popen_kwargs)
 
@@ -465,9 +464,6 @@ while True:
 
     def monitor_timeout(self):
         """Monitor execution time and kill if exceeds limit"""
-        # Disable timeout monitoring for now - it's interfering with input()
-        # TODO: Implement smarter timeout that pauses during input wait
-        return
 
         # Only monitor during script execution, not REPL
         consecutive_high_cpu = 0

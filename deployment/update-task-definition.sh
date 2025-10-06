@@ -133,7 +133,7 @@ cat > /tmp/pythonide-task-definition.json <<EOF
         },
         {
           "name": "EXECUTION_TIMEOUT",
-          "value": "30"
+          "value": "60"
         },
         {
           "name": "MEMORY_LIMIT_MB",

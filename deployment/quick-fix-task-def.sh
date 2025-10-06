@@ -72,7 +72,7 @@ cat > /tmp/pythonide-task-fix.json <<EOF
         },
         {
           "name": "EXECUTION_TIMEOUT",
-          "value": "30"
+          "value": "60"
         },
         {
           "name": "MEMORY_LIMIT_MB",

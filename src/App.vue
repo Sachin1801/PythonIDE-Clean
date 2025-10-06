@@ -3,12 +3,46 @@
 </template>
 
 <script>
+import { ElMessage, ElMessageBox } from 'element-plus';
 
 export default {
   name: 'App',
-  components: {
+  components: {},
+  mounted() {
+    // SINGLE-SESSION & AUTO-LOGOUT: Listen for session termination events
+    window.addEventListener('session-terminated', this.handleSessionTerminated);
+  },
+  beforeUnmount() {
+    window.removeEventListener('session-terminated', this.handleSessionTerminated);
+  },
+  methods: {
+    handleSessionTerminated(event) {
+      const { reason, message } = event.detail;
+
+      console.warn('[Session Terminated]', reason, message);
+
+      // Show alert box with no grace period - instant logout
+      ElMessageBox.alert(message, 'Session Terminated', {
+        confirmButtonText: 'OK',
+        type: 'warning',
+        showClose: false,
+        closeOnClickModal: false,
+        closeOnPressEscape: false,
+        callback: () => {
+          // Redirect to login page
+          this.$router.push('/login');
+        }
+      });
+
+      // Also show a toast notification
+      ElMessage({
+        message: message,
+        type: 'warning',
+        duration: 5000
+      });
+    }
   }
-}
+};
 </script>
 
 <style>

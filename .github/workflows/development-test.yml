@@ -188,10 +188,11 @@ jobs:
         cd server
         python -c "
         import sys
+        import ast
         import os
 
-        # Basic validation - just check that files compile
-        # Skipping idle session checks since that feature was rolled back
+        # Verify database schema code compiles and session logic is correct
+        # WITHOUT importing (to avoid database connection requirement)
         try:
             # Parse the user_manager_postgres.py file
             with open('auth/user_manager_postgres.py', 'r') as f:
@@ -201,9 +202,29 @@ jobs:
             compile(user_manager_code, 'auth/user_manager_postgres.py', 'exec')
             print('✅ user_manager_postgres.py compiles successfully')
 
-            # Check for basic methods only
+            # Check for critical methods
             assert 'def validate_session' in user_manager_code, 'Missing validate_session method'
+            assert 'def update_session_activity' in user_manager_code, 'Missing update_session_activity method'
+            assert 'def cleanup_idle_sessions' in user_manager_code, 'Missing cleanup_idle_sessions method'
             print('✅ Session validation methods exist')
+            print('✅ Activity tracking methods exist')
+            print('✅ Idle session cleanup methods exist')
+
+            # Verify session timeout logic
+            assert 'last_activity' in user_manager_code, 'Missing last_activity check'
+            assert 'timedelta(hours=1)' in user_manager_code, 'Missing 1-hour timeout'
+            assert 'idle_duration' in user_manager_code, 'Missing idle duration calculation'
+            assert 'INACTIVITY_TIMEOUT' in user_manager_code, 'Missing INACTIVITY_TIMEOUT constant'
+            print('✅ Auto-logout timeout logic verified (1 hour)')
+
+            # Verify timezone handling fix is present
+            assert 'tzinfo' in user_manager_code, 'Missing timezone normalization'
+            assert 'replace(tzinfo=None)' in user_manager_code, 'Missing timezone stripping logic'
+            print('✅ Timezone normalization logic present')
+
+            # Verify last_activity is explicitly set on session creation
+            assert 'INSERT INTO sessions (user_id, token, expires_at, last_activity)' in user_manager_code, 'last_activity not explicitly set on INSERT'
+            print('✅ last_activity explicitly set on session creation')
 
             # Parse database.py to check it compiles
             with open('common/database.py', 'r') as f:
@@ -282,7 +303,19 @@ jobs:
                 print('❌ Missing authentication checks')
                 exit(1)
 
+            # Must invalidate other sessions
+            if 'invalidate_other_sessions' not in content:
+                print('❌ Missing single-session enforcement')
+                exit(1)
+
+            # Must update activity
+            if 'update_session_activity' not in content:
+                print('❌ Missing activity tracking')
+                exit(1)
+
             print('✅ WebSocket authentication properly implemented')
+            print('✅ Single-session enforcement active')
+            print('✅ Activity tracking enabled')
         "
 
     - name: Password Security Check

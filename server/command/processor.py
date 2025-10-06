@@ -9,31 +9,31 @@ class RequestProcessor(object):
         self._command = Command()
 
     async def _process(self, item):
-        cmd = item.data.get('cmd', None)
+        cmd = item.data.get("cmd", None)
 
         if hasattr(self._command, cmd):
-            logger.info('cmd: {}'.format(cmd))
-            func= getattr(self._command, cmd)
-            await func(item.client, item.data.get('cmd_id', item.data.get('id', 0)), item.data.get('data', {}))
+            logger.info("cmd: {}".format(cmd))
+            func = getattr(self._command, cmd)
+            await func(item.client, item.data.get("cmd_id", item.data.get("id", 0)), item.data.get("data", {}))
         else:
-            logger.error('cmd %s is not exists'.format(cmd))
+            logger.error("cmd %s is not exists".format(cmd))
             msg = {
-                'type': 'response',
-                'id': item.data.get('cmd_id', item.data.get('id', 0)),
-                'code': 1000,
-                'data': 'not support cmd: {}'.format(cmd)
+                "type": "response",
+                "id": item.data.get("cmd_id", item.data.get("id", 0)),
+                "code": 1000,
+                "data": "not support cmd: {}".format(cmd),
             }
             await res_put(item.client, msg)
 
     async def loop(self):
-        print('request processor loop')
+        print("request processor loop")
         while True:
             try:
                 item = await req_get()
                 await self._process(item)
                 REQ_QUE.task_done()
             except Exception as e:
-                print('request processor ex: {}'.format(e))
+                print("request processor ex: {}".format(e))
 
 
 class ResponseProcessor(object):
@@ -45,15 +45,11 @@ class ResponseProcessor(object):
             item.client.write_message(item.data)
 
     async def loop(self):
-        print('response processor loop')
+        print("response processor loop")
         while True:
             try:
                 item = await res_get()
                 await self._process(item)
                 RES_QUE.task_done()
             except Exception as e:
-                print('response processor ex: {}'.format(e))
-
-
-
-
+                print("response processor ex: {}".format(e))

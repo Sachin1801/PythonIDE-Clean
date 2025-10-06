@@ -18,16 +18,18 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 logger = logging.getLogger(__name__)
 
+
 class MigrationManager:
     """Manages database migrations automatically"""
-    
+
     def __init__(self, database_url: str):
         self.database_url = database_url
         self.migrations_dir = Path(__file__).parent
-        
+
     def ensure_migrations_table(self, cursor):
         """Create migrations tracking table if it doesn't exist"""
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS schema_migrations (
                 id SERIAL PRIMARY KEY,
                 migration_name VARCHAR(255) UNIQUE NOT NULL,
@@ -35,36 +37,41 @@ class MigrationManager:
                 applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 success BOOLEAN DEFAULT true
             )
-        """)
+        """
+        )
         logger.info("Migrations tracking table ensured")
-    
+
     def get_migration_hash(self, migration_content: str) -> str:
         """Generate hash for migration content to detect changes"""
         return hashlib.sha256(migration_content.encode()).hexdigest()
-    
+
     def is_migration_applied(self, cursor, migration_name: str, migration_hash: str) -> bool:
         """Check if migration has been applied"""
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT migration_hash FROM schema_migrations 
             WHERE migration_name = %s AND success = true
-        """, (migration_name,))
-        
+        """,
+            (migration_name,),
+        )
+
         result = cursor.fetchone()
         if not result:
             return False
-            
+
         stored_hash = result[0]
         if stored_hash != migration_hash:
             logger.warning(f"Migration {migration_name} content has changed!")
             logger.warning(f"Stored hash: {stored_hash}")
             logger.warning(f"Current hash: {migration_hash}")
             return False
-            
+
         return True
-    
+
     def record_migration(self, cursor, migration_name: str, migration_hash: str, success: bool = True):
         """Record migration application"""
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO schema_migrations (migration_name, migration_hash, success)
             VALUES (%s, %s, %s)
             ON CONFLICT (migration_name) 
@@ -72,12 +79,14 @@ class MigrationManager:
                 migration_hash = EXCLUDED.migration_hash,
                 applied_at = CURRENT_TIMESTAMP,
                 success = EXCLUDED.success
-        """, (migration_name, migration_hash, success))
-    
+        """,
+            (migration_name, migration_hash, success),
+        )
+
     def get_pending_migrations(self) -> List[Tuple[str, str]]:
         """Get list of pending migrations with their content"""
         migrations = []
-        
+
         # Define migration order and content
         migration_definitions = [
             ("001_ensure_users_table", self._migration_001_users),
@@ -87,77 +96,77 @@ class MigrationManager:
             ("005_add_missing_columns", self._migration_005_missing_columns),
             ("006_fix_null_filenames", self._migration_006_fix_null_filenames),
         ]
-        
+
         for name, migration_func in migration_definitions:
             content = migration_func()
             migrations.append((name, content))
-            
+
         return migrations
-    
+
     def run_migrations(self) -> bool:
         """Run all pending migrations"""
         try:
             logger.info("Starting database migration check...")
-            
+
             conn = psycopg2.connect(self.database_url)
             conn.autocommit = False
             cursor = conn.cursor()
-            
+
             # Ensure migrations table exists
             self.ensure_migrations_table(cursor)
             conn.commit()
-            
+
             # Get pending migrations
             migrations = self.get_pending_migrations()
-            
+
             applied_count = 0
             for migration_name, migration_content in migrations:
                 migration_hash = self.get_migration_hash(migration_content)
-                
+
                 if self.is_migration_applied(cursor, migration_name, migration_hash):
                     logger.debug(f"Migration {migration_name} already applied")
                     continue
-                
+
                 logger.info(f"Applying migration: {migration_name}")
-                
+
                 try:
                     # Execute migration
                     cursor.execute(migration_content)
-                    
+
                     # Record successful migration
                     self.record_migration(cursor, migration_name, migration_hash, True)
-                    
+
                     conn.commit()
                     applied_count += 1
                     logger.info(f"✅ Migration {migration_name} applied successfully")
-                    
+
                 except Exception as e:
                     logger.error(f"❌ Migration {migration_name} failed: {e}")
                     conn.rollback()
-                    
+
                     # Record failed migration
                     self.record_migration(cursor, migration_name, migration_hash, False)
                     conn.commit()
-                    
+
                     raise e
-            
+
             cursor.close()
             conn.close()
-            
+
             if applied_count > 0:
                 logger.info(f"✅ Applied {applied_count} database migrations successfully")
             else:
                 logger.info("✅ Database schema is up to date")
-                
+
             return True
-            
+
         except Exception as e:
             logger.error(f"❌ Migration system failed: {e}")
             return False
-    
+
     # Migration Definitions
     # ====================
-    
+
     def _migration_001_users(self) -> str:
         """Ensure users table exists with correct schema"""
         return """
@@ -176,7 +185,7 @@ class MigrationManager:
         CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
         CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
         """
-    
+
     def _migration_002_files(self) -> str:
         """Ensure files table exists with correct schema"""
         return """
@@ -190,7 +199,7 @@ class MigrationManager:
         
         CREATE INDEX IF NOT EXISTS idx_files_user_path ON files(user_id, path);
         """
-    
+
     def _migration_003_sessions(self) -> str:
         """Ensure sessions table exists with correct schema"""
         return """
@@ -206,7 +215,7 @@ class MigrationManager:
         CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
         CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
         """
-    
+
     def _migration_004_filename(self) -> str:
         """Add filename column if missing and populate it"""
         return """
@@ -239,7 +248,7 @@ class MigrationManager:
             END IF;
         END $$;
         """
-    
+
     def _migration_005_missing_columns(self) -> str:
         """Add any missing columns to existing tables"""
         return """
@@ -282,7 +291,7 @@ class MigrationManager:
             END IF;
         END $$;
         """
-    
+
     def _migration_006_fix_null_filenames(self) -> str:
         """Fix any NULL filename values that may exist"""
         return """
@@ -298,17 +307,19 @@ class MigrationManager:
         WHERE filename IS NULL;
         """
 
+
 def run_auto_migrations(database_url: str) -> bool:
     """Entry point for automatic migrations"""
     manager = MigrationManager(database_url)
     return manager.run_migrations()
 
+
 if __name__ == "__main__":
     # For manual execution
-    database_url = os.environ.get('DATABASE_URL')
+    database_url = os.environ.get("DATABASE_URL")
     if not database_url:
         logger.error("DATABASE_URL environment variable not set")
         sys.exit(1)
-    
+
     success = run_auto_migrations(database_url)
     sys.exit(0 if success else 1)

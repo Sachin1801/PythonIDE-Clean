@@ -11,83 +11,86 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class BugReportHandler:
     def __init__(self):
         # Email configuration - You can set these as environment variables for security
-        self.smtp_server = os.getenv('SMTP_SERVER', 'smtp.gmail.com')
-        self.smtp_port = int(os.getenv('SMTP_PORT', '587'))
-        self.sender_email = os.getenv('SENDER_EMAIL', 'pythonwebide@gmail.com')
-        self.sender_password = os.getenv('SENDER_PASSWORD', '')  # App-specific password for Gmail
-        self.recipient_email = 'sa9082@nyu.edu'
-        
+        self.smtp_server = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+        self.smtp_port = int(os.getenv("SMTP_PORT", "587"))
+        self.sender_email = os.getenv("SENDER_EMAIL", "pythonwebide@gmail.com")
+        self.sender_password = os.getenv("SENDER_PASSWORD", "")  # App-specific password for Gmail
+        self.recipient_email = "sa9082@nyu.edu"
+
     def send_bug_report(self, report_data):
         """
         Send bug report email to the administrator
-        
+
         Args:
             report_data (dict): Bug report data from frontend
-            
+
         Returns:
             dict: Response with success status and ticket ID
         """
         try:
             # Create message
-            msg = MIMEMultipart('alternative')
-            msg['Subject'] = f"[Bug Report] {report_data.get('ticketId', 'Unknown')} - {report_data.get('title', 'No Title')}"
-            msg['From'] = self.sender_email
-            msg['To'] = self.recipient_email
-            msg['Reply-To'] = report_data.get('email', 'noreply@example.com')
-            
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = (
+                f"[Bug Report] {report_data.get('ticketId', 'Unknown')} - {report_data.get('title', 'No Title')}"
+            )
+            msg["From"] = self.sender_email
+            msg["To"] = self.recipient_email
+            msg["Reply-To"] = report_data.get("email", "noreply@example.com")
+
             # Create the HTML content
             html_body = self._create_html_body(report_data)
-            
+
             # Create the plain text version
             text_body = self._create_text_body(report_data)
-            
+
             # Add parts to message
-            part1 = MIMEText(text_body, 'plain')
-            part2 = MIMEText(html_body, 'html')
-            
+            part1 = MIMEText(text_body, "plain")
+            part2 = MIMEText(html_body, "html")
+
             msg.attach(part1)
             msg.attach(part2)
-            
+
             # Send email
             if self.sender_password:  # Only send if password is configured
                 with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
                     server.starttls()
                     server.login(self.sender_email, self.sender_password)
                     server.send_message(msg)
-                    
+
                 logger.info(f"Bug report sent successfully: {report_data.get('ticketId')}")
             else:
                 # For development/testing, just log the report
                 logger.warning("SMTP password not configured. Bug report logged but not emailed.")
                 logger.info(f"Bug Report: {json.dumps(report_data, indent=2)}")
-                
+
                 # Save to local file as backup
                 self._save_to_file(report_data)
-            
+
             return {
-                'success': True,
-                'ticketId': report_data.get('ticketId'),
-                'message': 'Bug report submitted successfully'
+                "success": True,
+                "ticketId": report_data.get("ticketId"),
+                "message": "Bug report submitted successfully",
             }
-            
+
         except Exception as e:
             logger.error(f"Failed to send bug report: {str(e)}")
             # Still save to file as backup
             self._save_to_file(report_data)
             return {
-                'success': True,  # Return success even if email fails (saved to file)
-                'ticketId': report_data.get('ticketId'),
-                'message': 'Bug report saved (email pending)',
-                'error': str(e)
+                "success": True,  # Return success even if email fails (saved to file)
+                "ticketId": report_data.get("ticketId"),
+                "message": "Bug report saved (email pending)",
+                "error": str(e),
             }
-    
+
     def _create_html_body(self, report_data):
         """Create HTML formatted email body"""
-        timestamp = report_data.get('timestamp', datetime.now().isoformat())
-        
+        timestamp = report_data.get("timestamp", datetime.now().isoformat())
+
         html = f"""
         <html>
             <body style="font-family: Arial, sans-serif; padding: 20px;">
@@ -128,11 +131,11 @@ class BugReportHandler:
         </html>
         """
         return html
-    
+
     def _create_text_body(self, report_data):
         """Create plain text email body"""
-        timestamp = report_data.get('timestamp', datetime.now().isoformat())
-        
+        timestamp = report_data.get("timestamp", datetime.now().isoformat())
+
         text = f"""
 Bug Report - Python Web IDE
 ===========================
@@ -163,38 +166,40 @@ This bug report was automatically generated by the Python Web IDE bug reporting 
 Please respond to the user at {report_data.get('email', 'the provided email')} with the ticket ID when resolved.
         """
         return text
-    
+
     def _save_to_file(self, report_data):
         """Save bug report to a local file as backup"""
         try:
             # Create bug_reports directory if it doesn't exist
-            reports_dir = os.path.join(os.path.dirname(__file__), '..', 'bug_reports')
+            reports_dir = os.path.join(os.path.dirname(__file__), "..", "bug_reports")
             os.makedirs(reports_dir, exist_ok=True)
-            
+
             # Create filename with timestamp
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"bug_report_{report_data.get('ticketId', 'unknown')}_{timestamp}.json"
             filepath = os.path.join(reports_dir, filename)
-            
+
             # Save report data
-            with open(filepath, 'w') as f:
+            with open(filepath, "w") as f:
                 json.dump(report_data, f, indent=2)
-            
+
             logger.info(f"Bug report saved to file: {filepath}")
-            
+
         except Exception as e:
             logger.error(f"Failed to save bug report to file: {str(e)}")
+
 
 # Create a global instance
 bug_report_handler = BugReportHandler()
 
+
 def handle_bug_report(report_data):
     """
     Main function to handle bug reports
-    
+
     Args:
         report_data (dict): Bug report data from frontend
-        
+
     Returns:
         dict: Response with success status
     """

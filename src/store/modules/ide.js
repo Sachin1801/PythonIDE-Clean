@@ -621,29 +621,54 @@ const mutations = {
         break;
       }
     }
+    else if (dict.code === 4000) {
+      // Error signal from backend (timeout, infinite loop, etc.)
+      console.log('[ERROR] Received code 4000 - Error signal', dict);
+      for (let i = 0; i < state.ideInfo.consoleItems.length; i++) {
+        if (state.ideInfo.consoleItems[i].id !== dict.id) continue;
+
+        // Display error message if provided
+        if (dict.data && dict.data.error) {
+          // Error message already sent as stdout, don't duplicate
+          // The error message is sent separately via code 0 with stdout
+        }
+
+        // Stop the program
+        state.ideInfo.consoleItems[i].run = false;
+        state.ideInfo.consoleItems[i].isReplMode = false;
+        state.ideInfo.consoleItems[i].replActive = false;
+
+        const textArea = document.getElementById('console-' + state.ideInfo.consoleItems[i].id)
+        if (textArea !== undefined && textArea !== null) {
+          textArea.scrollTop = textArea.scrollHeight;
+        }
+
+        break;
+      }
+    }
     else if (dict.code === 5000) {
       // REPL mode transition
       console.log('[REPL-MODE] Received code 5000 - REPL mode signal', dict);
       for (let i = 0; i < state.ideInfo.consoleItems.length; i++) {
         if (state.ideInfo.consoleItems[i].id !== dict.id) continue;
-        
+
         // Set REPL mode flag on the console item
         state.ideInfo.consoleItems[i].isReplMode = true;
         state.ideInfo.consoleItems[i].replActive = true;
-        
+
         // REPL mode started - no extra messages needed
-        
+
         // Show REPL prompt
         state.ideInfo.consoleItems[i].resultList.push({
           type: 'repl-prompt',
           text: '>>> '
         });
-        
+
         // Mark as waiting for REPL input
         state.ideInfo.consoleItems[i].waitingForReplInput = true;
-        
+
         console.log('[REPL-MODE] Console item updated for REPL mode');
-        
+
         // Focus the REPL input field
         setTimeout(() => {
           const replInput = document.querySelector('.repl-input');
@@ -651,7 +676,7 @@ const mutations = {
             replInput.focus();
           }
         }, 100);
-        
+
         break;
       }
     }
@@ -659,9 +684,15 @@ const mutations = {
       // Program ends (code 1111 or any other error code), set the program state to False and display all output
       for (let i = 0; i < state.ideInfo.consoleItems.length; i++) {
         if (state.ideInfo.consoleItems[i].id !== dict.id) continue;
-        // If no program is running in the current terminal, clear the output first (usually occurs when file doesn't exist or is not a py file or input command is empty or command is not a string)
+        // Only clear output if program was never started (run=false and stop=false)
+        // Don't clear if program was running and is now stopping (run=false after being true)
+        // This preserves error messages from infinite loop detection
         if (!state.ideInfo.consoleItems[i].run && !state.ideInfo.consoleItems[i].stop) {
-          state.ideInfo.consoleItems[i].resultList = [];
+          // Only clear for initial errors (file not found, etc), not for termination after running
+          // Check if console has content - if it does, program was running
+          if (state.ideInfo.consoleItems[i].resultList.length === 0) {
+            state.ideInfo.consoleItems[i].resultList = [];
+          }
         }
         if (dict.data && dict.data.stdout) {
           state.ideInfo.consoleItems[i].resultList.push(`${dict.data.stdout}`);

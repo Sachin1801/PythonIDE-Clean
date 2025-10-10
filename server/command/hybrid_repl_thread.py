@@ -49,10 +49,16 @@ class HybridREPLThread(threading.Thread):
 
         # Resource limits (configurable via environment)
         self.memory_limit_mb = int(os.environ.get("MEMORY_LIMIT_MB", "128"))
-        self.cpu_time_limit = int(os.environ.get("EXECUTION_TIMEOUT", "60"))  # Changed from 30 to 60 seconds
+        # Simple 3-second timeout like LeetCode
+        self.script_timeout = 3  # 3 seconds for script execution
+        self.cpu_time_limit = int(os.environ.get("EXECUTION_TIMEOUT", "60"))  # Keep for REPL mode
         self.file_size_limit_mb = int(os.environ.get("FILE_SIZE_LIMIT_MB", "10"))
         self.max_processes = int(os.environ.get("MAX_PROCESSES", "50"))
         self.start_time = time.time()
+
+        # Track input state for timeout pause
+        self.waiting_for_input = False
+        self.timeout_accumulated = 0  # Track accumulated runtime (excluding input wait)
 
         # REPL sessions should have extended CPU time for interactive use
         self.repl_cpu_limit = 300  # Changed from 3600 to 300 seconds (5 minutes)
@@ -154,6 +160,7 @@ import code
 import builtins
 import base64
 import io
+import signal
 
 # Lazy load matplotlib only when actually imported by user code
 _matplotlib_hooked = False
@@ -217,6 +224,9 @@ builtins.input = _custom_input
 # Dictionary to store script variables
 script_globals = {}
 
+# Flag to track if script execution was successful
+_script_success = False
+
 '''
 
         if self.script_path:
@@ -232,19 +242,20 @@ sys.stdout.flush()
 try:
     with open(script_path, 'r') as f:
         script_code = f.read()
-    
+
     # Execute script and capture its namespace
     # Note: exec() output goes to current stdout, which is captured by parent process
     exec(compile(script_code, script_path, 'exec'), script_globals)
-    
+
     # Script completed successfully
     print("__SCRIPT_END__")
     sys.stdout.flush()
-    
+    _script_success = True
+
 except Exception as e:
     # Print error
     traceback.print_exc()
-    
+
     # Signal error to parent process
     print("__SCRIPT_ERROR__")
     sys.stdout.flush()
@@ -264,11 +275,26 @@ for var_name, var_value in script_globals.items():
 
 """
 
-        # Add REPL startup code
+        # Add REPL startup code - only start REPL if script succeeded or no script
         wrapper_code += '''
-# Signal REPL mode starting
-print("__REPL_MODE_START__")
-sys.stdout.flush()
+# Only start REPL if script succeeded (or if no script was run)
+if _script_success or not {has_script}:
+    # Signal REPL mode starting
+    print("__REPL_MODE_START__")
+    sys.stdout.flush()
+'''.format(has_script='True' if self.script_path else 'False')
+
+        # Continue with REPL code only if we're supposed to start it
+        wrapper_code += '''
+else:
+    # Script failed, don't start REPL
+    sys.exit(1)
+'''
+
+        # Add the actual REPL loop
+        wrapper_code += '''
+# Restore original input for REPL
+builtins.input = _original_input
 
 # Restore original input for REPL
 builtins.input = _original_input
@@ -406,7 +432,11 @@ while True:
             # Set resource limits on Unix-like systems (Linux/macOS)
             is_unix = os.name == 'posix'
             if is_unix:
-                popen_kwargs['preexec_fn'] = self.set_resource_limits
+                # Create new process group AND set resource limits
+                def setup_process():
+                    os.setsid()  # Create new process group for easier killing
+                    self.set_resource_limits()
+                popen_kwargs['preexec_fn'] = setup_process
 
             self.p = subprocess.Popen([Config.PYTHON, "-u", wrapper_path], **popen_kwargs)
 
@@ -429,11 +459,18 @@ while True:
             while self.alive and self.p.poll() is None:
                 time.sleep(0.1)
 
-            # Process ended
+            # Process ended - always send termination signal to update UI button state
             if self.p.poll() is not None:
                 return_code = self.p.poll()
-                if return_code != 0 and not self.had_error:
+                # If had_error is True (timeout/infinite loop), don't send additional error message
+                # The error message was already sent before killing the process
+                if not self.had_error and return_code != 0:
                     self.response_to_client(1, {"stdout": f"Process exited with code {return_code}"})
+
+                # Always send termination signal (code 1111) to update button state
+                if self.had_error or not self.repl_mode:
+                    # Program terminated without entering REPL, send final signal
+                    self.response_to_client(1111, {"stdout": ""})
 
         except Exception as e:
             print(f"Error in HybridREPLThread: {e}")
@@ -459,32 +496,125 @@ while True:
                     except:
                         pass
 
-    def monitor_timeout(self):
-        """Monitor execution time and kill if exceeds limit"""
+    def monitor_timeout_v2(self):
+        """Simple and robust timeout monitor - kills process after 3 seconds"""
+        print(f"[TIMEOUT_MONITOR_V2] Started for cmd_id: {self.cmd_id}")
 
-        # Only monitor during script execution, not REPL
-        consecutive_high_cpu = 0
-        last_cpu_time = 0
-
-        # Track output flooding
-        output_count = 0
-        output_window_start = time.time()
-        OUTPUT_FLOOD_THRESHOLD = 1000  # lines per second
-        OUTPUT_WINDOW_SIZE = 1  # 1 second window
+        start_time = time.time()
 
         while self.alive and self.p and not self.repl_mode:
-            elapsed = time.time() - self.start_time
+            try:
+                # Check if process ended
+                if self.p and self.p.poll() is not None:
+                    print(f"[TIMEOUT_MONITOR_V2] Process ended naturally")
+                    break
 
-            # Check if timeout exceeded (add grace period for REPL transition)
-            if elapsed > self.cpu_time_limit + 5:
-                print(f"[TIMEOUT] Process {self.cmd_id} exceeded time limit ({self.cpu_time_limit}s)")
-                self.response_to_client(
-                    1, {"stdout": f"\n[TIMEOUT] Execution time limit exceeded ({self.cpu_time_limit} seconds)\n"}
-                )
-                self.kill()
+                elapsed = time.time() - start_time
+
+                # Log every second
+                if int(elapsed) > int(elapsed - 0.1):
+                    print(f"[TIMEOUT_MONITOR_V2] Elapsed: {elapsed:.1f}s / 3.0s")
+
+                # Hard timeout at 3 seconds
+                if elapsed > 3.0:
+                    print(f"[TIMEOUT_MONITOR_V2] KILLING PROCESS - 3 second timeout exceeded!")
+
+                    # Send timeout message
+                    self.response_to_client(0, {
+                        'stdout': f'\n\n{"="*50}\nTime Limit Exceeded (3 seconds)\n{"="*50}\n'
+                    })
+
+                    # Force kill the process and all children
+                    if self.p:
+                        try:
+                            # Kill process group to ensure all children die
+                            os.killpg(os.getpgid(self.p.pid), signal.SIGKILL)
+                        except:
+                            try:
+                                self.p.kill()  # Fallback to regular kill
+                            except:
+                                pass
+
+                    self.had_error = True
+                    self.alive = False
+
+                    # Clean up
+                    self._release_execution_lock()
+                    self.response_to_client(4000, {'error': 'Time limit exceeded'})
+                    time.sleep(0.1)
+                    self.response_to_client(1111, {'stdout': 'Process terminated'})
+                    break
+
+                time.sleep(0.1)
+
+            except Exception as e:
+                print(f"[TIMEOUT_MONITOR_V2] Error: {e}")
                 break
 
-            # Also monitor memory usage if psutil available
+        print(f"[TIMEOUT_MONITOR_V2] Exiting")
+
+    def monitor_timeout(self):
+        """Monitor execution time and kill if exceeds limit"""
+        print(f"[TIMEOUT_MONITOR] Started for cmd_id: {self.cmd_id}")
+
+        # Simple 3-second timeout approach
+        start_time = time.time()
+
+        while self.alive and self.p and not self.repl_mode:
+            try:
+                # Check if process is still running
+                if self.p.poll() is not None:
+                    print(f"[TIMEOUT_MONITOR] Process {self.cmd_id} ended naturally")
+                    break
+
+                current_time = time.time()
+
+                # Calculate elapsed time (pausing for input)
+                if not self.waiting_for_input:
+                    self.timeout_accumulated = current_time - start_time
+
+                    # Log progress every 0.5 seconds
+                    if int(self.timeout_accumulated * 2) % 2 == 1:
+                        print(f"[TIMEOUT_MONITOR] Process {self.cmd_id}: {self.timeout_accumulated:.1f}s / {self.script_timeout}s")
+
+                # Check if timeout exceeded
+                if self.timeout_accumulated > self.script_timeout:
+                    print(f"[TIMEOUT] Process {self.cmd_id} exceeded 3-second limit!")
+                    # Send clear timeout message
+                    self.response_to_client(0, {
+                        'stdout': f'\n\n{"="*50}\nTime Limit Exceeded\nYour code took too long to execute (>3 seconds)\n{"="*50}\n'
+                    })
+                    # Mark as had error to prevent REPL from opening
+                    self.had_error = True
+                    # Kill the process
+                    self.kill()
+                    # Release execution lock
+                    self._release_execution_lock()
+                    # Send error signal to update UI (button state)
+                    self.response_to_client(4000, {'error': 'Time limit exceeded'})
+                    # Send termination signal
+                    time.sleep(0.1)
+                    self.response_to_client(1111, {'stdout': 'Process terminated due to timeout'})
+                    break
+
+                # Small delay to prevent busy waiting
+                time.sleep(0.1)
+
+            except Exception as e:
+                print(f"[TIMEOUT_MONITOR] Error in timeout monitor: {e}")
+                break
+
+        print(f"[TIMEOUT_MONITOR] Exiting for cmd_id: {self.cmd_id}")
+
+    def monitor_memory(self):
+        """Monitor memory usage if psutil available"""
+        if not psutil:
+            return
+
+        last_cpu_time = 0
+        consecutive_high_cpu = 0
+
+        while self.alive and self.p:
             try:
                 if self.p and self.p.pid:
                     process = psutil.Process(self.p.pid)
@@ -562,6 +692,11 @@ while True:
 
         print(f"[HYBRID-REPL] Starting output reader for cmd_id: {self.cmd_id}")
 
+        # Output rate limiting for infinite loop detection
+        lines_count = 0
+        window_start = time.time()
+        MAX_LINES_PER_SECOND = 50  # Kill if more than 50 lines/second
+
         while self.alive and self.p and self.p.poll() is None:
             try:
                 # Read character by character to handle input prompts without newlines
@@ -588,6 +723,9 @@ while True:
                     prompt = buffer[start:end]
 
                     print(f"[HYBRID-REPL] Input request detected: {repr(prompt)}")
+
+                    # Pause timeout when waiting for user input
+                    self.waiting_for_input = True
 
                     # Send input request to client
                     self.response_to_client(2000, {"prompt": prompt})
@@ -662,6 +800,49 @@ while True:
                         clean_line = line.rstrip()
                         print(f"[HYBRID-REPL] Sending line: {repr(clean_line)}")
                         self.response_to_client(0, {"stdout": clean_line})
+
+                        # Output rate limiting check - check frequently
+                        lines_count += 1
+
+                        # Check every 20 lines to catch flooding early
+                        if lines_count >= 20:
+                            current_time = time.time()
+                            elapsed = current_time - window_start
+
+                            # Calculate rate if we have at least 0.1 seconds of data
+                            if elapsed >= 0.1:
+                                rate = lines_count / elapsed
+                                print(f"[RATE-LIMIT] {lines_count} lines in {elapsed:.2f}s = {rate:.1f} lines/sec")
+
+                                if rate > MAX_LINES_PER_SECOND:
+                                    print(f"[RATE-LIMIT] KILLING PROCESS - Output flooding detected ({rate:.1f} lines/sec)")
+
+                                    # Send error message
+                                    self.response_to_client(0, {
+                                        'stdout': f'\n\n{"="*50}\nOutput Rate Limit Exceeded\nYour code is producing too much output (>{MAX_LINES_PER_SECOND} lines/sec)\nLikely an infinite loop!\n{"="*50}\n'
+                                    })
+
+                                    # Kill the process
+                                    if self.p:
+                                        try:
+                                            os.killpg(os.getpgid(self.p.pid), signal.SIGKILL)
+                                        except:
+                                            try:
+                                                self.p.kill()
+                                            except:
+                                                pass
+
+                                    self.had_error = True
+                                    self.alive = False
+                                    self._release_execution_lock()
+                                    self.response_to_client(4000, {'error': 'Output rate limit exceeded'})
+                                    self.response_to_client(1111, {'stdout': 'Process terminated'})
+                                    return
+
+                                # Reset counter for next window
+                                lines_count = 0
+                                window_start = current_time
+
                     # Keep the incomplete line in buffer
                     buffer = lines[-1]
 
@@ -726,6 +907,9 @@ while True:
 
                 print(f"[HYBRID-REPL] Received input from queue: {user_input}")
                 print(f"[HYBRID-REPL] REPL mode: {self.repl_mode}, Process alive: {self.p.poll() is None}")
+
+                # Resume timeout counting after receiving input
+                self.waiting_for_input = False
 
                 if self.p and self.p.stdin:
                     # Send input to subprocess

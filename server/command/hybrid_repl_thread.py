@@ -686,6 +686,29 @@ while True:
 
             time.sleep(1)
 
+    def _kill_for_infinite_loop(self, reason):
+        """Helper to kill process for infinite loop detection"""
+        # Send error message
+        self.response_to_client(0, {
+            'stdout': f'\n\n{"="*50}\nInfinite Loop Detected\n{reason}\n{"="*50}\n'
+        })
+
+        # Kill the process
+        if self.p:
+            try:
+                os.killpg(os.getpgid(self.p.pid), signal.SIGKILL)
+            except:
+                try:
+                    self.p.kill()
+                except:
+                    pass
+
+        self.had_error = True
+        self.alive = False
+        self._release_execution_lock()
+        self.response_to_client(4000, {'error': 'Infinite loop detected'})
+        self.response_to_client(1111, {'stdout': 'Process terminated'})
+
     def read_output(self):
         """Read output from subprocess"""
         buffer = ""
@@ -695,7 +718,14 @@ while True:
         # Output rate limiting for infinite loop detection
         lines_count = 0
         window_start = time.time()
-        MAX_LINES_PER_SECOND = 50  # Kill if more than 50 lines/second
+        total_lines = 0  # Track total output
+        last_line = None  # Track repeated lines
+        identical_count = 0  # Count consecutive identical lines
+
+        # Safety thresholds (conservative to avoid false positives)
+        MAX_LINES_PER_SECOND = 100  # Increased from 50 to allow burst output
+        MAX_TOTAL_LINES = 10000  # Hard limit on total output
+        MAX_IDENTICAL_LINES = 500  # Kill if same line repeated 500x in a row
 
         while self.alive and self.p and self.p.poll() is None:
             try:
@@ -801,10 +831,28 @@ while True:
                         print(f"[HYBRID-REPL] Sending line: {repr(clean_line)}")
                         self.response_to_client(0, {"stdout": clean_line})
 
-                        # Output rate limiting check - check frequently
+                        # Multiple safety checks for infinite loop detection
                         lines_count += 1
+                        total_lines += 1
 
-                        # Check every 20 lines to catch flooding early
+                        # Check 1: Total lines limit
+                        if total_lines > MAX_TOTAL_LINES:
+                            print(f"[RATE-LIMIT] KILLING PROCESS - Total output limit exceeded ({total_lines} lines)")
+                            self._kill_for_infinite_loop("Total output limit exceeded (>10,000 lines)")
+                            return
+
+                        # Check 2: Identical lines detection
+                        if clean_line == last_line:
+                            identical_count += 1
+                            if identical_count >= MAX_IDENTICAL_LINES:
+                                print(f"[RATE-LIMIT] KILLING PROCESS - Same line repeated {identical_count} times")
+                                self._kill_for_infinite_loop(f"Same line repeated {MAX_IDENTICAL_LINES}+ times")
+                                return
+                        else:
+                            identical_count = 0
+                            last_line = clean_line
+
+                        # Check 3: Output rate limiting - check every 20 lines
                         if lines_count >= 20:
                             current_time = time.time()
                             elapsed = current_time - window_start

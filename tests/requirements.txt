@@ -1,0 +1,3 @@
+# Requirements for running performance tests
+aiohttp>=3.8.0
+asyncio

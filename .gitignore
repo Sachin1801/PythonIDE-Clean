@@ -45,3 +45,5 @@ adminData/
 *accounts*.txt
 *summary*.txt
 
+test_logs_*.txt
+*.log

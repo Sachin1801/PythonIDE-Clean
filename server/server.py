@@ -264,15 +264,31 @@ def main():
         logger.warning("DATABASE_URL not set - using local PostgreSQL fallback")
         logger.warning("Migrations will be skipped without DATABASE_URL")
 
-    if args.num_processes >= 0:
+    # Check for environment variable to override num_processes
+    tornado_processes = int(os.getenv('TORNADO_PROCESSES', '-1'))
+    if tornado_processes > 0:
+        # Use environment variable if set
+        num_processes = tornado_processes
+        logger.info(f"Using TORNADO_PROCESSES from environment: {num_processes}")
+    else:
+        # Use command line argument
+        num_processes = args.num_processes
+
+    if num_processes >= 0:
         try:
             http_server = httpserver.HTTPServer(app)
             http_server.bind(port, address)
-            http_server.start(num_processes=args.num_processes)
-        except:
+            http_server.start(num_processes=num_processes)
+            if num_processes == 0:
+                logger.info(f"Started Tornado with auto-detected CPU count")
+            else:
+                logger.info(f"Started Tornado with {num_processes} process(es)")
+        except Exception as e:
+            logger.warning(f"Failed to start multi-process mode: {e}. Falling back to single process.")
             app.listen(port, address=address)
     else:
         app.listen(port, address=address)
+        logger.info("Started Tornado in single-process mode")
 
     logger.info("Server listening on {}:{}".format(address, port))
     logger.info("Database type: {}".format("PostgreSQL" if db_manager.is_postgres else "SQLite"))

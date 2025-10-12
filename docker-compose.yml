@@ -33,6 +33,7 @@ services:
       MAX_CONCURRENT_EXECUTIONS: 60
       EXECUTION_TIMEOUT: 60
       MEMORY_LIMIT_MB: 128
+      TORNADO_PROCESSES: ${TORNADO_PROCESSES:-1}
     volumes:
       # CRITICAL: Mount persistent storage for user files
       - user_files:/app/server/projects/ide
@@ -46,9 +47,6 @@ services:
       sh -c "
         echo 'Waiting for database...' &&
         sleep 5 &&
-        echo 'Running migrations and creating users...' &&
-        python migrations/create_real_class_users.py --no-remove &&
-        python migrations/sync_user_directories.py &&
         echo 'Starting server...' &&
         python server.py
       "

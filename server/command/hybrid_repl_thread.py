@@ -57,6 +57,7 @@ class HybridREPLThread(threading.Thread):
         self.file_size_limit_mb = int(os.environ.get("FILE_SIZE_LIMIT_MB", "10"))
         self.max_processes = int(os.environ.get("MAX_PROCESSES", "50"))
         self.start_time = time.time()
+        self._last_char_time = time.time()  # Track when we last received output (for idle detection)
 
         # Track input state for timeout pause
         self.waiting_for_input = False
@@ -651,11 +652,18 @@ while True:
 
                 current_time = time.time()
 
-                # Only accumulate time if NOT waiting for input
-                if not self.waiting_for_input:
+                # Check if process is idle (likely waiting for input)
+                # If no output received for >1 second, assume waiting for input
+                time_since_last_output = current_time - self._last_char_time if hasattr(self, '_last_char_time') else 0
+                is_idle = time_since_last_output > 1.0
+
+                # Only accumulate time if NOT waiting for input AND process is not idle
+                if not self.waiting_for_input and not is_idle:
                     elapsed_since_last = current_time - last_check
                     script_exec_time += elapsed_since_last
-                else:
+                elif is_idle:
+                    print(f"[TIMEOUT_MONITOR_V2] Paused (process idle {time_since_last_output:.1f}s - likely waiting for input)")
+                elif self.waiting_for_input:
                     print(f"[TIMEOUT_MONITOR_V2] Paused (waiting for input)")
 
                 last_check = current_time
@@ -921,6 +929,9 @@ while True:
                         break
 
                     print(f"[PTY-DEBUG] Received {len(data)} bytes from PTY: {repr(data[:200])}")
+
+                    # Track last output time for idle detection (used by timeout monitor)
+                    self._last_char_time = time.time()
 
                     # FAST FLOOD DETECTION: If receiving full 4KB chunks repeatedly during script execution, likely an infinite loop
                     if not self.repl_mode and len(data) >= 4000:

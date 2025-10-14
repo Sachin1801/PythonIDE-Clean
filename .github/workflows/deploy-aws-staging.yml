@@ -59,7 +59,7 @@ jobs:
 
         # Remove metadata fields that can't be used in registration
         cat .github/ecs-task-definition-staging.json | \
-          jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' \
+          jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy, .enableFaultInjection)' \
           > .github/ecs-task-definition-staging-clean.json
 
         mv .github/ecs-task-definition-staging-clean.json .github/ecs-task-definition-staging.json

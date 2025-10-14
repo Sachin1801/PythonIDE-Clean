@@ -28,15 +28,16 @@ def init_users_if_needed():
         print(f"Checking if users need initialization...")
         print(f"DATABASE_URL found: {db_url[:30]}...")
 
-        # Parse the database URL
+        # Parse the database URL (port is optional, defaults to 5432)
         import re
 
-        match = re.match(r"postgresql://([^:]+):([^@]+)@([^:]+):(\d+)/(.+)", db_url)
+        match = re.match(r"postgresql://([^:]+):([^@]+)@([^/:]+)(?::(\d+))?/(.+)", db_url)
         if not match:
             print("Invalid DATABASE_URL format")
             return
 
         user, password, host, port, database = match.groups()
+        port = port or "5432"  # Default to 5432 if not specified
 
         # Connect to database
         conn = psycopg2.connect(host=host, port=port, database=database, user=user, password=password)

@@ -356,3 +356,5 @@ A: Can implement:
 ---
 
 *This document should be read by any AI assistant or developer working on this project to understand the full context and requirements.*
+- You always need to use uv when trying to run a python file because that will activate the isolated environment with dependencies and if not present it can be installed and updted in the @server/pyproject.toml
+- whenever we make code changes on the backend server we need to rebuild and run docker-compse up -d pythonide to see the changes

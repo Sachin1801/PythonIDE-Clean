@@ -30,6 +30,8 @@ services:
       # For AWS deployment, this will be overridden with RDS endpoint
       DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/pythonide}
       IDE_SECRET_KEY: ${IDE_SECRET_KEY:-secure-key-change-in-production}
+      # CRITICAL: Set IDE_DATA_PATH to use Docker volume (not AWS EFS path)
+      IDE_DATA_PATH: /app/server/projects
       MAX_CONCURRENT_EXECUTIONS: 60
       EXECUTION_TIMEOUT: 60
       MEMORY_LIMIT_MB: 128

@@ -603,7 +603,7 @@ export default {
     const processMessage = (message) => {
       if (message.code === 0) {
         // Regular output
-        if (message.data && message.data.stdout !== undefined) {
+        if (message.data && message.data.stdout !== undefined && message.data.stdout !== '') {
           addOutput(message.data.stdout, 'text')
         }
       } else if (message.code === 1) {

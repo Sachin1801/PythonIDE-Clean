@@ -47,3 +47,11 @@ adminData/
 
 test_logs_*.txt
 *.log
+
+# Temporary documentation files
+PROGRESS_SUMMARY.md
+TODO_TOMORROW.md
+
+# Deployment scripts with sensitive data
+deployment/staging-db-password.txt
+deployment/*password*.txt

@@ -1283,11 +1283,9 @@ export default {
             console.log('🔍 [REPL] Processing stdout:', JSON.stringify(output));
             
             // Only filter pure REPL prompts, allow everything else
+            // Skip completely empty output to avoid cluttering console
             if (!output.match(/^(>>>|\.\.\.)\s*$/) && output.trim() !== '') {
               this.addReplOutput(output, 'output');
-            } else if (output.trim() === '') {
-              // For empty lines, still add them to maintain formatting
-              this.addReplOutput('', 'output');
             }
           }
           if (dict.data.stderr) {

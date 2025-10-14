@@ -1,0 +1,118 @@
+name: Deploy to AWS ECS Staging
+
+on:
+  push:
+    branches: [ staging ]
+  workflow_dispatch: # Allow manual trigger
+
+env:
+  AWS_REGION: us-east-2
+  ECR_REPOSITORY: pythonide-backend
+  ECS_SERVICE: pythonide-staging-service
+  ECS_CLUSTER: pythonide-cluster
+  ECS_TASK_DEFINITION: .github/ecs-task-definition-staging.json
+  TASK_FAMILY: pythonide-staging-task
+
+jobs:
+  deploy:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build, tag, and push staging image to Amazon ECR
+      id: build-image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: staging-${{ github.sha }}
+      run: |
+        # Build Docker image for linux/amd64 platform
+        docker build --platform linux/amd64 -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker build --platform linux/amd64 -t $ECR_REGISTRY/$ECR_REPOSITORY:staging-latest .
+
+        # Push both tags
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:staging-latest
+
+        echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+    - name: Get staging task definition
+      run: |
+        # Get the current staging task definition
+        aws ecs describe-task-definition \
+          --task-definition ${{ env.TASK_FAMILY }} \
+          --region ${{ env.AWS_REGION }} \
+          --query 'taskDefinition' > .github/ecs-task-definition-staging.json
+
+        # Remove metadata fields that can't be used in registration
+        cat .github/ecs-task-definition-staging.json | \
+          jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' \
+          > .github/ecs-task-definition-staging-clean.json
+
+        mv .github/ecs-task-definition-staging-clean.json .github/ecs-task-definition-staging.json
+
+    - name: Fill in the new image ID in the Amazon ECS task definition
+      id: task-def
+      uses: aws-actions/amazon-ecs-render-task-definition@v1
+      with:
+        task-definition: ${{ env.ECS_TASK_DEFINITION }}
+        container-name: pythonide-backend
+        image: ${{ steps.build-image.outputs.image }}
+
+    - name: Deploy Amazon ECS task definition to Staging
+      uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+      with:
+        task-definition: ${{ steps.task-def.outputs.task-definition }}
+        service: ${{ env.ECS_SERVICE }}
+        cluster: ${{ env.ECS_CLUSTER }}
+        wait-for-service-stability: true
+
+    - name: Verify Staging Deployment
+      run: |
+        echo "🔍 Verifying staging deployment..."
+
+        # Get service status
+        SERVICE_INFO=$(aws ecs describe-services \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --services ${{ env.ECS_SERVICE }} \
+          --region ${{ env.AWS_REGION }} \
+          --query 'services[0].{RunningCount:runningCount,DesiredCount:desiredCount,TaskDefinition:taskDefinition}')
+
+        echo "Staging Service Status:"
+        echo "$SERVICE_INFO"
+
+        RUNNING_TASKS=$(echo "$SERVICE_INFO" | grep -o '"RunningCount":[0-9]*' | cut -d: -f2)
+
+        if [ "$RUNNING_TASKS" -gt "0" ]; then
+          echo "✅ Staging deployment successful! Running $RUNNING_TASKS task(s)"
+        else
+          echo "⚠️ Warning: No tasks running yet"
+        fi
+
+    - name: Post-Deployment Summary
+      run: |
+        echo "🎉 STAGING DEPLOYMENT SUMMARY"
+        echo "==============================="
+        echo "✅ New Docker image deployed to staging"
+        echo "✅ Image tag: staging-${{ github.sha }}"
+        echo "✅ ECS Service: ${{ env.ECS_SERVICE }}"
+        echo "✅ ECS Cluster: ${{ env.ECS_CLUSTER }}"
+        echo ""
+        echo "🔗 Monitor staging service:"
+        echo "  • ECS Console: https://console.aws.amazon.com/ecs/home?region=${{ env.AWS_REGION }}#/clusters/${{ env.ECS_CLUSTER }}/services"
+        echo "  • Application: Check your staging ALB endpoint"
+        echo ""
+        echo "⚠️  Staging uses a separate database and service configuration"

@@ -987,8 +987,47 @@ while True:
                         print(f"[PTY-DEBUG] ✓ Timeout monitor will now exit (REPL mode active)")
                         self.response_to_client(5000, {"mode": "repl"})
 
-                    # For PTY mode with native input(), we don't need INPUT_REQUEST markers
-                    # The prompts appear naturally in the output stream
+                    # Check for matplotlib figures
+                    if "__MATPLOTLIB_FIGURE_START__" in buffer and "__MATPLOTLIB_FIGURE_END__" in buffer:
+                        start = buffer.index("__MATPLOTLIB_FIGURE_START__") + len("__MATPLOTLIB_FIGURE_START__")
+                        end = buffer.index("__MATPLOTLIB_FIGURE_END__")
+                        figure_data = buffer[start:end].strip()
+
+                        # Send figure to client
+                        self.response_to_client(3000, {"figure": figure_data})
+
+                        # Clear the marker from buffer
+                        buffer = buffer[end + len("__MATPLOTLIB_FIGURE_END__"):]
+
+                    # CRITICAL: Check for INPUT_REQUEST markers from custom input() during script execution
+                    if "__INPUT_REQUEST_START__" in buffer and "__INPUT_REQUEST_END__" in buffer:
+                        # Extract the positions
+                        marker_start = buffer.index("__INPUT_REQUEST_START__")
+                        marker_end = buffer.index("__INPUT_REQUEST_END__") + len("__INPUT_REQUEST_END__")
+
+                        # Extract prompt from markers
+                        prompt_start = marker_start + len("__INPUT_REQUEST_START__")
+                        prompt_end = buffer.index("__INPUT_REQUEST_END__")
+                        prompt = buffer[prompt_start:prompt_end]
+
+                        # Send any text before the marker
+                        pre_marker = buffer[:marker_start]
+                        if pre_marker and pre_marker.strip():
+                            for line in pre_marker.split("\n"):
+                                if line or line == "":
+                                    self.response_to_client(0, {"stdout": line})
+
+                        print(f"[PTY-DEBUG] Input request detected: {repr(prompt)}")
+
+                        # Pause timeout when waiting for user input
+                        self.waiting_for_input = True
+
+                        # Send input request signal to enable input field (with prompt for frontend)
+                        # The frontend will display the prompt, so we don't need to send it separately
+                        self.response_to_client(2000, {"prompt": prompt})
+
+                        # Clear the processed part from buffer
+                        buffer = buffer[marker_end:].lstrip('\n')
 
                     # Send complete lines to client
                     while '\n' in buffer or '\r' in buffer:

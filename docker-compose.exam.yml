@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  # Exam PostgreSQL database (separate from main)
+  postgres-exam:
+    image: postgres:15.7-alpine
+    container_name: pythonide-exam-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: pythonide_exam
+    volumes:
+      - postgres_exam_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"  # Different port to avoid conflict
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Exam IDE container
+  pythonide-exam:
+    build: .
+    container_name: pythonide-exam-app
+    ports:
+      - "10087:8080"  # Different port for exam environment
+    environment:
+      # Exam-specific configuration
+      DATABASE_URL: ${EXAM_DATABASE_URL:-postgresql://postgres:postgres@postgres-exam:5432/pythonide_exam}
+      IDE_SECRET_KEY: ${EXAM_SECRET_KEY:-exam-secure-key-change-in-production}
+      IDE_DATA_PATH: /app/server/exam-projects  # Separate data path
+      # Exam mode flag
+      IS_EXAM_MODE: "true"
+      # Path prefix for routing
+      PATH_PREFIX: "/exam"
+      # Standard settings
+      MAX_CONCURRENT_EXECUTIONS: 60
+      EXECUTION_TIMEOUT: 30  # Shorter timeout for exams
+      MEMORY_LIMIT_MB: 128
+      TORNADO_PROCESSES: ${TORNADO_PROCESSES:-1}
+    volumes:
+      # Separate volume for exam files
+      - exam_user_files:/app/server/exam-projects/ide
+      # Mount initialization scripts
+      - ./server/migrations:/app/server/migrations
+      - ./server/init_exam_users.py:/app/server/init_exam_users.py
+    depends_on:
+      postgres-exam:
+        condition: service_healthy
+    restart: unless-stopped
+    command: >
+      sh -c "
+        echo 'Waiting for exam database...' &&
+        sleep 5 &&
+        echo 'Initializing exam users...' &&
+        python init_exam_users.py &&
+        echo 'Starting exam server...' &&
+        python server.py
+      "
+
+  # Main IDE with lockdown capability
+  pythonide-main:
+    build: .
+    container_name: pythonide-main-app
+    ports:
+      - "10086:8080"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/pythonide}
+      IDE_SECRET_KEY: ${IDE_SECRET_KEY:-secure-key-change-in-production}
+      IDE_DATA_PATH: /app/server/projects
+      # Lockdown configuration
+      LOCKDOWN_MODE: ${LOCKDOWN_MODE:-false}
+      LOCKDOWN_START: ${LOCKDOWN_START:-}  # ISO format: 2024-03-15T09:00:00Z
+      LOCKDOWN_END: ${LOCKDOWN_END:-}      # ISO format: 2024-03-15T10:30:00Z
+      LOCKDOWN_MESSAGE: "Main IDE is locked during exam. Please use https://pythonide-alb.amazonaws.com/exam/"
+      # Standard settings
+      MAX_CONCURRENT_EXECUTIONS: 60
+      EXECUTION_TIMEOUT: 60
+      MEMORY_LIMIT_MB: 128
+      TORNADO_PROCESSES: ${TORNADO_PROCESSES:-1}
+    volumes:
+      - user_files:/app/server/projects/ide
+      - ./server/migrations:/app/server/migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  postgres_exam_data:
+  user_files:
+  exam_user_files:

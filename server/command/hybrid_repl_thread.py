@@ -484,6 +484,7 @@ while True:
             print(f"[HYBRID-REPL] Final decision: use_pty={use_pty}")
 
             if use_pty:
+                print(f"[HYBRID-REPL] ========== USING PTY MODE ==========")
                 # Use PTY for proper terminal emulation (Unix only)
                 # Set terminal size for better output
                 import fcntl
@@ -505,6 +506,7 @@ while True:
                     preexec_fn=lambda: (os.setsid(), self.set_resource_limits()) if is_unix else None,
                     close_fds=False
                 )
+                print(f"[HYBRID-REPL] ✓ PTY subprocess created successfully")
 
                 # Close slave end in parent
                 os.close(slave_fd)
@@ -516,6 +518,7 @@ while True:
                 self.master_fd = master_fd  # Store for reading/writing
 
             else:
+                print(f"[HYBRID-REPL] ========== USING PIPE MODE (PTY not available) ==========")
                 # Fall back to pipes (Windows or PTY not available)
                 popen_kwargs = {
                     "stdin": subprocess.PIPE,
@@ -535,7 +538,8 @@ while True:
                     popen_kwargs['preexec_fn'] = setup_process
 
                 self.p = subprocess.Popen([Config.PYTHON, "-u", wrapper_path], **popen_kwargs)
-                print(f"[HYBRID-REPL] ✗ Subprocess created with PIPES (not PTY)")
+                print(f"[HYBRID-REPL] ✓ PIPE subprocess created successfully")
+                print(f"[HYBRID-REPL] ⚠️  Note: Using INPUT_REQUEST markers for input() detection")
 
             print(f"[HYBRID-REPL] Subprocess PID: {self.p.pid}")
 
@@ -1167,18 +1171,12 @@ while True:
 
                         print(f"[HYBRID-REPL] Input request detected: {repr(prompt)}")
 
-                        # CRITICAL: Display the prompt to the user IMMEDIATELY
-                        # This ensures the user sees "Enter start year:" etc.
-                        if prompt:
-                            # Send the prompt as regular output so it's visible in the console
-                            self.response_to_client(0, {"stdout": prompt})
-
                         # Pause timeout when waiting for user input
                         self.waiting_for_input = True
 
-                        # Send input request signal to enable input field
-                        # Pass empty prompt since we already displayed it above
-                        self.response_to_client(2000, {"prompt": ""})
+                        # Send input request signal to enable input field (with prompt for frontend)
+                        # The frontend will display the prompt, so we don't need to send it separately
+                        self.response_to_client(2000, {"prompt": prompt})
 
                         # Clear the processed part from buffer
                         buffer = buffer[marker_end:].lstrip('\n')

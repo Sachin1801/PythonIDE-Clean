@@ -1,0 +1,74 @@
+{
+  "family": "pythonide-exam-task",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "arn:aws:iam::653306034507:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::653306034507:role/ecsTaskRole",
+  "containerDefinitions": [
+    {
+      "name": "pythonide-exam",
+      "image": "653306034507.dkr.ecr.us-east-2.amazonaws.com/pythonide-exam:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "DATABASE_URL",
+          "value": "postgresql://pythonide_admin:Sachinadlakha9082@pythonide-db.c1u6aa2mqwwf.us-east-2.rds.amazonaws.com:5432/pythonide_exam"
+        },
+        {
+          "name": "IDE_DATA_PATH",
+          "value": "/mnt/efs/pythonide-data-exam"
+        },
+        {
+          "name": "IS_EXAM_MODE",
+          "value": "true"
+        },
+        {
+          "name": "MAX_CONCURRENT_EXECUTIONS",
+          "value": "60"
+        },
+        {
+          "name": "EXECUTION_TIMEOUT",
+          "value": "30"
+        },
+        {
+          "name": "MEMORY_LIMIT_MB",
+          "value": "128"
+        }
+      ],
+      "mountPoints": [
+        {
+          "sourceVolume": "efs-volume",
+          "containerPath": "/mnt/efs"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/aws/ecs/pythonide-exam",
+          "awslogs-region": "us-east-2",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ],
+  "volumes": [
+    {
+      "name": "efs-volume",
+      "efsVolumeConfiguration": {
+        "fileSystemId": "fs-0ba3b6fecab24774a",
+        "transitEncryption": "ENABLED",
+        "authorizationConfig": {
+          "iam": "DISABLED"
+        }
+      }
+    }
+  ]
+}

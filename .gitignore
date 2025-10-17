@@ -8,6 +8,7 @@ node_modules
 .env.*.local
 .env.development
 .env.production
+aws_creds.txt
 
 
 # Log files
@@ -39,6 +40,7 @@ docs/
 
 # Credential files - never commit passwords or sensitive data
 adminData/
+adminData/exam_credentials.csv
 *.csv
 *credentials*.csv
 *password*.csv

@@ -19,7 +19,8 @@ from .pty_interactive_thread import PTYInteractiveThread
 from .working_simple_thread import WorkingSimpleThread
 from .working_input_thread import WorkingInputThread
 from .repl_thread import PythonREPLThread
-from .hybrid_repl_thread import HybridREPLThread
+from .hybrid_repl_thread import HybridREPLThread  # Legacy - being replaced
+from .terminado_repl_handler import TerminadoPythonREPL  # NEW: Production-grade REPL
 from .bug_report_handler import handle_bug_report
 from common.config import Config
 from common.file_storage import file_storage
@@ -721,9 +722,9 @@ print("="*50)
                         print(f"[BACKEND-DEBUG] Failed to terminate REPL: {e}")
                         pass  # Continue even if termination fails
 
-                    # Always create a new HybridREPLThread (threads cannot be reused)
-                    print(f"[BACKEND-DEBUG] Using HybridREPLThread for Python execution with REPL")
-                    thread = HybridREPLThread(
+                    # Create new Terminado-based REPL (production-grade replacement for HybridREPLThread)
+                    print(f"[BACKEND-DEBUG] Using TerminadoPythonREPL (Terminado-based) for Python execution with REPL")
+                    thread = TerminadoPythonREPL(
                         cmd_id,
                         client,
                         asyncio.get_event_loop(),
@@ -786,9 +787,9 @@ print("="*50)
         prj_name = data.get("projectName", "repl")
         print(f"[BACKEND-DEBUG] Starting empty Python REPL for project: {prj_name}")
 
-        # Create Hybrid REPL thread without script (empty REPL)
-        thread = HybridREPLThread(cmd_id, client, asyncio.get_event_loop(), script_path=None)
-        print(f"[BACKEND-DEBUG] Empty REPL thread created for cmd_id: {cmd_id}")
+        # Create Terminado-based REPL without script (empty REPL)
+        thread = TerminadoPythonREPL(cmd_id, client, asyncio.get_event_loop(), script_path=None)
+        print(f"[BACKEND-DEBUG] Empty Terminado REPL created for cmd_id: {cmd_id}")
 
         # Register the thread
         client.handler_info.set_subprogram(cmd_id, thread)

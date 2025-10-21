@@ -8,7 +8,8 @@ import time
 import logging
 from typing import Dict, Optional, Tuple
 from datetime import datetime, timedelta
-from .hybrid_repl_thread import HybridREPLThread
+from .hybrid_repl_thread import HybridREPLThread  # Legacy
+from .terminado_repl_handler import TerminadoPythonREPL  # NEW: Production-grade
 
 try:
     from config import Config
@@ -116,15 +117,17 @@ class REPLRegistry:
                     f"Maximum processes per user exceeded ({active_count}/{max_per_user}). Please close other running processes first."
                 )
 
-            # Create new REPL process
+            # Create new REPL process (using Terminado-based implementation)
             logger.info(
-                f"Creating new REPL process: user={username}, file={repl_key} ({active_count + 1}/{max_per_user})"
+                f"Creating new Terminado REPL process: user={username}, file={repl_key} ({active_count + 1}/{max_per_user})"
             )
-            new_repl = HybridREPLThread(
+            new_repl = TerminadoPythonREPL(
                 cmd_id=cmd_id,
                 client=client,
                 event_loop=loop,
                 script_path=file_path,
+                username=username,
+                lock_manager=None,  # Lock manager not used in registry context
                 registry_callback=self._on_repl_finished,
             )
 

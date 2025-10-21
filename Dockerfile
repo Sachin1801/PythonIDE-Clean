@@ -8,8 +8,8 @@ WORKDIR /app
 COPY package*.json ./
 
 # Create production environment file for build
-# Using exam domain for WebSocket connection
-RUN echo "VUE_APP_WS_URL=ws://exam.pythonide-classroom.tech" > .env.production
+# Using exam domain with port 10086 for WebSocket connection
+RUN echo "VUE_APP_WS_URL=ws://exam.pythonide-classroom.tech:10086" > .env.production
 
 # Install dependencies (including dev dependencies for build)
 RUN npm ci

@@ -33,6 +33,7 @@ from common.database import db_manager
 from health_monitor import health_monitor
 from migrations.migration_manager import run_auto_migrations
 from auto_init_users import init_users_if_needed
+from tornado.web import StaticFileHandler
 
 # Load environment variables
 load_dotenv()
@@ -224,6 +225,7 @@ def main():
         (r"/api/forgot-password", ForgotPasswordHandler),
         (r"/api/reset-password", ResetPasswordHandler),
         (r"/api/upload-file", UploadFileHandler),
+        (r"/static/(.*)", StaticFileHandler, {"path": static_path}),  # Serve static files (CSS, JS, etc)
         *get_admin_handlers(),  # Admin password management endpoints
         get_migration_handler(),  # TEMPORARY migration endpoint - REMOVE AFTER USE
         (r"^.*$", VueHandler),

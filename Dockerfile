@@ -66,4 +66,9 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
 
 # Start the application with initialization
 WORKDIR /app/server
-CMD ["sh", "-c", "/app/deployment/sync-student-directories.sh && python /app/server/auto_init_users.py && python /app/server/ensure_efs_directories.py && python server.py"]
+
+# Copy adminData directory for exam credentials
+COPY adminData/ /app/adminData/
+
+# Conditional startup based on IS_EXAM_MODE environment variable
+CMD ["sh", "-c", "if [ \"$IS_EXAM_MODE\" = \"true\" ]; then echo 'Starting in EXAM mode...' && python /app/server/init_exam_users.py && python /app/server/ensure_efs_directories.py && python server.py; else echo 'Starting in NORMAL mode...' && /app/deployment/sync-student-directories.sh && python /app/server/auto_init_users.py && python /app/server/ensure_efs_directories.py && python server.py; fi"]

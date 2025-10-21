@@ -26,7 +26,7 @@ def hash_password(password):
 
 
 def init_exam_users(reset_existing=False):
-    """Initialize exam users for mid-term"""
+    """Initialize exam users from CSV file"""
     print("=== EXAM USER INITIALIZATION STARTED ===")
 
     try:
@@ -61,132 +61,79 @@ def init_exam_users(reset_existing=False):
 
         # Reset existing users if requested
         if reset_existing:
-            print("Clearing existing exam users...")
-            cursor.execute("DELETE FROM users WHERE username LIKE 'exam_%'")
+            print("Clearing existing users...")
+            cursor.execute("DELETE FROM users")
             conn.commit()
 
-        # List of student NetIDs (from your main student list)
-        student_netids = [
-            "sa8820", "na3649", "ntb5594", "hrb9324", "nd2560",
-            "ag11389", "arg9667", "lh4052", "jh9963", "ch5315",
-            "wh2717", "bsj5539", "fk2248", "nvk9963", "sil9056",
-            "hl6459", "zl3894", "jom2045", "arm9283", "zm2525",
-            "im2420", "jn3143", "jn9106", "djp10030", "ap10062",
-            "bap9618", "fp2331", "srp8204", "agr8457", "shs9941",
-            "as19217", "mat9481", "cw4715", "jw9248", "sz4766",
-            "sz3991", "eif2018", "ql2499", "gs4387", "cw4973", "jy4383"
-        ]
-
-        # Also get full names from main database if available
-        student_names = {
-            "sa8820": "Syed Ahnaf Ul Ahsan",
-            "na3649": "Nicole Akmetov",
-            "ntb5594": "Nabi Burns-Min",
-            "hrb9324": "Harry Byala",
-            "nd2560": "Nikita Drovin-skiy",
-            "ag11389": "Adrian Garcia",
-            "arg9667": "Aarav Gupta",
-            "lh4052": "Liisa Hambazaza",
-            "jh9963": "Justin Hu",
-            "ch5315": "Rami Hu",
-            "wh2717": "Weijie Huang",
-            "bsj5539": "Maybelina J",
-            "fk2248": "Falisha Khan",
-            "nvk9963": "Neil Khandelwal",
-            "sil9056": "Simon Levine",
-            "hl6459": "Haoru Li",
-            "zl3894": "Jenny Li",
-            "jom2045": "Janell Magante",
-            "arm9283": "Amelia Mappus",
-            "zm2525": "Zhou Meng",
-            "im2420": "Ishaan Mukherjee",
-            "jn3143": "Janvi Nagpal",
-            "jn9106": "Jacob Nathan",
-            "djp10030": "Darius Partovi",
-            "ap10062": "Alexandar Pelletier",
-            "bap9618": "Benjamin Piquet",
-            "fp2331": "Federico Pirelli",
-            "srp8204": "Shaina Pollak",
-            "agr8457": "Alex Reber",
-            "shs9941": "Suzie Sanford",
-            "as19217": "Albert Sun",
-            "mat9481": "Mario Toscano",
-            "cw4715": "Chun-Hsiang Wang",
-            "jw9248": "Jingyuan Wang",
-            "sz4766": "Shengbo Zhang",
-            "sz3991": "Shiwen Zhu",
-            "eif2018": "Ethan Flores",
-            "ql2499": "Nick Li",
-            "gs4387": "Gursehaj Singh",
-            "cw4973": "Caden Wang",
-            "jy4383": "Jessica Yuan"
-        }
-
-        # Create CSV file with credentials in adminData directory
+        # Read credentials from CSV file
         admin_data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "adminData")
-        os.makedirs(admin_data_dir, exist_ok=True)
-        csv_filename = os.path.join(admin_data_dir, f"exam_credentials_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv")
+        csv_path = os.path.join(admin_data_dir, "exam_credentials_LATEST.csv")
 
-        with open(csv_filename, 'w', newline='') as csvfile:
-            csvwriter = csv.writer(csvfile)
-            csvwriter.writerow(['Username', 'Password', 'Full Name', 'NetID'])
+        if not os.path.exists(csv_path):
+            print(f"ERROR: Credentials file not found at {csv_path}")
+            return
 
-            # Create exam users
-            created_count = 0
-            for netid in student_netids:
-                exam_username = f"exam_{netid}"
-                exam_password = generate_random_password()
-                full_name = student_names.get(netid, f"Student {netid}")
-                email = f"{exam_username}@college.edu"
-                password_hash = hash_password(exam_password)
+        print(f"Reading credentials from: {csv_path}")
+
+        # Create exam users from CSV
+        created_students = 0
+        created_admins = 0
+
+        with open(csv_path, 'r', newline='') as csvfile:
+            csvreader = csv.DictReader(csvfile)
+
+            for row in csvreader:
+                username = row['Username'].strip()
+                password = row['Password'].strip()
+                full_name = row['Full Name'].strip()
+                netid = row['NetID'].strip()
+
+                # Skip empty rows
+                if not username or not password:
+                    continue
+
+                email = f"{username}@college.edu"
+                password_hash = hash_password(password)
+
+                # Determine role: professors/admins vs students
+                # Admin accounts: sa9082, et2434, sl7927, admin_editor, dpp9951
+                admin_netids = ['sa9082', 'et2434', 'sl7927', 'admin_editor', 'dpp9951']
+                role = "professor" if netid in admin_netids else "student"
 
                 try:
                     cursor.execute("""
                         INSERT INTO users (username, email, password_hash, full_name, role)
                         VALUES (%s, %s, %s, %s, %s)
-                        ON CONFLICT (username) DO NOTHING
-                    """, (exam_username, email, password_hash, full_name, "student"))
+                        ON CONFLICT (username) DO UPDATE SET
+                            email = EXCLUDED.email,
+                            password_hash = EXCLUDED.password_hash,
+                            full_name = EXCLUDED.full_name,
+                            role = EXCLUDED.role
+                    """, (username, email, password_hash, full_name, role))
 
-                    # Write to CSV
-                    csvwriter.writerow([exam_username, exam_password, full_name, netid])
+                    print(f"Created {role}: {username} ({full_name}) - Password: {password}")
 
-                    print(f"Created: {exam_username} - Password: {exam_password}")
-                    created_count += 1
+                    if role == "professor":
+                        created_admins += 1
+                    else:
+                        created_students += 1
 
                 except Exception as e:
-                    print(f"Error creating {exam_username}: {e}")
-
-        # Create exam professor accounts (for monitoring)
-        print("\nCreating exam professor accounts...")
-        exam_professors = [
-            ("exam_sl7927", "Susan Liao", "ExamAdmin@sl7927"),
-            ("exam_sa9082", "Sachin Adlakha", "ExamAdmin@sa9082"),
-            ("exam_et2434", "Ethan Tan", "ExamAdmin@et2434"),
-        ]
-
-        for username, full_name, password in exam_professors:
-            email = f"{username}@college.edu"
-            password_hash = hash_password(password)
-            cursor.execute("""
-                INSERT INTO users (username, email, password_hash, full_name, role)
-                VALUES (%s, %s, %s, %s, %s)
-                ON CONFLICT (username) DO NOTHING
-            """, (username, email, password_hash, full_name, "professor"))
-            print(f"Created professor: {username}")
+                    print(f"Error creating {username}: {e}")
 
         conn.commit()
 
-        # Verify
-        cursor.execute("SELECT COUNT(*) FROM users WHERE username LIKE 'exam_%' AND role='student'")
+        # Verify - count all students and professors
+        cursor.execute("SELECT COUNT(*) FROM users WHERE role='student'")
         student_count = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM users WHERE username LIKE 'exam_%' AND role='professor'")
+        cursor.execute("SELECT COUNT(*) FROM users WHERE role='professor'")
         prof_count = cursor.fetchone()[0]
 
         print(f"\n✅ Exam user initialization complete!")
-        print(f"Created {student_count} exam student accounts")
-        print(f"Created {prof_count} exam professor accounts")
-        print(f"Credentials saved to: {csv_filename}")
-        print("\n⚠️  IMPORTANT: Keep this CSV file secure! Share passwords individually with students.")
+        print(f"Total student accounts: {student_count} ({created_students} processed)")
+        print(f"Total professor/admin accounts: {prof_count} ({created_admins} processed)")
+        print(f"Credentials source: {csv_path}")
+        print("\n⚠️  IMPORTANT: All passwords are from exam_credentials_LATEST.csv")
 
         cursor.close()
         conn.close()
@@ -255,19 +202,24 @@ def fibonacci(n):
 # You can reference these examples but cannot modify this file
 """)
 
-        # List of exam student usernames
-        exam_usernames = [f"exam_{netid}" for netid in [
-            "sa8820", "na3649", "ntb5594", "hrb9324", "nd2560",
-            "ag11389", "arg9667", "lh4052", "jh9963", "ch5315",
-            "wh2717", "bsj5539", "fk2248", "nvk9963", "sil9056",
-            "hl6459", "zl3894", "jom2045", "arm9283", "zm2525",
-            "im2420", "jn3143", "jn9106", "djp10030", "ap10062",
-            "bap9618", "fp2331", "srp8204", "agr8457", "shs9941",
-            "as19217", "mat9481", "cw4715", "jw9248", "sz4766",
-            "sz3991", "eif2018", "ql2499", "gs4387", "cw4973", "jy4383"
-        ]]
+        # Read usernames from CSV file
+        admin_data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "adminData")
+        csv_path = os.path.join(admin_data_dir, "exam_credentials_LATEST.csv")
 
-        # Create directories for each exam student
+        exam_usernames = []
+        if os.path.exists(csv_path):
+            with open(csv_path, 'r', newline='') as csvfile:
+                csvreader = csv.DictReader(csvfile)
+                for row in csvreader:
+                    username = row['Username'].strip()
+                    if username:
+                        exam_usernames.append(username)
+            print(f"Found {len(exam_usernames)} exam accounts from CSV")
+        else:
+            print(f"WARNING: CSV file not found at {csv_path}, skipping directory creation")
+            return
+
+        # Create directories for each exam user
         for username in exam_usernames:
             user_dir = os.path.join(base_path, username)
             os.makedirs(user_dir, exist_ok=True)

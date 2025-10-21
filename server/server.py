@@ -254,12 +254,16 @@ def main():
             sys.exit(1)
         logger.info("Database migrations completed successfully")
 
-        # Auto-initialize users if needed
-        logger.info("Checking if users need initialization...")
-        try:
-            init_users_if_needed()
-        except Exception as e:
-            logger.error(f"Failed to initialize users: {e}")
+        # Auto-initialize users if needed (skip for exam environment)
+        is_exam_mode = os.environ.get("IS_EXAM_MODE", "false").lower() == "true"
+        if not is_exam_mode:
+            logger.info("Checking if users need initialization...")
+            try:
+                init_users_if_needed()
+            except Exception as e:
+                logger.error(f"Failed to initialize users: {e}")
+        else:
+            logger.info("Exam mode detected - skipping auto_init_users (exam uses init_exam_users.py)")
     else:
         logger.warning("DATABASE_URL not set - using local PostgreSQL fallback")
         logger.warning("Migrations will be skipped without DATABASE_URL")

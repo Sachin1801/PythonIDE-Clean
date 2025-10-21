@@ -8,7 +8,8 @@ WORKDIR /app
 COPY package*.json ./
 
 # Create production environment file for build
-RUN echo "VUE_APP_WS_URL=ws://pythonide-alb-456687384.us-east-2.elb.amazonaws.com" > .env.production
+# Using exam domain for WebSocket connection
+RUN echo "VUE_APP_WS_URL=ws://exam.pythonide-classroom.tech" > .env.production
 
 # Install dependencies (including dev dependencies for build)
 RUN npm ci

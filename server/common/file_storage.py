@@ -54,8 +54,23 @@ class FileStorageManager:
         """Get lecture notes directory path"""
         return os.path.join(self.ide_base, "Lecture Notes")
 
+    def validate_user_folder_name(self, username):
+        """Validate that folder name matches username for exam environment"""
+        # Check if we're in exam mode
+        is_exam_mode = os.environ.get("IS_EXAM_MODE", "false").lower() == "true"
+
+        if is_exam_mode:
+            # In exam mode, ensure username starts with "exam_"
+            if not username.startswith("exam_"):
+                raise ValueError(f"Invalid folder name in exam environment: {username}. Expected format: exam_{{netid}}")
+
+        return True
+
     def create_user_directories(self, username, full_name):
         """Create directory structure for a new user"""
+        # Validate folder naming (exam mode check)
+        self.validate_user_folder_name(username)
+
         user_dir = self.get_user_directory(username)
 
         # Create user subdirectories

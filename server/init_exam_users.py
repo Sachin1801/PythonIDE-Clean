@@ -14,9 +14,9 @@ import csv
 
 
 def generate_random_password(length=5):
-    """Generate a random 5-character password"""
-    # Use letters and digits (avoid ambiguous characters like 0,O,1,l)
-    chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+    """Generate a random 5-character password (lowercase alphanumeric)"""
+    # Use lowercase letters and digits (avoid ambiguous characters like 0,o,1,l)
+    chars = 'abcdefghjklmnpqrstuvwxyz23456789'
     return ''.join(random.choice(chars) for _ in range(length))
 
 
@@ -30,11 +30,11 @@ def init_exam_users(reset_existing=False):
     print("=== EXAM USER INITIALIZATION STARTED ===")
 
     try:
-        # Get exam database URL from environment
-        db_url = os.environ.get("EXAM_DATABASE_URL", "")
+        # Get database URL from environment (same var as main server)
+        db_url = os.environ.get("DATABASE_URL", "")
         if not db_url:
-            print("EXAM_DATABASE_URL not set!")
-            print("Please set: export EXAM_DATABASE_URL='postgresql://user:pass@host:port/pythonide_exam'")
+            print("DATABASE_URL not set!")
+            print("Please set: export DATABASE_URL='postgresql://user:pass@host:port/pythonide_exam'")
             return
 
         print(f"Connecting to exam database...")
@@ -122,8 +122,10 @@ def init_exam_users(reset_existing=False):
             "jy4383": "Jessica Yuan"
         }
 
-        # Create CSV file with credentials
-        csv_filename = f"exam_credentials_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        # Create CSV file with credentials in adminData directory
+        admin_data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "adminData")
+        os.makedirs(admin_data_dir, exist_ok=True)
+        csv_filename = os.path.join(admin_data_dir, f"exam_credentials_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv")
 
         with open(csv_filename, 'w', newline='') as csvfile:
             csvwriter = csv.writer(csvfile)
@@ -202,12 +204,13 @@ def create_exam_directories():
     """Create directories on EFS for exam users"""
     try:
         # Determine the base path for EXAM environment
-        if os.path.exists("/mnt/efs"):
+        # Prioritize IDE_DATA_PATH (set in Docker), then check for EFS, then fallback to /tmp
+        if "IDE_DATA_PATH" in os.environ:
+            base_path = os.path.join(os.environ["IDE_DATA_PATH"], "ide", "Local")
+            example_path = os.path.join(os.environ["IDE_DATA_PATH"], "ide", "Example")
+        elif os.path.exists("/mnt/efs/pythonide-data-exam"):
             base_path = "/mnt/efs/pythonide-data-exam/ide/Local"
             example_path = "/mnt/efs/pythonide-data-exam/ide/Example"
-        elif "EXAM_IDE_DATA_PATH" in os.environ:
-            base_path = os.path.join(os.environ["EXAM_IDE_DATA_PATH"], "ide", "Local")
-            example_path = os.path.join(os.environ["EXAM_IDE_DATA_PATH"], "ide", "Example")
         else:
             base_path = "/tmp/pythonide-data-exam/ide/Local"
             example_path = "/tmp/pythonide-data-exam/ide/Example"
@@ -269,22 +272,17 @@ def fibonacci(n):
             user_dir = os.path.join(base_path, username)
             os.makedirs(user_dir, exist_ok=True)
 
-            # Create initial exam file (will be replaced before actual exam)
-            exam_file = os.path.join(user_dir, "midterm_exam.py")
-            with open(exam_file, "w") as f:
-                f.write(f"""# Mid-Term Exam - {username}
-# This is a practice file. The actual exam questions will appear here.
+            # Create welcome file for exam environment
+            welcome_file = os.path.join(user_dir, "welcome.py")
+            with open(welcome_file, "w") as f:
+                f.write("""# Welcome to the Exam IDE Environment
+# This is your isolated workspace for examinations.
+# Only you and the instructors can access files in this directory.
 
-print("Welcome to the exam environment, {username}!")
-print("This is where your exam questions will appear.")
-print("You can practice using this environment before the exam.")
-
-# Practice: Write a function that returns the square of a number
-def square(n):
-    pass  # Your code here
-
-# Test your function
-# print(square(5))  # Should print 25
+print("Welcome to the Exam IDE!")
+print("This environment is isolated and secure.")
+print("You can write and test your Python code here.")
+print("Good luck on your exam!")
 """)
 
             print(f"Created exam directory for: {username}")

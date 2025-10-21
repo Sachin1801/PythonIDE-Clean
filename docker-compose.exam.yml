@@ -60,36 +60,36 @@ services:
         python server.py
       "
 
-  # Main IDE with lockdown capability
-  pythonide-main:
-    build: .
-    container_name: pythonide-main-app
-    ports:
-      - "10086:8080"
-    environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/pythonide}
-      IDE_SECRET_KEY: ${IDE_SECRET_KEY:-secure-key-change-in-production}
-      IDE_DATA_PATH: /app/server/projects
-      # Lockdown configuration
-      LOCKDOWN_MODE: ${LOCKDOWN_MODE:-false}
-      LOCKDOWN_START: ${LOCKDOWN_START:-}  # ISO format: 2024-03-15T09:00:00Z
-      LOCKDOWN_END: ${LOCKDOWN_END:-}      # ISO format: 2024-03-15T10:30:00Z
-      LOCKDOWN_MESSAGE: "Main IDE is locked during exam. Please use https://pythonide-alb.amazonaws.com/exam/"
-      # Standard settings
-      MAX_CONCURRENT_EXECUTIONS: 60
-      EXECUTION_TIMEOUT: 60
-      MEMORY_LIMIT_MB: 128
-      TORNADO_PROCESSES: ${TORNADO_PROCESSES:-1}
-    volumes:
-      - user_files:/app/server/projects/ide
-      - ./server/migrations:/app/server/migrations
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
+  # Main IDE with lockdown capability (DISABLED - only using exam environment for testing)
+  # pythonide-main:
+  #   build: .
+  #   container_name: pythonide-main-app
+  #   ports:
+  #     - "10086:8080"
+  #   environment:
+  #     DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/pythonide}
+  #     IDE_SECRET_KEY: ${IDE_SECRET_KEY:-secure-key-change-in-production}
+  #     IDE_DATA_PATH: /app/server/projects
+  #     # Lockdown configuration
+  #     LOCKDOWN_MODE: ${LOCKDOWN_MODE:-false}
+  #     LOCKDOWN_START: ${LOCKDOWN_START:-}  # ISO format: 2024-03-15T09:00:00Z
+  #     LOCKDOWN_END: ${LOCKDOWN_END:-}      # ISO format: 2024-03-15T10:30:00Z
+  #     LOCKDOWN_MESSAGE: "Main IDE is locked during exam. Please use https://pythonide-alb.amazonaws.com/exam/"
+  #     # Standard settings
+  #     MAX_CONCURRENT_EXECUTIONS: 60
+  #     EXECUTION_TIMEOUT: 60
+  #     MEMORY_LIMIT_MB: 128
+  #     TORNADO_PROCESSES: ${TORNADO_PROCESSES:-1}
+  #   volumes:
+  #     - user_files:/app/server/projects/ide
+  #     - ./server/migrations:/app/server/migrations
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   restart: unless-stopped
 
 volumes:
-  postgres_data:
+  # postgres_data:  # Not needed for exam-only testing
   postgres_exam_data:
-  user_files:
+  # user_files:  # Not needed for exam-only testing
   exam_user_files:

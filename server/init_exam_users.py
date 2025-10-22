@@ -154,53 +154,16 @@ def create_exam_directories():
         # Prioritize IDE_DATA_PATH (set in Docker), then check for EFS, then fallback to /tmp
         if "IDE_DATA_PATH" in os.environ:
             base_path = os.path.join(os.environ["IDE_DATA_PATH"], "ide", "Local")
-            example_path = os.path.join(os.environ["IDE_DATA_PATH"], "ide", "Example")
         elif os.path.exists("/mnt/efs/pythonide-data-exam"):
             base_path = "/mnt/efs/pythonide-data-exam/ide/Local"
-            example_path = "/mnt/efs/pythonide-data-exam/ide/Example"
         else:
             base_path = "/tmp/pythonide-data-exam/ide/Local"
-            example_path = "/tmp/pythonide-data-exam/ide/Example"
 
         print(f"\nCreating exam directories at: {base_path}")
 
-        # Create base directories
+        # Create base Local directory only (no Example folder needed)
         os.makedirs(base_path, exist_ok=True)
-        os.makedirs(example_path, exist_ok=True)
-
-        # Create Example folder with read-only sample files
-        example_file = os.path.join(example_path, "example_functions.py")
-        with open(example_file, "w") as f:
-            f.write("""# Example Functions for Mid-Term Exam
-# This is a read-only reference file
-
-def calculate_average(numbers):
-    '''Calculate the average of a list of numbers'''
-    if not numbers:
-        return 0
-    return sum(numbers) / len(numbers)
-
-def is_palindrome(text):
-    '''Check if a string is a palindrome'''
-    clean_text = ''.join(c.lower() for c in text if c.isalnum())
-    return clean_text == clean_text[::-1]
-
-def fibonacci(n):
-    '''Generate first n Fibonacci numbers'''
-    if n <= 0:
-        return []
-    elif n == 1:
-        return [0]
-    elif n == 2:
-        return [0, 1]
-    else:
-        fib = [0, 1]
-        for i in range(2, n):
-            fib.append(fib[-1] + fib[-2])
-        return fib
-
-# You can reference these examples but cannot modify this file
-""")
+        
 
         # Read usernames from CSV file
         admin_data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "adminData")
@@ -225,6 +188,119 @@ def fibonacci(n):
             os.makedirs(user_dir, exist_ok=True)
 
             # Create welcome file for exam environment
+            words_file = os.path.join(user_dir,"words.py")
+            with open(words_file,"w") as f:
+                f.write("""words = (
+    "elephant",
+    "beautiful",
+    "conversation",
+    "university",
+    "imagination",
+    "celebration",
+    "important",
+    "responsible",
+    "fantastic",
+    "adventure",
+    "environment",
+    "intelligent",
+    "discovery",
+    "magnificent",
+    "population",
+    "operation",
+    "creativity",
+    "electricity",
+    "definition",
+    "application",
+    "communication",
+    "generation",
+    "information",
+    "motivation",
+    "organization",
+    "delicious",
+    "appreciation",
+    "opportunity",
+    "circumstance",
+    "announcement"
+)""")
+            
+            print(f"Created words.py for : {username}")
+            
+            
+            names_file = os.path.join(user_dir,"names.py")
+            with open(names_file,"w") as f:
+                f.write("""names = (
+    "Aaliyah",      # Arabic
+    "Sofia",        # Spanish / Greek
+    "Mei",          # Chinese
+    "Amara",        # Igbo (Nigerian) / Sanskrit
+    "Elena",        # Italian / Greek
+    "Priya",        # Indian (Sanskrit)
+    "Nora",         # Arabic / Irish
+    "Yara",         # Arabic / Brazilian
+    "Keiko",        # Japanese
+    "Anastasia",    # Russian / Greek
+    "Layla",        # Arabic
+    "Chioma",       # Igbo (Nigerian)
+    "Ines",         # Portuguese / Spanish
+    "Zainab",       # Arabic
+    "Lucía",        # Spanish
+    "Maya",         # Hebrew / Sanskrit
+    "Evelina",      # Swedish / Latin
+    "Amina",        # Arabic / Swahili
+    "Harper",       # English
+    "Carmen",       # Spanish
+    "Sakura",       # Japanese
+    "Fatima",       # Arabic / Portuguese
+    "Isabella",     # Italian / Hebrew
+    "Chloe",        # Greek / English
+    "Tahlia",       # Hebrew / Australian
+    "Nalani",       # Hawaiian
+    "Gianna",       # Italian
+    "Noor",         # Arabic
+    "Amelia",       # French
+    "Zuri"          # Swahili)
+)""")
+            
+            print(f"Created names.py for : {username}")
+            
+            nums_file = os.path.join(user_dir,"nums.py")
+            with open(nums_file,"w") as f:
+                f.write("""nums = (
+    True,
+    3.14,
+    "27",
+    108,
+    0.001,
+    "56.7",
+    999,
+    7.5,
+    "1000",
+    64,
+    12.75,
+    "3.14159",
+    81,
+    2.718,
+    "450",
+    2048,
+    6.022e23,
+    "0.0001",
+    73,
+    19.99,
+    "2500",
+    8,
+    0.5,
+    "123456",
+    31,
+    9.81,
+    "42",
+    100,
+    4.44,
+    "0"
+)""")
+            
+            print(f"Created nums.py for : {username}")
+
+            # Create welcome file for exam environment
             welcome_file = os.path.join(user_dir, "welcome.py")
             with open(welcome_file, "w") as f:
                 f.write("""# Welcome to the Exam IDE Environment
@@ -237,7 +313,8 @@ print("You can write and test your Python code here.")
 print("Good luck on your exam!")
 """)
 
-            print(f"Created exam directory for: {username}")
+            print(f"Created welcome.py for : {username}")
+            print(f"✓ Created exam directory for: {username}")
 
         print("✅ All exam directories created")
 

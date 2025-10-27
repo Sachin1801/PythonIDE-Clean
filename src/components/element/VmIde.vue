@@ -1269,55 +1269,126 @@ export default {
     
     handleReplResponse(dict) {
       console.log('🎯 [REPL] Processing REPL response:', dict);
-      console.log('🎯 [REPL] Response code:', dict?.code, 'Data keys:', dict?.data ? Object.keys(dict.data) : 'no data');
-      
+      console.log('🎯 [REPL] Response type:', dict?.type, 'Data:', dict?.data);
+
       if (!dict) return;
-      
-      // Handle different response codes
-      if (dict.code === 0 || dict.code === '0') {
-        // Success response with output
-        if (dict.data) {
-          if (dict.data.stdout) {
-            // Filter out REPL prompts from stdout but allow other content
-            const output = dict.data.stdout;
-            console.log('🔍 [REPL] Processing stdout:', JSON.stringify(output));
-            
-            // Only filter pure REPL prompts, allow everything else
-            // Skip completely empty output to avoid cluttering console
-            if (!output.match(/^(>>>|\.\.\.)\s*$/) && output.trim() !== '') {
-              this.addReplOutput(output, 'output');
+
+      // Handle new SimpleExecutorV2 message format
+      if (dict.type) {
+        switch (dict.type) {
+          case 'stdout':
+            // Standard output from script or REPL
+            if (dict.data && dict.data.text) {
+              const output = dict.data.text;
+              // Filter out pure REPL prompts but allow other content
+              if (!output.match(/^(>>>|\.\.\.)\s*$/) && output.trim() !== '') {
+                this.addReplOutput(output, 'output');
+              }
+            }
+            break;
+
+          case 'stderr':
+            // Error output
+            if (dict.data && dict.data.text) {
+              this.addReplOutput(dict.data.text, 'error');
+            }
+            break;
+
+          case 'input_request':
+            // Input request from Python script
+            console.log('Input request received:', dict.data);
+            if (dict.data && dict.data.prompt) {
+              // Show the input prompt
+              this.addReplOutput(dict.data.prompt, 'output');
+              // Show input field
+              this.$store.commit('ide/setConsoleWaiting', {
+                id: this.ideInfo.consoleSelected?.id || dict.cmd_id,
+                waiting: true,
+                prompt: dict.data.prompt
+              });
+              this.programInputPrompt = dict.data.prompt;
+              // Focus the input field
+              this.$nextTick(() => {
+                if (this.$refs.programInputField) {
+                  this.$refs.programInputField.focus();
+                }
+              });
+            }
+            break;
+
+          case 'repl_ready':
+            // REPL mode is ready
+            console.log('REPL ready:', dict.data);
+            this.isReplMode = true;
+            if (dict.data && dict.data.prompt) {
+              this.replPrompt = dict.data.prompt;
+            }
+            break;
+
+          case 'complete':
+            // Execution completed
+            console.log('Execution complete:', dict.data);
+            this.isReplMode = false;
+            if (dict.data && dict.data.exit_code !== 0) {
+              this.addReplOutput(`\nProcess exited with code ${dict.data.exit_code}`, 'system');
+            }
+            this.$store.commit('ide/setConsoleWaiting', {
+              id: this.ideInfo.consoleSelected?.id || dict.cmd_id,
+              waiting: false
+            });
+            break;
+
+          case 'error':
+            // System error
+            if (dict.data) {
+              const errorMsg = dict.data.error || 'Unknown error';
+              this.addReplOutput('Error: ' + errorMsg, 'error');
+              if (dict.data.traceback) {
+                this.addReplOutput(dict.data.traceback, 'error');
+              }
+            }
+            break;
+
+          case 'figure':
+            // Matplotlib figure
+            if (dict.data && dict.data.content) {
+              // Add figure display logic here if needed
+              console.log('Figure received, base64 length:', dict.data.content.length);
+            }
+            break;
+
+          default:
+            console.log('Unknown message type:', dict.type);
+        }
+      } else {
+        // Handle old format for backward compatibility
+        if (dict.code === 0 || dict.code === '0') {
+          // Success response with output
+          if (dict.data) {
+            if (dict.data.stdout) {
+              const output = dict.data.stdout;
+              if (!output.match(/^(>>>|\.\.\.)\s*$/) && output.trim() !== '') {
+                this.addReplOutput(output, 'output');
+              }
+            }
+            if (dict.data.stderr) {
+              this.addReplOutput(dict.data.stderr, 'error');
             }
           }
-          if (dict.data.stderr) {
-            this.addReplOutput(dict.data.stderr, 'error');
+        } else if (dict.code === 2000) {
+          // Input request (old format)
+          if (dict.data && dict.data.prompt) {
+            this.addReplOutput(dict.data.prompt, 'output');
+            this.$store.commit('ide/setConsoleWaiting', {
+              id: this.ideInfo.consoleSelected?.id,
+              waiting: true,
+              prompt: dict.data.prompt
+            });
           }
-          if (dict.data.output) {
-            this.addReplOutput(dict.data.output, 'output');
-          }
+        } else if (dict.code === 5000) {
+          // REPL mode (old format)
+          this.isReplMode = true;
         }
-      } else if (dict.code === 2000) {
-        // Input request from Python script
-        console.log('Input request received:', dict.data);
-        if (dict.data && dict.data.prompt) {
-          // Show the input prompt
-          this.addReplOutput(dict.data.prompt, 'output');
-          // The input field should already be visible in the console
-        }
-      } else if (dict.code === 5000) {
-        // Entering REPL mode after script execution
-        console.log('Entering REPL mode after script execution');
-        this.isReplMode = true;
-        // REPL mode starting - no extra messages needed
-      } else if (dict.code === 1111 || dict.cmd === 'python_ended') {
-        // REPL session ended
-        this.addReplOutput('\nREPL session ended', 'system');
-        this.isReplMode = false;
-        this.replSessionId = null;
-        this.replPrompt = '>>> ';
-      } else if (dict.code === -1 || dict.error) {
-        // Error response
-        const errorMsg = dict.error || dict.data?.error || 'Unknown error';
-        this.addReplOutput('Error: ' + errorMsg, 'error');
       }
       
       // Scroll to bottom after adding output

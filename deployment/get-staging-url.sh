@@ -7,8 +7,7 @@ set -e
 echo "🔍 Finding staging environment URL..."
 echo ""
 
-# Ensure AWS profile is set
-export AWS_PROFILE=personal
+# Use default AWS credentials (no profile needed)
 REGION="us-east-2"
 CLUSTER="pythonide-cluster"
 SERVICE="pythonide-staging-service"

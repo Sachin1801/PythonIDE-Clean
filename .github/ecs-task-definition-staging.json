@@ -36,11 +36,11 @@
       "secrets": [
         {
           "name": "DATABASE_URL",
-          "valueFrom": "arn:aws:secretsmanager:us-east-2:653306034507:secret:pythonide/database-staging-url"
+          "valueFrom": "arn:aws:secretsmanager:us-east-2:653306034507:secret:pythonide/database-staging-url-dHFcEB"
         },
         {
           "name": "IDE_SECRET_KEY",
-          "valueFrom": "arn:aws:secretsmanager:us-east-2:653306034507:secret:pythonide/ide-secret-key"
+          "valueFrom": "arn:aws:secretsmanager:us-east-2:653306034507:secret:pythonide/ide-secret-key-4Zq4DI"
         }
       ],
       "mountPoints": [

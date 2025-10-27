@@ -59,8 +59,10 @@ class InteractiveREPLConsole(code.InteractiveConsole):
             input_value = self.executor.input_queue.get(timeout=300)
             self.executor.waiting_for_input = False
 
-            # Echo the input back
+            # Don't echo the input - the user already sees it in the input field
+            
             self.executor.send_message(MessageType.STDOUT, input_value + "\n")
+            # Standard Python input() doesn't echo either
             return input_value
 
         except Empty:
@@ -249,8 +251,9 @@ class SimpleExecutorV3(threading.Thread):
             input_value = self.input_queue.get(timeout=300)
             self.waiting_for_input = False
 
-            # Echo the input
-            self.send_message(MessageType.STDOUT, input_value + "\n")
+            # Don't echo the input - the user already sees it in the input field
+            # self.send_message(MessageType.STDOUT, input_value + "\n")
+            # Standard Python input() doesn't echo either
             return input_value
 
         except Empty:

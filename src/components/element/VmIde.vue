@@ -1346,6 +1346,36 @@ export default {
               if (dict.data.traceback) {
                 this.addReplOutput(dict.data.traceback, 'error');
               }
+
+              // AUTO-STOP: Check if this is a timeout or infinite loop error and automatically stop the console
+              const shouldAutoStop = errorMsg.includes('Script timeout') ||
+                                    errorMsg.includes('Time limit exceeded') ||
+                                    errorMsg.includes('Infinite loop detected') ||
+                                    errorMsg.includes('Output rate limit exceeded') ||
+                                    errorMsg.includes('Flood detected');
+
+              if (shouldAutoStop) {
+                const stopReason = errorMsg.includes('timeout') ? 'Timeout' : 'Infinite loop';
+                console.log(`⏰ [AUTO-STOP] ${stopReason} detected - automatically stopping console`);
+
+                // Stop the console to free resources
+                const consoleId = this.ideInfo.consoleSelected?.id || dict.cmd_id;
+                if (consoleId) {
+                  // Small delay to ensure error message is displayed first
+                  setTimeout(() => {
+                    this.stop(consoleId);
+                    // Update the console state to show it's stopped
+                    this.$store.commit('ide/updateConsoleItem', {
+                      id: consoleId,
+                      run: false,
+                      stop: true
+                    });
+
+                    // Add a final message to the console
+                    this.addReplOutput('\n🛑 Console automatically stopped to free resources.\n', 'system');
+                  }, 100);
+                }
+              }
             }
             break;
 

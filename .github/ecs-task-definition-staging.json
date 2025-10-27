@@ -21,14 +21,6 @@
       "essential": true,
       "environment": [
         {
-          "name": "DATABASE_URL",
-          "value": "postgresql://pythonide_admin:Sachinadlakha9082@pythonide-db.c1u6aa2mqwwf.us-east-2.rds.amazonaws.com:5432/pythonide_staging"
-        },
-        {
-          "name": "IDE_SECRET_KEY",
-          "value": "@ok#N2q0%!F2zGUuC^rYvtY2Op#hkEWsMtBRDsk@5Bq7D8x#Y18kajwIrozM0YE6"
-        },
-        {
           "name": "IDE_DATA_PATH",
           "value": "/mnt/efs/pythonide-staging-data"
         },
@@ -39,6 +31,16 @@
         {
           "name": "ENVIRONMENT",
           "value": "staging"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "DATABASE_URL",
+          "valueFrom": "arn:aws:secretsmanager:us-east-2:653306034507:secret:pythonide/database-staging-url"
+        },
+        {
+          "name": "IDE_SECRET_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-2:653306034507:secret:pythonide/ide-secret-key"
         }
       ],
       "mountPoints": [

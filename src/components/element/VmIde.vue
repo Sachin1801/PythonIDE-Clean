@@ -1372,7 +1372,7 @@ export default {
                     });
 
                     // Add a final message to the console
-                    this.addReplOutput('\n🛑 Console automatically stopped to free resources.\n', 'system');
+                    this.addReplOutput('\nConsole stopped .\n', 'system');
                   }, 100);
                 }
               }

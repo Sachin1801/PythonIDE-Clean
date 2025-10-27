@@ -681,7 +681,7 @@ print("="*50)
         print(
             f"[BACKEND-DEBUG] run_python_program: projectName={prj_name}, filePath={file_path_input}, hybrid={use_hybrid}"
         )
-        print(f"[BACKEND-DEBUG] Full path constructed: {file_path}")
+        # print(f"[BACKEND-DEBUG] Full path constructed: {file_path}")
         print(
             f"[BACKEND-DEBUG] File exists: {os.path.exists(file_path)}, Is file: {os.path.isfile(file_path) if os.path.exists(file_path) else 'N/A'}"
         )
@@ -704,38 +704,24 @@ print("="*50)
 
                 try:
                     # First stop any existing subprocess for this cmd_id to prevent duplicates
-                    print(f"[RUN-PYTHON] ===== STARTING NEW EXECUTION =====")
-                    print(f"[RUN-PYTHON] cmd_id: {cmd_id}, file: {file_path}")
-                    print(f"[RUN-PYTHON] Stopping existing subprocess for cmd_id: {cmd_id}")
+                    # print(f"[RUN-PYTHON] ===== STARTING NEW EXECUTION =====")
+                    # print(f"[RUN-PYTHON] cmd_id: {cmd_id}, file: {file_path}")
+                    # print(f"[RUN-PYTHON] Stopping existing subprocess for cmd_id: {cmd_id}")
 
                     # Get existing subprogram if any
                     existing = client.handler_info.get_subprogram(cmd_id)
                     if existing:
-                        print(f"[RUN-PYTHON] Found existing thread: {existing}")
-                        print(f"[RUN-PYTHON] Thread alive: {existing.is_alive() if hasattr(existing, 'is_alive') else 'N/A'}")
+                        # print(f"[RUN-PYTHON] Found existing thread: {existing}")
+                        # print(f"[RUN-PYTHON] Thread alive: {existing.is_alive() if hasattr(existing, 'is_alive') else 'N/A'}")
+                        pass  # Keep the block valid even with commented prints
 
                     client.handler_info.stop_subprogram(cmd_id)
 
-                    # Terminate existing REPL for this file to ensure fresh execution with updated code
-                    try:
-                        from .repl_registry import repl_registry
-
-                        # Normalize path to match the format used in save handler
-                        normalized_path = os.path.normpath(file_path)
-                        terminated = repl_registry.terminate_repl(username, normalized_path)
-                        if terminated:
-                            print(f"[RUN-PYTHON] Terminated existing REPL for {normalized_path}")
-                            # Brief delay to ensure complete process cleanup
-                            import time
-                            time.sleep(0.2)  # Increased delay
-                        else:
-                            print(f"[RUN-PYTHON] No existing REPL found for {normalized_path}")
-                    except Exception as e:
-                        print(f"[RUN-PYTHON] Failed to check REPL registry: {e}")
-                        pass  # Continue even if termination fails
+                    # Note: Old REPL registry code removed - SimpleExecutorV3 handles cleanup automatically
+                    # Each run creates a fresh thread, old threads are terminated via handler_info
 
                     # Always create a new SimpleExecutorV3 (threads cannot be reused)
-                    print(f"[RUN-PYTHON] Creating new SimpleExecutorV3 thread")
+                    # print(f"[RUN-PYTHON] Creating new SimpleExecutorV3 thread")
                     thread = SimpleExecutorV3(
                         cmd_id,
                         client,
@@ -743,7 +729,7 @@ print("="*50)
                         script_path=file_path,
                         username=username,
                     )
-                    print(f"[RUN-PYTHON] New thread created: {thread}")
+                    # print(f"[RUN-PYTHON] New thread created: {thread}")
                 except Exception as e:
                     # If anything fails, release the lock
                     execution_lock_manager.release_execution_lock(username, file_path, cmd_id)
@@ -751,14 +737,14 @@ print("="*50)
             else:
                 # Use the working implementation with byte-by-byte reading
                 cmd = [Config.PYTHON, "-u", file_path]
-                print(f"[BACKEND-DEBUG] Using WorkingSimpleThread for Python execution")
+                # print(f"[BACKEND-DEBUG] Using WorkingSimpleThread for Python execution")
                 thread = WorkingSimpleThread(cmd, cmd_id, client, asyncio.get_event_loop())
 
-            print(f"[BACKEND-DEBUG] Thread created for cmd_id: {cmd_id}")
+            # print(f"[BACKEND-DEBUG] Thread created for cmd_id: {cmd_id}")
             # Ensure clean state before setting new subprogram
             client.handler_info.set_subprogram(cmd_id, thread)
             await response(client, cmd_id, 0, None)
-            print(f"[BACKEND-DEBUG] Starting new subprocess for cmd_id: {cmd_id}")
+            # print(f"[BACKEND-DEBUG] Starting new subprocess for cmd_id: {cmd_id}")
             client.handler_info.start_subprogram(cmd_id)
         else:
             await response(client, cmd_id, 1111, "File can not run")
@@ -798,11 +784,11 @@ print("="*50)
         """Start a Python REPL session (empty, no script)"""
         prj_name = data.get("projectName", "repl")
         username = data.get("username", "unknown")
-        print(f"[BACKEND-DEBUG] Starting empty Python REPL for project: {prj_name}")
+        # print(f"[BACKEND-DEBUG] Starting empty Python REPL for project: {prj_name}")
 
         # Create SimpleExecutorV3 thread without script (empty REPL)
         thread = SimpleExecutorV3(cmd_id, client, asyncio.get_event_loop(), script_path=None, username=username)
-        print(f"[BACKEND-DEBUG] Empty REPL thread created for cmd_id: {cmd_id}")
+        # print(f"[BACKEND-DEBUG] Empty REPL thread created for cmd_id: {cmd_id}")
 
         # Register the thread
         client.handler_info.set_subprogram(cmd_id, thread)
@@ -812,7 +798,7 @@ print("="*50)
     async def stop_python_repl(self, client, cmd_id, data):
         """Stop a Python REPL session"""
         repl_id = data.get("repl_id", cmd_id)
-        print(f"[BACKEND-DEBUG] Stopping Python REPL with id: {repl_id}")
+        # print(f"[BACKEND-DEBUG] Stopping Python REPL with id: {repl_id}")
 
         # Get the REPL thread
         subprogram = client.handler_info.get_subprogram(repl_id)

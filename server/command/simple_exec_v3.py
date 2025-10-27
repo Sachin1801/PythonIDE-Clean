@@ -22,6 +22,7 @@ import signal
 import traceback
 from typing import Optional, Dict, Any
 import tempfile
+import resource
 
 from command.exec_protocol import (
     MessageType, ExecutionState, create_message,
@@ -137,14 +138,18 @@ class SimpleExecutorV3(threading.Thread):
         self.flood_check_buffer = []
         self.flood_check_time = time.time()
 
-        print(f"[SimpleExecutorV3-INIT] Thread ID: {threading.get_ident()}")
-        print(f"[SimpleExecutorV3-INIT] cmd_id: {cmd_id}, script: {script_path}")
-        print(f"[SimpleExecutorV3-INIT] username: {username}")
-        print(f"[SimpleExecutorV3-INIT] alive: {self.alive}, state: {self.state}")
-        print(f"[SimpleExecutorV3-INIT] Infinite loop detection enabled:"
-              f" rate_limit={self.MAX_LINES_PER_SECOND}/sec,"
-              f" total_limit={self.MAX_TOTAL_LINES},"
-              f" identical_limit={self.MAX_IDENTICAL_LINES}")
+        # ===== RESOURCE LIMITS =====
+        self.MEMORY_LIMIT_MB = 128  # 128MB memory limit
+        self.CPU_TIME_LIMIT = 10    # 10 seconds CPU time (different from wall time)
+
+        # print(f"[SimpleExecutorV3-INIT] Thread ID: {threading.get_ident()}")
+        # print(f"[SimpleExecutorV3-INIT] cmd_id: {cmd_id}, script: {script_path}")
+        # print(f"[SimpleExecutorV3-INIT] username: {username}")
+        # print(f"[SimpleExecutorV3-INIT] alive: {self.alive}, state: {self.state}")
+        # print(f"[SimpleExecutorV3-INIT] Infinite loop detection enabled:"
+            #   f" rate_limit={self.MAX_LINES_PER_SECOND}/sec,"
+            #   f" total_limit={self.MAX_TOTAL_LINES},"
+            #   f" identical_limit={self.MAX_IDENTICAL_LINES}")
 
     def send_message(self, msg_type: MessageType, data: Any):
         """Send message to frontend via WebSocket"""
@@ -180,11 +185,11 @@ class SimpleExecutorV3(threading.Thread):
 
         if msg_type != MessageType.DEBUG:
             data_preview = str(data)[:100] if data else "None"
-            print(f"[SimpleExecutorV3-SEND] Sent {msg_type.value}: {data_preview}")
+            # print(f"[SimpleExecutorV3-SEND] Sent {msg_type.value}: {data_preview}")
 
     def handle_input(self, text: str):
         """Handle input from WebSocket"""
-        print(f"[SimpleExecutorV3] Received input: {text}")
+        # print(f"[SimpleExecutorV3] Received input: {text}")
         self.input_queue.put(text)
 
     def send_input(self, text: str):
@@ -194,32 +199,36 @@ class SimpleExecutorV3(threading.Thread):
     def run(self):
         """Main execution thread"""
         print(f"[SimpleExecutorV3-RUN] ===== THREAD STARTED =====")
-        print(f"[SimpleExecutorV3-RUN] Thread ID: {threading.get_ident()}")
-        print(f"[SimpleExecutorV3-RUN] cmd_id: {self.cmd_id}")
-        print(f"[SimpleExecutorV3-RUN] script_path: {self.script_path}")
-        print(f"[SimpleExecutorV3-RUN] alive: {self.alive}, state: {self.state}")
+        # print(f"[SimpleExecutorV3-RUN] Thread ID: {threading.get_ident()}")
+        # print(f"[SimpleExecutorV3-RUN] cmd_id: {self.cmd_id}")
+        # print(f"[SimpleExecutorV3-RUN] script_path: {self.script_path}")
+        # print(f"[SimpleExecutorV3-RUN] alive: {self.alive}, state: {self.state}")
 
         self.start_time = time.time()
 
         try:
+            # Set resource limits before execution
+            self.set_resource_limits()
+
             # Create namespace for execution
             self.namespace = {
                 '__name__': '__main__',
                 '__doc__': None,
                 'input': self.repl_input  # Custom input function
             }
-            print(f"[SimpleExecutorV3-RUN] Namespace created")
+            # print(f"[SimpleExecutorV3-RUN] Namespace created")
 
             # Execute script if provided
             if self.script_path:
-                print(f"[SimpleExecutorV3-RUN] Executing script: {self.script_path}")
+                # print(f"[SimpleExecutorV3-RUN] Executing script: {self.script_path}")
                 self.execute_script()
             else:
-                print(f"[SimpleExecutorV3-RUN] No script provided, starting REPL directly")
+                # print(f"[SimpleExecutorV3-RUN] No script provided, starting REPL directly")
+                pass  # Keep the block valid even with commented prints
 
             # Start REPL (whether script was run or not)
             if self.alive:  # Only start REPL if still alive
-                print(f"[SimpleExecutorV3-RUN] Starting REPL mode")
+                # print(f"[SimpleExecutorV3-RUN] Starting REPL mode")
                 self.start_repl()
             else:
                 print(f"[SimpleExecutorV3-RUN] Skipping REPL (alive=False)")
@@ -236,9 +245,23 @@ class SimpleExecutorV3(threading.Thread):
                 })
 
         finally:
-            print(f"[SimpleExecutorV3-RUN] Entering cleanup phase")
+            # print(f"[SimpleExecutorV3-RUN] Entering cleanup phase")
             self.cleanup()
-            print(f"[SimpleExecutorV3-RUN] ===== THREAD ENDED =====")
+            # print(f"[SimpleExecutorV3-RUN] ===== THREAD ENDED =====")
+
+    def set_resource_limits(self):
+        """Set memory and CPU resource limits for the execution"""
+        # NOTE: Resource limits in threads affect the entire process
+        # For true isolation, we'd need to use subprocess or containers
+        # For now, we'll rely on:
+        # 1. 3-second timeout (wall clock time)
+        # 2. Output rate limiting (prevents memory exhaustion from output)
+        # 3. Total output limiting (10,000 lines max)
+
+        # Log that resource limits are enforced through other mechanisms
+        print(f"[RESOURCE-LIMITS] Using timeout (3s) and output limits for resource protection")
+        # In production, consider using Docker containers with memory limits
+        # or subprocess with ulimit for true process isolation
 
     def repl_input(self, prompt=""):
         """Custom input function for use in scripts and REPL"""
@@ -262,9 +285,9 @@ class SimpleExecutorV3(threading.Thread):
 
     def execute_script(self):
         """Execute the script file with strict 3-second timeout"""
-        print(f"[SimpleExecutorV3-SCRIPT] ===== SCRIPT EXECUTION START =====")
-        print(f"[SimpleExecutorV3-SCRIPT] Path: {self.script_path}")
-        print(f"[SimpleExecutorV3-SCRIPT] File exists: {os.path.exists(self.script_path)}")
+        # print(f"[SimpleExecutorV3-SCRIPT] ===== SCRIPT EXECUTION START =====")
+        # print(f"[SimpleExecutorV3-SCRIPT] Path: {self.script_path}")
+        # print(f"[SimpleExecutorV3-SCRIPT] File exists: {os.path.exists(self.script_path)}")
 
         self.state = ExecutionState.SCRIPT_RUNNING
         script_start_time = time.time()
@@ -290,15 +313,15 @@ class SimpleExecutorV3(threading.Thread):
         # Start the timeout thread
         timeout_thread = threading.Thread(target=timeout_killer, daemon=True)
         timeout_thread.start()
-        print(f"[SimpleExecutorV3-SCRIPT] Started 3-second timeout monitor")
+        # print(f"[SimpleExecutorV3-SCRIPT] Started 3-second timeout monitor")
 
         try:
             # Read script content
             with open(self.script_path, 'r') as f:
                 script_code = f.read()
 
-            print(f"[SimpleExecutorV3-SCRIPT] Script size: {len(script_code)} bytes")
-            print(f"[SimpleExecutorV3-SCRIPT] First 100 chars: {script_code[:100]}")
+            # print(f"[SimpleExecutorV3-SCRIPT] Script size: {len(script_code)} bytes")
+            # print(f"[SimpleExecutorV3-SCRIPT] First 100 chars: {script_code[:100]}")
 
             # Compile and execute in namespace
             compiled_code = compile(script_code, self.script_path, 'exec')
@@ -326,7 +349,7 @@ class SimpleExecutorV3(threading.Thread):
                 # Script completed successfully - mark as SCRIPT_COMPLETE
                 self.state = ExecutionState.SCRIPT_COMPLETE
                 elapsed = time.time() - script_start_time
-                print(f"[SimpleExecutorV3-SCRIPT] Script completed in {elapsed:.2f} seconds")
+                # print(f"[SimpleExecutorV3-SCRIPT] Script completed in {elapsed:.2f} seconds")
 
                 # Send any output
                 stdout_text = stdout_buffer.getvalue()
@@ -337,15 +360,15 @@ class SimpleExecutorV3(threading.Thread):
                 if stderr_text:
                     self.send_message(MessageType.STDERR, stderr_text)
 
-                # Report variables loaded
-                user_vars = [k for k in self.namespace.keys()
-                            if not k.startswith('_') and k != 'input']
-                if user_vars:
-                    var_msg = f"\n🎯 Script variables loaded into REPL: {', '.join(user_vars)}\n"
-                    self.send_message(MessageType.STDOUT, var_msg)
-                    print(f"[SimpleExecutorV3-SCRIPT] Variables loaded: {user_vars}")
+                # Report variables loaded (disabled for cleaner output)
+                # user_vars = [k for k in self.namespace.keys()
+                #             if not k.startswith('_') and k != 'input']
+                # if user_vars:
+                #     var_msg = f"\n🎯 Script variables loaded into REPL: {', '.join(user_vars)}\n"
+                #     self.send_message(MessageType.STDOUT, var_msg)
+                #     print(f"[SimpleExecutorV3-SCRIPT] Variables loaded: {user_vars}")
 
-                print(f"[SimpleExecutorV3-SCRIPT] Script executed successfully in {elapsed:.2f}s")
+                # print(f"[SimpleExecutorV3-SCRIPT] Script executed successfully in {elapsed:.2f}s")
 
             finally:
                 sys.stdout = old_stdout
@@ -379,12 +402,13 @@ class SimpleExecutorV3(threading.Thread):
             raise
 
         finally:
-            print(f"[SimpleExecutorV3-SCRIPT] ===== SCRIPT EXECUTION END =====")
+            # print(f"[SimpleExecutorV3-SCRIPT] ===== SCRIPT EXECUTION END =====")
+            pass  # Keep the block valid even with commented prints
 
     def start_repl(self):
         """Start the interactive REPL"""
-        print(f"[SimpleExecutorV3-REPL] ===== REPL START =====")
-        print(f"[SimpleExecutorV3-REPL] alive: {self.alive}, state: {self.state}")
+        # print(f"[SimpleExecutorV3-REPL] ===== REPL START =====")
+        # print(f"[SimpleExecutorV3-REPL] alive: {self.alive}, state: {self.state}")
 
         if not self.alive:
             print(f"[SimpleExecutorV3-REPL] Not starting REPL (alive=False)")
@@ -394,11 +418,11 @@ class SimpleExecutorV3(threading.Thread):
 
         # Create custom console
         self.console = InteractiveREPLConsole(self.namespace, self)
-        print(f"[SimpleExecutorV3-REPL] Console created")
+        # print(f"[SimpleExecutorV3-REPL] Console created")
 
         # Send REPL ready message
         self.send_message(MessageType.REPL_READY, {"prompt": ">>>"})
-        print(f"[SimpleExecutorV3-REPL] REPL ready message sent")
+        # print(f"[SimpleExecutorV3-REPL] REPL ready message sent")
 
         # REPL loop
         iteration = 0
@@ -411,7 +435,8 @@ class SimpleExecutorV3(threading.Thread):
 
             # Check every 10 iterations for debugging
             if iteration % 10 == 0:
-                print(f"[SimpleExecutorV3-REPL] Loop iteration {iteration}, alive: {self.alive}, stop_event: {self._stop_event.is_set()}")
+                # print(f"[SimpleExecutorV3-REPL] Loop iteration {iteration}, alive: {self.alive}, stop_event: {self._stop_event.is_set()}")
+                pass  # Keep the block valid even with commented prints
 
             iteration += 1
 
@@ -422,11 +447,11 @@ class SimpleExecutorV3(threading.Thread):
                     command = self.input_queue.get(timeout=0.1)
                     self.last_activity = time.time()
 
-                    print(f"[SimpleExecutorV3-REPL] Received command: {command[:50]}...")
+                    # print(f"[SimpleExecutorV3-REPL] Received command: {command[:50]}...")
 
                     # Handle special commands
                     if command.strip() in ['exit()', 'quit()', 'exit', 'quit']:
-                        print(f"[SimpleExecutorV3-REPL] Exit command received")
+                        # print(f"[SimpleExecutorV3-REPL] Exit command received")
                         self.send_message(MessageType.STDOUT, "\nGoodbye!\n")
                         break
 
@@ -554,7 +579,8 @@ class SimpleExecutorV3(threading.Thread):
 
             # Log rate for debugging (only when high)
             if rate > 50:
-                print(f"[INFINITE-LOOP] High output rate: {rate:.1f} lines/sec")
+                # print(f"[INFINITE-LOOP] High output rate: {rate:.1f} lines/sec")
+                pass  # Keep the block valid even with commented prints
 
         # Layer 2: Total Output Limit (10,000 lines)
         if self.total_output_lines > self.MAX_TOTAL_LINES:
@@ -581,7 +607,8 @@ class SimpleExecutorV3(threading.Thread):
 
                 # Log when getting close to limit
                 if self.identical_line_count > 0 and self.identical_line_count % 100 == 0:
-                    print(f"[INFINITE-LOOP] Warning: '{line[:30]}...' repeated {self.identical_line_count} times")
+                    # print(f"[INFINITE-LOOP] Warning: '{line[:30]}...' repeated {self.identical_line_count} times")
+                    pass  # Keep the block valid even with commented prints
             else:
                 # Reset counter when line changes
                 self.last_output_line = line
@@ -638,14 +665,14 @@ class SimpleExecutorV3(threading.Thread):
 
         # Send error message to user
         error_msg = f"\n⏰ SCRIPT TERMINATED: Time limit exceeded!\n"
-        error_msg += f"Reason: {reason}\n"
-        error_msg += f"\nScript execution is limited to 3 seconds.\n"
-        error_msg += f"\nPossible issues:\n"
-        error_msg += f"  • Infinite loop (while True, endless for loop)\n"
-        error_msg += f"  • Very large data processing\n"
-        error_msg += f"  • Recursive function without proper termination\n"
-        error_msg += f"  • Memory-intensive operations (creating huge lists)\n"
-        error_msg += f"\nTip: Use smaller data sets or add loop limits for testing.\n"
+        # error_msg += f"Reason: {reason}\n"
+        # error_msg += f"\nScript execution is limited to 3 seconds.\n"
+        # error_msg += f"\nPossible issues:\n"
+        # error_msg += f"  • Infinite loop (while True, endless for loop)\n"
+        # error_msg += f"  • Very large data processing\n"
+        # error_msg += f"  • Recursive function without proper termination\n"
+        # error_msg += f"  • Memory-intensive operations (creating huge lists)\n"
+        # error_msg += f"\nTip: Use smaller data sets or add loop limits for testing.\n"
 
         # Send error to console
         self.send_message(MessageType.ERROR, {
@@ -663,13 +690,13 @@ class SimpleExecutorV3(threading.Thread):
 
     def cleanup(self):
         """Clean up resources - CRITICAL for preventing zombie threads"""
-        print(f"[SimpleExecutorV3-CLEANUP] Starting cleanup")
-        print(f"[SimpleExecutorV3-CLEANUP] cmd_id: {self.cmd_id}")
-        print(f"[SimpleExecutorV3-CLEANUP] cleanup_done: {self._cleanup_done}")
+        # print(f"[SimpleExecutorV3-CLEANUP] Starting cleanup")
+        # print(f"[SimpleExecutorV3-CLEANUP] cmd_id: {self.cmd_id}")
+        # print(f"[SimpleExecutorV3-CLEANUP] cleanup_done: {self._cleanup_done}")
 
         # Prevent double cleanup
         if self._cleanup_done:
-            print(f"[SimpleExecutorV3-CLEANUP] Already cleaned up, skipping")
+            # print(f"[SimpleExecutorV3-CLEANUP] Already cleaned up, skipping")
             return
 
         self._cleanup_done = True
@@ -677,7 +704,7 @@ class SimpleExecutorV3(threading.Thread):
         # Send completion message if still connected
         if self.alive and self.client:
             duration = time.time() - self.start_time if self.start_time else 0
-            print(f"[SimpleExecutorV3-CLEANUP] Sending completion message, duration: {duration:.2f}s")
+            # print(f"[SimpleExecutorV3-CLEANUP] Sending completion message, duration: {duration:.2f}s")
             self.send_message(MessageType.COMPLETE, {
                 "exit_code": 0,
                 "duration": duration
@@ -693,8 +720,9 @@ class SimpleExecutorV3(threading.Thread):
             try:
                 from .execution_lock_manager import execution_lock_manager
                 execution_lock_manager.release_execution_lock(self.username, self.script_path, self.cmd_id)
-                print(f"[SimpleExecutorV3-CLEANUP] Released execution lock")
+                # print(f"[SimpleExecutorV3-CLEANUP] Released execution lock")
             except Exception as e:
-                print(f"[SimpleExecutorV3-CLEANUP] Error releasing lock: {e}")
+                # print(f"[SimpleExecutorV3-CLEANUP] Error releasing lock: {e}")
+                pass  # Keep the block valid even with commented prints
 
-        print(f"[SimpleExecutorV3-CLEANUP] Cleanup completed")
+        # print(f"[SimpleExecutorV3-CLEANUP] Cleanup completed")

@@ -3986,18 +3986,27 @@ export default {
           consoleItem => consoleItem.path === previousFile.path
         );
         
-        // Stop the program if it's running (but not REPL)
-        if (prevFileConsole && prevFileConsole.run && !this.isReplMode) {
+        // Stop the program if it's running (including REPL)
+        // CRITICAL: Must stop ANY running process when switching files
+        if (prevFileConsole && (prevFileConsole.run || prevFileConsole.isReplMode || prevFileConsole.replActive)) {
+          console.log('[FILE-SWITCH] Stopping running process for previous file:', previousFile.path);
+          console.log('[FILE-SWITCH] Console state:', {
+            run: prevFileConsole.run,
+            isReplMode: prevFileConsole.isReplMode,
+            replActive: prevFileConsole.replActive
+          });
+
           this.stop(prevFileConsole.id);
-          
-          // Clear any input prompts
-          if (prevFileConsole.waitingForInput) {
-            this.$store.commit('ide/updateConsoleItem', {
-              id: prevFileConsole.id,
-              waitingForInput: false,
-              inputPrompt: ''
-            });
-          }
+
+          // Reset the console state
+          this.$store.commit('ide/updateConsoleItem', {
+            id: prevFileConsole.id,
+            run: false,
+            isReplMode: false,
+            replActive: false,
+            waitingForInput: false,
+            inputPrompt: ''
+          });
         }
         
         // Save the console state for the previous file (preserves output)

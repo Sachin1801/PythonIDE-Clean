@@ -48,17 +48,28 @@ class HandlerInfo(object):
         if program_id is None:
             # Stop all subprograms
             print(f"[HANDLER-INFO-STOP] Stopping all {len(self.subprograms)} subprograms")
-            for pid, t in self.subprograms.items():
+            # Make a copy to avoid modifying dict during iteration
+            subprograms_copy = list(self.subprograms.items())
+
+            # Stop all threads
+            for pid, t in subprograms_copy:
                 print(f"[HANDLER-INFO-STOP] Stopping {pid}: {t}")
-                t.stop()
-            # Join all threads to ensure complete shutdown
-            for pid, t in self.subprograms.items():
+                try:
+                    t.stop()
+                except Exception as e:
+                    print(f"[HANDLER-INFO-STOP] Error stopping {pid}: {e}")
+
+            # Join all threads and clear the dictionary
+            for pid, t in subprograms_copy:
                 try:
                     print(f"[HANDLER-INFO-STOP] Joining thread {pid}")
                     t.join(timeout=0.5)  # Wait max 0.5 seconds per thread
                 except Exception as e:
                     print(f"[HANDLER-INFO-STOP] Error joining {pid}: {e}")
-                    pass
+
+            # Clear all subprograms after stopping
+            self.subprograms.clear()
+            print(f"[HANDLER-INFO-STOP] Cleared all subprograms")
         elif program_id in self.subprograms:
             try:
                 t = self.subprograms.pop(program_id)

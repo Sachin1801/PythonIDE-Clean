@@ -40,7 +40,7 @@ class InteractiveREPLConsole(code.InteractiveConsole):
     def write(self, data):
         """Override write to capture output"""
         if data:
-            # Send to WebSocket
+            # Send to WebSocket (includes infinite loop check)
             self.executor.send_message(MessageType.STDOUT, data)
             # Also buffer it
             self.output_buffer.write(data)
@@ -115,10 +115,34 @@ class SimpleExecutorV3(threading.Thread):
         self._stop_event = threading.Event()  # For clean shutdown
         self._cleanup_done = False  # Prevent double cleanup
 
+        # ===== INFINITE LOOP DETECTION VARIABLES =====
+        # Layer 1: Output rate limiting
+        self.output_start_time = time.time()
+        self.output_line_count = 0
+        self.MAX_LINES_PER_SECOND = 100  # Kill if > 100 lines/sec
+        self.last_rate_check = time.time()
+
+        # Layer 2: Total output limiting
+        self.total_output_lines = 0
+        self.MAX_TOTAL_LINES = 10000  # Kill at 10,000 lines
+
+        # Layer 3: Identical line detection
+        self.last_output_line = None
+        self.identical_line_count = 0
+        self.MAX_IDENTICAL_LINES = 500  # Kill if same line 500x
+
+        # Fast flood detection (catches immediate spam)
+        self.flood_check_buffer = []
+        self.flood_check_time = time.time()
+
         print(f"[SimpleExecutorV3-INIT] Thread ID: {threading.get_ident()}")
         print(f"[SimpleExecutorV3-INIT] cmd_id: {cmd_id}, script: {script_path}")
         print(f"[SimpleExecutorV3-INIT] username: {username}")
         print(f"[SimpleExecutorV3-INIT] alive: {self.alive}, state: {self.state}")
+        print(f"[SimpleExecutorV3-INIT] Infinite loop detection enabled:"
+              f" rate_limit={self.MAX_LINES_PER_SECOND}/sec,"
+              f" total_limit={self.MAX_TOTAL_LINES},"
+              f" identical_limit={self.MAX_IDENTICAL_LINES}")
 
     def send_message(self, msg_type: MessageType, data: Any):
         """Send message to frontend via WebSocket"""
@@ -127,6 +151,10 @@ class SimpleExecutorV3(threading.Thread):
             print(f"[SimpleExecutorV3-SEND] WARNING: Attempt to send message after executor stopped")
             print(f"[SimpleExecutorV3-SEND] cmd_id: {self.cmd_id}, msg_type: {msg_type}, alive: {self.alive}")
             return
+
+        # Check for infinite loop on STDOUT/STDERR messages
+        if msg_type in [MessageType.STDOUT, MessageType.STDERR] and data:
+            self._check_infinite_loop(data)
 
         message = create_message(self.cmd_id, msg_type, data)
         message["cmd"] = "repl_output"
@@ -230,12 +258,36 @@ class SimpleExecutorV3(threading.Thread):
             raise EOFError("No input received")
 
     def execute_script(self):
-        """Execute the script file"""
+        """Execute the script file with strict 3-second timeout"""
         print(f"[SimpleExecutorV3-SCRIPT] ===== SCRIPT EXECUTION START =====")
         print(f"[SimpleExecutorV3-SCRIPT] Path: {self.script_path}")
         print(f"[SimpleExecutorV3-SCRIPT] File exists: {os.path.exists(self.script_path)}")
 
         self.state = ExecutionState.SCRIPT_RUNNING
+        script_start_time = time.time()
+        self.timeout_occurred = False  # Flag for timeout
+
+        # Create a trace function for timeout checking
+        def trace_function(frame, event, arg):
+            """Trace function to interrupt execution on timeout"""
+            if self.timeout_occurred or not self.alive:
+                raise KeyboardInterrupt("Script terminated by timeout")
+            return trace_function
+
+        # Set up a timer to kill script after 3 seconds
+        def timeout_killer():
+            time.sleep(3.0)  # Wait exactly 3 seconds
+            if self.state == ExecutionState.SCRIPT_RUNNING and not self.waiting_for_input:
+                elapsed = time.time() - script_start_time
+                print(f"[SCRIPT-TIMEOUT] Script exceeded 3-second limit (elapsed: {elapsed:.2f}s)")
+
+                # Kill the script
+                self._kill_for_timeout("Script execution time limit exceeded (3 seconds)")
+
+        # Start the timeout thread
+        timeout_thread = threading.Thread(target=timeout_killer, daemon=True)
+        timeout_thread.start()
+        print(f"[SimpleExecutorV3-SCRIPT] Started 3-second timeout monitor")
 
         try:
             # Read script content
@@ -258,8 +310,20 @@ class SimpleExecutorV3(threading.Thread):
                 sys.stdout = stdout_buffer
                 sys.stderr = stderr_buffer
 
-                # Execute the script
-                exec(compiled_code, self.namespace)
+                # Set trace function for timeout checking
+                sys.settrace(trace_function)
+
+                try:
+                    # Execute the script (trace function will interrupt if timeout)
+                    exec(compiled_code, self.namespace)
+                finally:
+                    # Always clear trace function
+                    sys.settrace(None)
+
+                # Script completed successfully - mark as SCRIPT_COMPLETE
+                self.state = ExecutionState.SCRIPT_COMPLETE
+                elapsed = time.time() - script_start_time
+                print(f"[SimpleExecutorV3-SCRIPT] Script completed in {elapsed:.2f} seconds")
 
                 # Send any output
                 stdout_text = stdout_buffer.getvalue()
@@ -278,21 +342,32 @@ class SimpleExecutorV3(threading.Thread):
                     self.send_message(MessageType.STDOUT, var_msg)
                     print(f"[SimpleExecutorV3-SCRIPT] Variables loaded: {user_vars}")
 
-                print(f"[SimpleExecutorV3-SCRIPT] Script executed successfully")
+                print(f"[SimpleExecutorV3-SCRIPT] Script executed successfully in {elapsed:.2f}s")
 
             finally:
                 sys.stdout = old_stdout
                 sys.stderr = old_stderr
+
+        except KeyboardInterrupt:
+            # This is from our timeout killer
+            print(f"[SimpleExecutorV3-SCRIPT] Script interrupted by timeout")
+            # The error message was already sent by _kill_for_timeout
+            self.alive = False
+            self.state = ExecutionState.TERMINATED
+            # Don't start REPL after timeout
+            return
 
         except Exception as e:
             print(f"[SimpleExecutorV3-SCRIPT] ERROR: Script execution failed")
             print(f"[SimpleExecutorV3-SCRIPT] Exception: {e}")
             traceback.print_exc()
 
-            self.send_message(MessageType.ERROR, {
-                "error": str(e),
-                "traceback": traceback.format_exc()
-            })
+            # Only send error if not already terminated
+            if self.state != ExecutionState.TERMINATED:
+                self.send_message(MessageType.ERROR, {
+                    "error": str(e),
+                    "traceback": traceback.format_exc()
+                })
 
             # Mark as not alive to prevent REPL from starting
             self.alive = False
@@ -414,6 +489,10 @@ class SimpleExecutorV3(threading.Thread):
         self.state = ExecutionState.TERMINATED
         self._stop_event.set()
 
+        # For script running, mark timeout to interrupt trace function
+        if self.state == ExecutionState.SCRIPT_RUNNING:
+            self.timeout_occurred = True
+
         # Wake up any waiting input
         if self.waiting_for_input:
             print(f"[SimpleExecutorV3-STOP] Interrupting input wait")
@@ -431,7 +510,153 @@ class SimpleExecutorV3(threading.Thread):
         if cleared_count > 0:
             print(f"[SimpleExecutorV3-STOP] Cleared {cleared_count} items from input queue")
 
+        # If in REPL mode, try to interrupt the console
+        if self.console and self.state in (ExecutionState.REPL_RUNNING, ExecutionState.REPL_READY):
+            print(f"[SimpleExecutorV3-STOP] Attempting to stop REPL console")
+            # The console will check self.alive in its push() method
+
         print(f"[SimpleExecutorV3-STOP] Stop completed")
+
+    def _check_infinite_loop(self, output_text: str):
+        """
+        Check for infinite loop patterns in output
+        Implements 3 layers of protection
+        """
+        if not output_text or not self.alive:
+            return
+
+        lines = output_text.split('\n')
+        line_count = len(lines)
+
+        # Update counters
+        self.output_line_count += line_count
+        self.total_output_lines += line_count
+
+        # Layer 1: Output Rate Limiting (100 lines/sec)
+        current_time = time.time()
+        elapsed_since_start = current_time - self.output_start_time
+
+        # Check rate every 0.5 seconds to avoid too frequent checks
+        if current_time - self.last_rate_check >= 0.5 and elapsed_since_start > 0.1:
+            rate = self.output_line_count / elapsed_since_start
+
+            if rate > self.MAX_LINES_PER_SECOND:
+                print(f"[INFINITE-LOOP] RATE LIMIT EXCEEDED: {rate:.1f} lines/sec > {self.MAX_LINES_PER_SECOND}")
+                self._kill_for_infinite_loop(
+                    f"Output rate limit exceeded: {rate:.1f} lines/sec (limit: {self.MAX_LINES_PER_SECOND}/sec)"
+                )
+                return
+
+            self.last_rate_check = current_time
+
+            # Log rate for debugging (only when high)
+            if rate > 50:
+                print(f"[INFINITE-LOOP] High output rate: {rate:.1f} lines/sec")
+
+        # Layer 2: Total Output Limit (10,000 lines)
+        if self.total_output_lines > self.MAX_TOTAL_LINES:
+            print(f"[INFINITE-LOOP] TOTAL LIMIT EXCEEDED: {self.total_output_lines} > {self.MAX_TOTAL_LINES}")
+            self._kill_for_infinite_loop(
+                f"Total output limit exceeded: {self.total_output_lines} lines (limit: {self.MAX_TOTAL_LINES})"
+            )
+            return
+
+        # Layer 3: Identical Line Detection (500x repeats)
+        for line in lines:
+            if not line.strip():  # Skip empty lines
+                continue
+
+            if line == self.last_output_line:
+                self.identical_line_count += 1
+
+                if self.identical_line_count >= self.MAX_IDENTICAL_LINES:
+                    print(f"[INFINITE-LOOP] IDENTICAL LINES: '{line[:50]}...' repeated {self.identical_line_count} times")
+                    self._kill_for_infinite_loop(
+                        f"Identical line repeated {self.identical_line_count} times: '{line[:100]}...'"
+                    )
+                    return
+
+                # Log when getting close to limit
+                if self.identical_line_count > 0 and self.identical_line_count % 100 == 0:
+                    print(f"[INFINITE-LOOP] Warning: '{line[:30]}...' repeated {self.identical_line_count} times")
+            else:
+                # Reset counter when line changes
+                self.last_output_line = line
+                self.identical_line_count = 1
+
+        # Layer 4: Fast Flood Detection (catches immediate bursts)
+        # If we get > 4KB of data with > 50 lines in < 0.5 seconds, it's likely spam
+        if len(output_text) >= 4000 and line_count >= 50:
+            flood_elapsed = current_time - self.flood_check_time
+            if flood_elapsed < 0.5:
+                print(f"[INFINITE-LOOP] FLOOD DETECTED: {len(output_text)} bytes, {line_count} lines in {flood_elapsed:.2f}s")
+                self._kill_for_infinite_loop(
+                    f"Flood detected: {line_count} lines in {flood_elapsed:.2f} seconds"
+                )
+                return
+            # Reset flood check timer after 0.5 seconds
+            self.flood_check_time = current_time
+
+    def _kill_for_infinite_loop(self, reason: str):
+        """Kill the process due to detected infinite loop"""
+        print(f"[INFINITE-LOOP-KILL] Terminating process: {reason}")
+
+        # Send error message to user
+        error_msg = f"\n⚠️ PROCESS TERMINATED: Infinite loop detected!\n"
+        error_msg += f"Reason: {reason}\n"
+        error_msg += f"\nCommon causes:\n"
+        error_msg += f"  • while True: without break condition\n"
+        error_msg += f"  • for loop with excessive iterations\n"
+        error_msg += f"  • Recursive function without base case\n"
+        error_msg += f"\nPlease review your code and add proper loop termination conditions.\n"
+
+        # Send error to console
+        self.send_message(MessageType.ERROR, {
+            "error": "Infinite loop detected",
+            "traceback": error_msg
+        })
+
+        # Force stop
+        self.alive = False
+        self.state = ExecutionState.TERMINATED
+        self._stop_event.set()
+
+        # If in REPL, exit it
+        if self.console:
+            try:
+                # Send interrupt to break out of any running code
+                os.kill(os.getpid(), signal.SIGINT)
+            except:
+                pass
+
+    def _kill_for_timeout(self, reason: str):
+        """Kill the script due to timeout (3-second limit)"""
+        print(f"[TIMEOUT-KILL] Terminating script: {reason}")
+
+        # Send error message to user
+        error_msg = f"\n⏰ SCRIPT TERMINATED: Time limit exceeded!\n"
+        error_msg += f"Reason: {reason}\n"
+        error_msg += f"\nScript execution is limited to 3 seconds.\n"
+        error_msg += f"\nPossible issues:\n"
+        error_msg += f"  • Infinite loop (while True, endless for loop)\n"
+        error_msg += f"  • Very large data processing\n"
+        error_msg += f"  • Recursive function without proper termination\n"
+        error_msg += f"  • Memory-intensive operations (creating huge lists)\n"
+        error_msg += f"\nTip: Use smaller data sets or add loop limits for testing.\n"
+
+        # Send error to console
+        self.send_message(MessageType.ERROR, {
+            "error": "Script timeout (3 seconds)",
+            "traceback": error_msg
+        })
+
+        # Force stop the script
+        self.alive = False
+        self.state = ExecutionState.TERMINATED
+        self._stop_event.set()
+
+        # Mark timeout occurred
+        self.timeout_occurred = True
 
     def cleanup(self):
         """Clean up resources - CRITICAL for preventing zombie threads"""

@@ -45,7 +45,7 @@ services:
       - exam_user_files:/app/server/exam-projects/ide
       # Mount initialization scripts
       - ./server/migrations:/app/server/migrations
-      - ./server/init_exam_users.py:/app/server/init_exam_users.py
+      - ./server/init_docker_test_users.py:/app/server/init_docker_test_users.py
     depends_on:
       postgres-exam:
         condition: service_healthy
@@ -54,8 +54,8 @@ services:
       sh -c "
         echo 'Waiting for exam database...' &&
         sleep 5 &&
-        echo 'Initializing exam users...' &&
-        python init_exam_users.py &&
+        echo 'Initializing test users...' &&
+        python init_docker_test_users.py &&
         echo 'Starting exam server...' &&
         python server.py
       "

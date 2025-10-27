@@ -57,3 +57,7 @@ TODO_TOMORROW.md
 # Deployment scripts with sensitive data
 deployment/staging-db-password.txt
 deployment/*password*.txt
+
+backup/*
+backup/repl_backup_20251027_003330
+server/.venv

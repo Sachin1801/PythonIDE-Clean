@@ -8,8 +8,8 @@ WORKDIR /app
 COPY package*.json ./
 
 # Create production environment file for build
-# Using exam domain with port 10086 for WebSocket connection
-RUN echo "VUE_APP_WS_URL=ws://exam.pythonide-classroom.tech:10086" > .env.production
+# For local testing on main IDE, use port 10086
+RUN echo "VUE_APP_WS_URL=ws://localhost:10086" > .env.production
 
 # Install dependencies (including dev dependencies for build)
 RUN npm ci
@@ -67,8 +67,10 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
 # Start the application with initialization
 WORKDIR /app/server
 
-# Copy adminData directory for exam credentials
-COPY adminData/ /app/adminData/
+# Create adminData directory (will be empty in CI/CD, populated in production)
+RUN mkdir -p /app/adminData
+# Note: adminData is in .gitignore for security, so it won't exist in CI/CD builds
+# In production, mount credentials as a volume or use AWS Secrets Manager
 
 # Conditional startup based on IS_EXAM_MODE environment variable
 CMD ["sh", "-c", "if [ \"$IS_EXAM_MODE\" = \"true\" ]; then echo 'Starting in EXAM mode...' && python /app/server/init_exam_users.py && python /app/server/ensure_efs_directories.py && python server.py; else echo 'Starting in NORMAL mode...' && /app/deployment/sync-student-directories.sh && python /app/server/auto_init_users.py && python /app/server/ensure_efs_directories.py && python server.py; fi"]

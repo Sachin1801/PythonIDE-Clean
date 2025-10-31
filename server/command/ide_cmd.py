@@ -13,13 +13,7 @@ from .utils import convert_path
 from .resource import *
 from .response import response
 from .error_handler import EducationalErrorHandler
-from .interactive_thread import InteractiveSubProgramThread
-from .simple_interactive_thread import SimpleInteractiveThread
-from .pty_interactive_thread import PTYInteractiveThread
 from .working_simple_thread import WorkingSimpleThread
-from .working_input_thread import WorkingInputThread
-from .repl_thread import PythonREPLThread
-# from .hybrid_repl_thread import HybridREPLThread  # OLD - replaced with SimpleExecutorV2
 from .simple_exec_v3 import SimpleExecutorV3  # V3 using Python's code module
 from .bug_report_handler import handle_bug_report
 from common.config import Config

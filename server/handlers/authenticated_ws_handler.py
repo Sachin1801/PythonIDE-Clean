@@ -250,6 +250,22 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler, WebSocketKeepali
         if self.username:
             ws_connection_registry.unregister(self.username)
 
+            # CRITICAL FIX: Release all execution locks for this user on disconnect
+            try:
+                from command.execution_lock_manager import execution_lock_manager
+                execution_lock_manager.release_all_user_locks(self.username)
+                logger.info(f"Released all execution locks for disconnected user: {self.username}")
+            except Exception as e:
+                logger.error(f"Error releasing locks for {self.username}: {e}")
+
+        # Stop all running subprograms for this connection
+        if hasattr(self, 'handler_info'):
+            try:
+                self.handler_info.stop_subprogram(None)  # None stops all
+                logger.info(f"Stopped all subprograms for user: {self.username}")
+            except Exception as e:
+                logger.error(f"Error stopping subprograms: {e}")
+
         # Cleanup REPL handlers if they exist
         if hasattr(self, "repl_handlers"):
             for file_path, handler in self.repl_handlers.items():

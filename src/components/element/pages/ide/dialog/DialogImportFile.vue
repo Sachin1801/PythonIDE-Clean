@@ -45,27 +45,61 @@
 
         <!-- File Upload Section -->
         <div class="upload-section">
-          <label>Select Files to Import:</label>
-          <div class="file-drop-area" 
+          <label>Select Files or Folder to Import:</label>
+
+          <!-- Upload Mode Toggle -->
+          <div class="upload-mode-toggle">
+            <button
+              :class="{ active: uploadMode === 'files' }"
+              @click="switchUploadMode('files')"
+              class="mode-btn"
+            >
+              Files
+            </button>
+            <button
+              :class="{ active: uploadMode === 'folder' }"
+              @click="switchUploadMode('folder')"
+              class="mode-btn"
+            >
+              Folder
+            </button>
+          </div>
+
+          <div class="file-drop-area"
                :class="{ 'drag-over': dragOver }"
                @drop="handleDrop"
                @dragover.prevent="dragOver = true"
                @dragleave.prevent="dragOver = false"
                @click="triggerFileInput">
-            <input 
-              type="file" 
+            <input
+              v-if="uploadMode === 'files'"
+              type="file"
               ref="fileInput"
               @change="handleFileSelect"
               multiple
               accept=".py,.txt,.csv,.pdf"
               style="display: none;"
             />
+            <input
+              v-else
+              type="file"
+              ref="folderInput"
+              @change="handleFolderSelect"
+              webkitdirectory
+              directory
+              multiple
+              style="display: none;"
+            />
             <div class="upload-icon">
               <Upload :size="48" />
             </div>
             <div class="upload-text">
-              <div class="main-text">Click to select files or drag and drop</div>
-              <div class="sub-text">Supported formats: .py, .txt, .csv, .pdf</div>
+              <div class="main-text">
+                {{ uploadMode === 'files' ? 'Click to select files or drag and drop' : 'Click to select folder or drag and drop' }}
+              </div>
+              <div class="sub-text">
+                {{ uploadMode === 'files' ? 'Supported formats: .py, .txt, .csv, .pdf' : 'All supported files in folder will be uploaded' }}
+              </div>
             </div>
           </div>
           <div v-if="uploadError" class="error-hint">
@@ -145,7 +179,9 @@ export default {
       uploading: false,
       showDirectoryTree: false,
       dragOver: false,
-      supportedExtensions: ['.py', '.txt', '.csv', '.pdf']
+      supportedExtensions: ['.py', '.txt', '.csv', '.pdf'],
+      uploadMode: 'files', // 'files' or 'folder'
+      fileStructure: [] // Stores files with their relative paths for folder uploads
     }
   },
   computed: {
@@ -285,27 +321,94 @@ export default {
       return path;
     },
     
+    switchUploadMode(mode) {
+      this.uploadMode = mode;
+      this.selectedFiles = [];
+      this.fileStructure = [];
+      this.uploadError = '';
+    },
+
     triggerFileInput() {
-      this.$refs.fileInput.click();
+      if (this.uploadMode === 'files') {
+        this.$refs.fileInput?.click();
+      } else {
+        this.$refs.folderInput?.click();
+      }
     },
     
     handleFileSelect(event) {
       const files = Array.from(event.target.files);
       this.processFiles(files);
     },
-    
+
+    handleFolderSelect(event) {
+      const files = Array.from(event.target.files);
+      this.processFolderFiles(files);
+    },
+
     handleDrop(event) {
       event.preventDefault();
       this.dragOver = false;
-      const files = Array.from(event.dataTransfer.files);
-      this.processFiles(files);
+
+      // Check if dropping a folder structure
+      const items = event.dataTransfer.items;
+      if (items) {
+        const files = [];
+        const promises = [];
+
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i].webkitGetAsEntry();
+          if (item) {
+            promises.push(this.traverseFileTree(item, files));
+          }
+        }
+
+        Promise.all(promises).then(() => {
+          if (files.length > 0) {
+            // Determine if it's a folder based on presence of webkitRelativePath
+            const hasRelativePaths = files.some(f => f.webkitRelativePath);
+            if (hasRelativePaths || this.uploadMode === 'folder') {
+              this.processFolderFiles(files);
+            } else {
+              this.processFiles(files);
+            }
+          }
+        });
+      } else {
+        // Fallback for browsers that don't support DataTransferItemList
+        const files = Array.from(event.dataTransfer.files);
+        this.processFiles(files);
+      }
+    },
+
+    async traverseFileTree(item, filesList, path = '') {
+      if (item.isFile) {
+        return new Promise((resolve) => {
+          item.file((file) => {
+            // Add relative path to file object
+            file.relativePath = path + file.name;
+            filesList.push(file);
+            resolve();
+          });
+        });
+      } else if (item.isDirectory) {
+        const dirReader = item.createReader();
+        return new Promise((resolve) => {
+          dirReader.readEntries(async (entries) => {
+            for (const entry of entries) {
+              await this.traverseFileTree(entry, filesList, path + item.name + '/');
+            }
+            resolve();
+          });
+        });
+      }
     },
     
     processFiles(files) {
       this.uploadError = '';
       const validFiles = [];
       const invalidFiles = [];
-      
+
       files.forEach(file => {
         const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
         if (this.supportedExtensions.includes(fileExtension)) {
@@ -319,20 +422,65 @@ export default {
           invalidFiles.push(`${file.name} (unsupported format)`);
         }
       });
-      
+
       if (invalidFiles.length > 0) {
         this.uploadError = `Invalid files: ${invalidFiles.join(', ')}`;
       }
-      
+
       // Add valid files to selection (avoid duplicates)
       validFiles.forEach(file => {
-        const exists = this.selectedFiles.some(existing => 
+        const exists = this.selectedFiles.some(existing =>
           existing.name === file.name && existing.size === file.size
         );
         if (!exists) {
           this.selectedFiles.push(file);
         }
       });
+    },
+
+    processFolderFiles(files) {
+      this.uploadError = '';
+      const validFiles = [];
+      const invalidFiles = [];
+      this.fileStructure = [];
+
+      files.forEach(file => {
+        const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
+
+        // Get relative path from webkitRelativePath or custom relativePath property
+        const relativePath = file.webkitRelativePath || file.relativePath || file.name;
+
+        if (this.supportedExtensions.includes(fileExtension)) {
+          // Check file size (limit to 10MB)
+          if (file.size <= 10 * 1024 * 1024) {
+            validFiles.push(file);
+
+            // Store file with its relative path for folder structure preservation
+            this.fileStructure.push({
+              file: file,
+              relativePath: relativePath,
+              name: file.name,
+              size: file.size
+            });
+          } else {
+            invalidFiles.push(`${relativePath} (file too large, max 10MB)`);
+          }
+        } else {
+          // Skip non-supported files silently in folder mode
+          console.log(`Skipping unsupported file: ${relativePath}`);
+        }
+      });
+
+      if (invalidFiles.length > 0) {
+        this.uploadError = `Invalid files: ${invalidFiles.join(', ')}`;
+      }
+
+      // Replace selected files with valid files from folder
+      this.selectedFiles = validFiles;
+
+      if (this.selectedFiles.length === 0 && files.length > 0) {
+        this.uploadError = 'No supported files found in the selected folder';
+      }
     },
     
     removeFile(index) {
@@ -357,37 +505,52 @@ export default {
     
     async onImport() {
       if (this.selectedFiles.length === 0) return;
-      
+
       this.uploading = true;
       const projectName = this.currentProject || this.ideInfo.currProj?.data?.name || this.ideInfo.currProj?.config?.name;
-      
+
       // Fix: Ensure we send the raw path within the project, not the formatted display path
       let parentPath = this.currentPath;
-      
+
       // If currentPath contains project name (from multi-root mode), remove it
       if (parentPath && projectName && parentPath.startsWith(projectName)) {
         parentPath = parentPath.substring(projectName.length) || '/';
       }
-      
+
       // Ensure path starts with / for consistency
       if (parentPath && !parentPath.startsWith('/')) {
         parentPath = '/' + parentPath;
       }
-      
+
       console.log('[DialogImportFile] Upload params:', {
         projectName,
         rawCurrentPath: this.currentPath,
-        cleanedParentPath: parentPath
+        cleanedParentPath: parentPath,
+        uploadMode: this.uploadMode,
+        fileCount: this.selectedFiles.length
       });
-      
+
       try {
-        const uploadPromises = this.selectedFiles.map(async (file) => {
+        // For folder upload mode, use file structure with relative paths
+        const uploadPromises = this.selectedFiles.map(async (file, index) => {
           const formData = new FormData();
           formData.append('file', file);
           formData.append('projectName', projectName);
           formData.append('parentPath', parentPath);
           formData.append('filename', file.name);
-          
+
+          // Add relative path for folder uploads
+          if (this.uploadMode === 'folder' && this.fileStructure[index]) {
+            const relativePath = this.fileStructure[index].relativePath;
+            formData.append('relativePath', relativePath);
+            formData.append('preserveStructure', 'true');
+
+            console.log('[DialogImportFile] Folder upload:', {
+              filename: file.name,
+              relativePath: relativePath
+            });
+          }
+
           const response = await fetch('/api/upload-file', {
             method: 'POST',
             body: formData,
@@ -395,25 +558,25 @@ export default {
               'session-id': this.currentUser?.session_id
             }
           });
-          
+
           const result = await response.json();
           if (!result.success) {
             throw new Error(`Failed to upload ${file.name}: ${result.error}`);
           }
           return result;
         });
-        
+
         await Promise.all(uploadPromises);
-        
+
         ElMessage.success(`Successfully imported ${this.selectedFiles.length} file(s)`);
-        
+
         // Refresh the project tree
         this.$store.dispatch(`ide/${types.IDE_GET_PROJECT}`, {
           projectName: projectName,
           callback: (projectResponse) => {
             if (projectResponse.code === 0) {
               this.$store.commit('ide/handleProject', projectResponse.data);
-              
+
               // If in multi-root mode, refresh all projects
               if (this.ideInfo.multiRootData) {
                 this.$parent.loadAllDefaultProjects?.();
@@ -421,17 +584,17 @@ export default {
             }
           }
         });
-        
+
         // Emit event to notify parent
         this.$emit('files-imported', {
           count: this.selectedFiles.length,
           destination: this.currentPath,
           projectName: projectName
         });
-        
+
         // Close dialog
         this.$emit('update:modelValue', false);
-        
+
       } catch (error) {
         console.error('[DialogImportFile] Error importing files:', error);
         ElMessage.error('Failed to import files: ' + error.message);
@@ -515,6 +678,39 @@ export default {
 .selected-files-section,
 .preview-section {
   margin-bottom: 20px;
+}
+
+.upload-mode-toggle {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border-color, #464647);
+  border-radius: 4px;
+  padding: 4px;
+  background: var(--input-bg, #2d2d30);
+  width: fit-content;
+}
+
+.mode-btn {
+  padding: 6px 16px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-secondary, #969696);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.mode-btn:hover {
+  background: var(--hover-bg, rgba(255, 255, 255, 0.05));
+  color: var(--text-primary, #cccccc);
+}
+
+.mode-btn.active {
+  background: var(--accent-color, #007acc);
+  color: white;
 }
 
 .directory-section label,

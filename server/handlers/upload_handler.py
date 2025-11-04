@@ -64,6 +64,8 @@ class UploadFileHandler(tornado.web.RequestHandler):
             project_name = self.get_argument("projectName", default=None)
             parent_path = self.get_argument("parentPath", default="/")
             filename = self.get_argument("filename", default=None)
+            relative_path = self.get_argument("relativePath", default=None)  # NEW: For folder uploads
+            preserve_structure = self.get_argument("preserveStructure", default="false")  # NEW: Flag for folder mode
 
             if not project_name or not filename:
                 self.set_status(400)
@@ -107,10 +109,37 @@ class UploadFileHandler(tornado.web.RequestHandler):
             safe_filename = os.path.basename(filename)
 
             # Construct the full path
-            if parent_path == "/":
-                file_path = f"/{safe_filename}"
+            # NEW: Handle folder uploads with relative paths
+            if preserve_structure == "true" and relative_path:
+                # Extract directory structure from relative path
+                # For webkitRelativePath: "FolderName/subfolder/file.py"
+                # We want to preserve the structure after the first folder name
+
+                path_parts = relative_path.split('/')
+
+                # If there's only one part, it's just the filename (no nested structure)
+                if len(path_parts) == 1:
+                    if parent_path == "/":
+                        file_path = f"/{safe_filename}"
+                    else:
+                        file_path = f"{parent_path}/{safe_filename}"
+                else:
+                    # Preserve the nested structure
+                    # Skip the first part (root folder name) and use the rest
+                    nested_path = '/'.join(path_parts[1:])
+
+                    if parent_path == "/":
+                        file_path = f"/{nested_path}"
+                    else:
+                        file_path = f"{parent_path}/{nested_path}"
+
+                logger.info(f"Folder upload - Relative path: {relative_path}, Final path: {file_path}")
             else:
-                file_path = f"{parent_path}/{safe_filename}"
+                # Standard single file upload
+                if parent_path == "/":
+                    file_path = f"/{safe_filename}"
+                else:
+                    file_path = f"{parent_path}/{safe_filename}"
 
             # Use the same file writing logic as the existing IDE
             try:

@@ -73,6 +73,7 @@
               @new-file="handleNewFileFromTree"
               @new-folder="handleNewFolderFromTree"
               @import-file="handleImportFileFromTree"
+              @bulk-upload="handleBulkUpload"
             ></ProjTree>
           </div>
         </pane>
@@ -356,6 +357,7 @@
     <DialogNewFile v-if="showNewFileDialog" v-model="showNewFileDialog" @file-created="handleFileCreated"></DialogNewFile>
     <DialogNewFolder v-if="showNewFolderDialog" v-model="showNewFolderDialog" @folder-created="handleFolderCreated"></DialogNewFolder>
     <DialogImportFile v-if="showImportFileDialog" v-model="showImportFileDialog" @files-imported="handleFilesImported"></DialogImportFile>
+    <DialogBulkUpload v-if="showBulkUploadDialog" v-model="showBulkUploadDialog"></DialogBulkUpload>
     <DialogFileBrowser 
       v-model="showFileBrowserDialog" 
       :mode="fileBrowserMode"
@@ -407,6 +409,7 @@ import DialogUpload from './pages/ide/dialog/DialogUpload';
 import DialogNewFile from './pages/ide/dialog/DialogNewFile';
 import DialogNewFolder from './pages/ide/dialog/DialogNewFolder';
 import DialogImportFile from './pages/ide/dialog/DialogImportFile';
+import DialogBulkUpload from './pages/ide/dialog/DialogBulkUpload';
 import DialogFileBrowser from './pages/ide/dialog/DialogFileBrowser';
 import sessionManager from '../../utils/sessionManager';
 import CsvViewer from './pages/ide/CsvViewer';
@@ -429,6 +432,7 @@ export default {
       showNewFileDialog: false,
       showNewFolderDialog: false,
       showImportFileDialog: false,
+      showBulkUploadDialog: false,
       showFileBrowserDialog: false,
       showLoginModal: false,
       fileBrowserMode: 'open',
@@ -552,6 +556,7 @@ export default {
     DialogNewFile,
     DialogNewFolder,
     DialogImportFile,
+    DialogBulkUpload,
     DialogFileBrowser,
     CsvViewer,
     MediaViewer,
@@ -1947,11 +1952,24 @@ export default {
     handleFilesImported(data) {
       // Handle files imported from import file dialog
       console.log('[handleFilesImported] Files imported:', data);
-      
+
       // Refresh the project tree to show the new files
       this.refreshProjectTree();
-      
+
       // Optionally show a success message (already handled by the dialog component)
+    },
+    handleBulkUpload() {
+      // Open bulk upload dialog (admin only)
+      const role = localStorage.getItem('role');
+      const username = localStorage.getItem('username');
+      const adminAccounts = ['sl7927', 'sa9082', 'et2434', 'admin_editor', 'test_admin'];
+
+      if (!adminAccounts.includes(username)) {
+        this.$message.warning('Only admin users can access bulk upload');
+        return;
+      }
+
+      this.showBulkUploadDialog = true;
     },
     refreshProjectTree() {
       // Refresh the project tree by re-fetching the project data

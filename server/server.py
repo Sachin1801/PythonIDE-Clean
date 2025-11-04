@@ -46,34 +46,62 @@ logger = logging.getLogger(__name__)
 
 
 class HealthCheckHandler(web.RequestHandler):
-    """Health check endpoint for Railway"""
+    """Health check endpoint for ECS - Must be resilient to temporary DB issues"""
 
     def get(self):
         try:
             # Update activity timestamp
             health_monitor.update_activity()
 
-            # Check database connection
-            db_manager.execute_query("SELECT 1")
-
-            # Check system resources
+            # Check system resources (always works, even if DB fails)
             memory = psutil.virtual_memory()
             cpu = psutil.cpu_percent(interval=0.1)
 
             health_status = {
                 "status": "healthy",
-                "database": "connected",
                 "memory_percent": memory.percent,
                 "cpu_percent": cpu,
                 "uptime": int(time.time() - health_monitor.start_time) if hasattr(health_monitor, "start_time") else 0,
             }
 
+            # Try database connection with SHORT timeout - don't kill container if DB slow
+            db_status = "unknown"
+            try:
+                # Use a very short timeout to prevent health check hanging
+                import signal
+
+                def timeout_handler(signum, frame):
+                    raise TimeoutError("Database check timed out")
+
+                # Set 2-second timeout for DB check
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(2)
+
+                try:
+                    db_manager.execute_query("SELECT 1")
+                    db_status = "connected"
+                finally:
+                    signal.alarm(0)  # Cancel alarm
+
+            except Exception as db_error:
+                # Log the error but DON'T fail health check
+                # Container can still serve requests even if DB temporarily unavailable
+                logger.warning(f"Database health check failed (non-fatal): {db_error}")
+                db_status = f"degraded: {str(db_error)[:100]}"
+
+            health_status["database"] = db_status
+
             # Warn if resources are getting high
             if memory.percent > 80 or cpu > 80:
                 health_status["warning"] = "High resource usage detected"
 
+            # Always return 200 OK unless the APPLICATION is actually broken
+            # Temporary DB issues should NOT kill the container
             self.write(health_status)
+
         except Exception as e:
+            # Only fail health check if there's a CRITICAL APPLICATION error
+            logger.error(f"Critical health check failure: {e}")
             self.set_status(503)
             self.write({"status": "unhealthy", "error": str(e)})
 
@@ -337,6 +365,33 @@ def main():
     idle_cleanup = IdleSessionCleanupJob(user_manager)
     idle_cleanup.start()
     logger.info("Idle session cleanup job started (1-hour inactivity timeout)")
+
+    # Add database connection pool refresh (every 15 minutes)
+    # This prevents connections from becoming stale and causing health check failures
+    def refresh_database_connections():
+        """Refresh database connection pool to prevent stale connections"""
+        try:
+            logger.info("Refreshing database connection pool...")
+            # Test a connection to ensure pool is healthy
+            db_manager.execute_query("SELECT 1")
+            logger.info("Database connection pool is healthy")
+        except Exception as e:
+            logger.error(f"Database connection pool refresh failed: {e}")
+            # Try to recreate the connection pool if it's completely dead
+            try:
+                logger.warning("Attempting to recreate database connection pool...")
+                if hasattr(db_manager, 'connection_pool') and db_manager.connection_pool:
+                    db_manager.connection_pool.closeall()
+                db_manager._init_postgres()
+                logger.info("Database connection pool successfully recreated")
+            except Exception as reinit_error:
+                logger.critical(f"Failed to recreate connection pool: {reinit_error}")
+
+    # Run every 15 minutes (900000 ms) to keep connections fresh
+    db_refresh_interval = int(os.environ.get("DB_REFRESH_INTERVAL_MS", "900000"))
+    db_refresh_callback = PeriodicCallback(refresh_database_connections, db_refresh_interval)
+    db_refresh_callback.start()
+    logger.info(f"Database connection pool refresh started (interval: {db_refresh_interval/1000}s)")
 
     main_ioloop.start()
 

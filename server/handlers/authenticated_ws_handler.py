@@ -41,8 +41,9 @@ class RateLimiter:
 
     def check_file_ops_limit(self, username, limit=30, window=10):
         """Check if user can perform file operations (30 per 10 seconds = max 180/min with burst protection)"""
-        # First check for rapid burst (max 5 requests per 2 seconds)
-        if not self._check_burst_limit(username, burst_limit=5, burst_window=2):
+        # First check for rapid burst (max 10 requests per 2 seconds to allow initial project loading)
+        # Students see 6 projects on login, plus some buffer for legitimate parallel operations
+        if not self._check_burst_limit(username, burst_limit=10, burst_window=2):
             return False
 
         return self._check_limit(self.file_ops, username, limit, window)
@@ -51,8 +52,12 @@ class RateLimiter:
         """Check general message rate limit (300 per minute default)"""
         return self._check_limit(self.messages, username, limit, window)
 
-    def _check_burst_limit(self, username, burst_limit=5, burst_window=2):
-        """Prevent rapid-fire requests that can overwhelm the server"""
+    def _check_burst_limit(self, username, burst_limit=10, burst_window=2):
+        """Prevent rapid-fire requests that can overwhelm the server
+
+        Note: burst_limit of 10 allows students to load 6 projects on login plus buffer
+        for legitimate parallel operations (auto-save, file switching, etc.)
+        """
         now = time()
         # Remove old burst entries outside the burst window
         self.burst_tracker[username] = [t for t in self.burst_tracker[username] if now - t < burst_window]

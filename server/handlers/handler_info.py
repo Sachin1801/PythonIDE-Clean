@@ -63,7 +63,7 @@ class HandlerInfo(object):
             for pid, t in subprograms_copy:
                 try:
                     print(f"[HANDLER-INFO-STOP] Joining thread {pid}")
-                    t.join(timeout=0.5)  # Wait max 0.5 seconds per thread
+                    t.join(timeout=2.0)  # Wait max 0.5 seconds per thread
                 except Exception as e:
                     print(f"[HANDLER-INFO-STOP] Error joining {pid}: {e}")
 

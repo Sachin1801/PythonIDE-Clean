@@ -59,7 +59,7 @@ def add_examples_folders():
             else:
                 try:
                     os.makedirs(examples_dir, exist_ok=True)
-                    print(f"CREATED: {username}/Lecuture_Examples")
+                    print(f"CREATED: {username}/Lecture_Examples")
                     created_count += 1
                 except Exception as e:
                     print(f"ERROR: Failed to create {username}/Lecture_Examples - {e}")

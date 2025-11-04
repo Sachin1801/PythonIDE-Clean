@@ -117,6 +117,7 @@ class SimpleExecutorV3(threading.Thread):
         self.daemon = True
         self._stop_event = threading.Event()  # For clean shutdown
         self._cleanup_done = False  # Prevent double cleanup
+        self._lock_released = False  # Track if execution lock has been released
 
         # ===== INFINITE LOOP DETECTION VARIABLES =====
         # Layer 1: Output rate limiting
@@ -233,10 +234,11 @@ class SimpleExecutorV3(threading.Thread):
 
                 # CRITICAL: Release execution lock after script completes, BEFORE REPL starts
                 # This allows the same file to be run again while REPL is still active
-                if hasattr(self, 'username') and hasattr(self, 'script_path') and self.username and self.script_path:
+                if not self._lock_released and hasattr(self, 'username') and hasattr(self, 'script_path') and self.username and self.script_path:
                     try:
                         from .execution_lock_manager import execution_lock_manager
                         execution_lock_manager.release_execution_lock(self.username, self.script_path, self.cmd_id)
+                        self._lock_released = True  # Mark lock as released
                         print(f"[SimpleExecutorV3-RUN] ✅ Released execution lock after script completion (before REPL)")
                     except Exception as e:
                         print(f"[SimpleExecutorV3-RUN] ⚠️ Error releasing lock after script: {e}")
@@ -539,11 +541,12 @@ class SimpleExecutorV3(threading.Thread):
         if self.state == ExecutionState.SCRIPT_RUNNING:
             self.timeout_occurred = True
 
-        # CRITICAL FIX: Release execution lock immediately when stopped
-        if hasattr(self, 'username') and hasattr(self, 'script_path') and self.username and self.script_path:
+        # Release execution lock if not already released (only relevant for scripts stopped mid-execution)
+        if not self._lock_released and hasattr(self, 'username') and hasattr(self, 'script_path') and self.username and self.script_path:
             try:
                 from .execution_lock_manager import execution_lock_manager
                 execution_lock_manager.release_execution_lock(self.username, self.script_path, self.cmd_id)
+                self._lock_released = True  # Mark lock as released
                 print(f"[SimpleExecutorV3-STOP] ✅ Lock released for {self.username}:{os.path.basename(self.script_path)}:{self.cmd_id}")
             except Exception as e:
                 print(f"[SimpleExecutorV3-STOP] ⚠️ Error releasing lock: {e}")
@@ -742,13 +745,13 @@ class SimpleExecutorV3(threading.Thread):
         self.state = ExecutionState.TERMINATED
         self._stop_event.set()
 
-        # Release any execution locks (if not already released after script execution)
-        if hasattr(self, 'username') and hasattr(self, 'script_path') and self.username and self.script_path:
+        # Release any execution locks (if not already released)
+        if not self._lock_released and hasattr(self, 'username') and hasattr(self, 'script_path') and self.username and self.script_path:
             try:
                 from .execution_lock_manager import execution_lock_manager
-                # This will be a no-op if lock was already released after script execution
                 execution_lock_manager.release_execution_lock(self.username, self.script_path, self.cmd_id)
-                # print(f"[SimpleExecutorV3-CLEANUP] Released execution lock (or was already released)")
+                self._lock_released = True  # Mark lock as released
+                # print(f"[SimpleExecutorV3-CLEANUP] Released execution lock")
             except Exception as e:
                 # print(f"[SimpleExecutorV3-CLEANUP] Error releasing lock: {e}")
                 pass  # Keep the block valid even with commented prints

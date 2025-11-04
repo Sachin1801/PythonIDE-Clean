@@ -206,6 +206,22 @@ class UserManager:
             print(f"Session validation error: {e}")
             return None
 
+    def get_all_students(self):
+        """Get all users with role='student'"""
+        try:
+            query = (
+                "SELECT username, full_name, email FROM users WHERE role = %s ORDER BY username"
+                if self.db.is_postgres
+                else "SELECT username, full_name, email FROM users WHERE role = ? ORDER BY username"
+            )
+
+            students = self.db.execute_query(query, ("student",))
+            return students if students else []
+
+        except Exception as e:
+            logger.error(f"Failed to get all students: {e}")
+            return []
+
     def update_session_activity(self, token):
         """Update last_activity timestamp for a session"""
         try:

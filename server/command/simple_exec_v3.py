@@ -159,6 +159,14 @@ class SimpleExecutorV3(threading.Thread):
             print(f"[SimpleExecutorV3-SEND] cmd_id: {self.cmd_id}, msg_type: {msg_type}, alive: {self.alive}")
             return
 
+        # Update heartbeat when sending messages (shows executor is active)
+        if hasattr(self, 'username') and hasattr(self, 'script_path') and self.username and self.script_path:
+            try:
+                from .execution_lock_manager import execution_lock_manager
+                execution_lock_manager.update_heartbeat(self.username, self.script_path)
+            except:
+                pass  # Don't fail if heartbeat update fails
+
         # Check for infinite loop on STDOUT/STDERR messages
         if msg_type in [MessageType.STDOUT, MessageType.STDERR] and data:
             self._check_infinite_loop(data)
@@ -520,6 +528,15 @@ class SimpleExecutorV3(threading.Thread):
         # For script running, mark timeout to interrupt trace function
         if self.state == ExecutionState.SCRIPT_RUNNING:
             self.timeout_occurred = True
+
+        # CRITICAL FIX: Release execution lock immediately when stopped
+        if hasattr(self, 'username') and hasattr(self, 'script_path') and self.username and self.script_path:
+            try:
+                from .execution_lock_manager import execution_lock_manager
+                execution_lock_manager.release_execution_lock(self.username, self.script_path, self.cmd_id)
+                print(f"[SimpleExecutorV3-STOP] ✅ Lock released for {self.username}:{os.path.basename(self.script_path)}:{self.cmd_id}")
+            except Exception as e:
+                print(f"[SimpleExecutorV3-STOP] ⚠️ Error releasing lock: {e}")
 
         # Wake up any waiting input
         if self.waiting_for_input:

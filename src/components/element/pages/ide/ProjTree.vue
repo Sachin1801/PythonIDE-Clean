@@ -9,8 +9,11 @@
         <button class="action-btn new-file-btn" @click="handleNewFile" title="New File">
           <FilePlus :size="16" />
         </button>
-        <button v-if="isAdmin" class="action-btn import-btn" @click="handleImportFile" title="Import File">
+        <button v-if="isAdmin" class="action-btn import-btn" @click="handleImportFile" title="Import Files">
           <Upload :size="16" />
+        </button>
+        <button v-if="isAdmin" class="action-btn bulk-upload-btn" @click="handleBulkUpload" title="Bulk Upload to Students">
+          <Users :size="16" />
         </button>
         <button class="action-btn refresh-btn" @click="refreshTree" title="Refresh">
           <RefreshCw :size="16" />
@@ -103,7 +106,7 @@
 <script>
 import * as types from '../../../../store/mutation-types';
 import { getIconForFile, getIconForFolder, getIconForOpenFolder } from 'vscode-icons-js';
-import { RefreshCw, MoreVertical, FilePlus, FolderPlus, Upload } from 'lucide-vue-next';
+import { RefreshCw, MoreVertical, FilePlus, FolderPlus, Upload, Users } from 'lucide-vue-next';
 import { ElMessage, ElMessageBox } from 'element-plus';
 
 export default {
@@ -113,6 +116,7 @@ export default {
     FilePlus,
     FolderPlus,
     Upload,
+    Users,
   },
   props: {
     currentUser: {
@@ -192,6 +196,10 @@ export default {
       
       // Emit event to open import file dialog
       this.$emit('import-file');
+    },
+    handleBulkUpload() {
+      // Emit event to open bulk upload dialog (admin only)
+      this.$emit('bulk-upload');
     },
     refreshTree() {
       // Refresh all projects if in multi-root mode
@@ -777,6 +785,15 @@ export default {
   color: #e6a23c;
 }
 
+.bulk-upload-btn {
+  /* Ensure visibility with slightly brighter default */
+  color: rgba(255, 255, 255, 0.7) !important;
+}
+
+.bulk-upload-btn:hover {
+  color: #9c27b0 !important; /* Purple color for bulk upload */
+}
+
 .refresh-btn:hover {
   color: #409eff;
 }
@@ -963,6 +980,18 @@ export default {
   color: #52c41a;
 }
 
+[data-theme="light"] .import-btn:hover {
+  color: #d48806;
+}
+
+[data-theme="light"] .bulk-upload-btn {
+  color: rgba(0, 0, 0, 0.7) !important;
+}
+
+[data-theme="light"] .bulk-upload-btn:hover {
+  color: #7b1fa2 !important;
+}
+
 :root[data-theme="light"] .refresh-btn:hover {
   color: #1890ff;
 }
@@ -1028,6 +1057,19 @@ export default {
 
 [data-theme="high-contrast"] .tree::-webkit-scrollbar-track {
   background: #333333;
+}
+
+[data-theme="high-contrast"] .action-btn {
+  color: #ffffff;
+}
+
+[data-theme="high-contrast"] .action-btn:hover {
+  background: #333333;
+  border: 1px solid #ffff00;
+}
+
+[data-theme="high-contrast"] .bulk-upload-btn:hover {
+  color: #ff00ff; /* Bright magenta for high contrast */
 }
 
 /* Disabled menu items */

@@ -28,6 +28,8 @@ from handlers.auth_handler import (
 from handlers.admin_handler import get_admin_handlers
 from handlers.migration_handler import get_migration_handler  # TEMPORARY - REMOVE AFTER MIGRATION
 from handlers.upload_handler import UploadFileHandler
+from handlers.bulk_upload_handler import BulkUploadHandler
+from handlers.student_list_handler import StudentListHandler
 from setup_route import SetupHandler, ResetDatabaseHandler
 from common.database import db_manager
 from health_monitor import health_monitor
@@ -225,6 +227,8 @@ def main():
         (r"/api/forgot-password", ForgotPasswordHandler),
         (r"/api/reset-password", ResetPasswordHandler),
         (r"/api/upload-file", UploadFileHandler),
+        (r"/api/bulk-upload", BulkUploadHandler),
+        (r"/api/get-all-students", StudentListHandler),
         (r"/static/(.*)", StaticFileHandler, {"path": static_path}),  # Serve static files (CSS, JS, etc)
         *get_admin_handlers(),  # Admin password management endpoints
         get_migration_handler(),  # TEMPORARY migration endpoint - REMOVE AFTER USE

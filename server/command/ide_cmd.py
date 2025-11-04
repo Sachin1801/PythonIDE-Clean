@@ -685,18 +685,30 @@ print("="*50)
                 # Use execution lock manager to prevent race conditions
                 from .execution_lock_manager import execution_lock_manager
 
-                # Try to acquire execution lock for this user+file
-                lock_acquired = execution_lock_manager.acquire_execution_lock(username, file_path, cmd_id, timeout=2.0)
-                if not lock_acquired:
-                    print(
-                        f"[BACKEND-DEBUG] Could not acquire execution lock for user {username}, file {file_path}, cmd_id: {cmd_id}"
-                    )
-                    await response(
-                        client, cmd_id, -1, "You already have this file running. Please wait for it to complete."
-                    )
-                    return
-
+                # Create executor first so we can pass reference to lock manager
+                thread = None
                 try:
+                    thread = SimpleExecutorV3(
+                        cmd_id,
+                        client,
+                        asyncio.get_event_loop(),
+                        script_path=file_path,
+                        username=username,
+                    )
+
+                    # Try to acquire execution lock with executor reference for health checking
+                    lock_acquired = execution_lock_manager.acquire_execution_lock(
+                        username, file_path, cmd_id, timeout=2.0, executor_ref=thread
+                    )
+                    if not lock_acquired:
+                        thread = None  # Don't use the thread if lock acquisition failed
+                        print(
+                            f"[BACKEND-DEBUG] Could not acquire execution lock for user {username}, file {file_path}, cmd_id: {cmd_id}"
+                        )
+                        await response(
+                            client, cmd_id, -1, "You already have this file running. Please wait for it to complete."
+                        )
+                        return
                     # First stop any existing subprocess for this cmd_id to prevent duplicates
                     # print(f"[RUN-PYTHON] ===== STARTING NEW EXECUTION =====")
                     # print(f"[RUN-PYTHON] cmd_id: {cmd_id}, file: {file_path}")
@@ -711,19 +723,8 @@ print("="*50)
 
                     client.handler_info.stop_subprogram(cmd_id)
 
-                    # Note: Old REPL registry code removed - SimpleExecutorV3 handles cleanup automatically
-                    # Each run creates a fresh thread, old threads are terminated via handler_info
-
-                    # Always create a new SimpleExecutorV3 (threads cannot be reused)
-                    # print(f"[RUN-PYTHON] Creating new SimpleExecutorV3 thread")
-                    thread = SimpleExecutorV3(
-                        cmd_id,
-                        client,
-                        asyncio.get_event_loop(),
-                        script_path=file_path,
-                        username=username,
-                    )
-                    # print(f"[RUN-PYTHON] New thread created: {thread}")
+                    # Note: We already created the thread above before acquiring the lock
+                    # thread is ready to use
                 except Exception as e:
                     # If anything fails, release the lock
                     execution_lock_manager.release_execution_lock(username, file_path, cmd_id)

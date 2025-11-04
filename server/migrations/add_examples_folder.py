@@ -50,19 +50,19 @@ def add_examples_folders():
                 error_count += 1
                 continue
 
-            examples_dir = os.path.join(user_dir, "Examples")
+            examples_dir = os.path.join(user_dir, "Lecture_Examples")
 
             # Create Examples folder if it doesn't exist
             if os.path.exists(examples_dir):
-                print(f"EXISTS: {username}/Examples (already exists)")
+                print(f"EXISTS: {username}/Lecture_Examples (already exists)")
                 already_exists_count += 1
             else:
                 try:
                     os.makedirs(examples_dir, exist_ok=True)
-                    print(f"CREATED: {username}/Examples")
+                    print(f"CREATED: {username}/Lecuture_Examples")
                     created_count += 1
                 except Exception as e:
-                    print(f"ERROR: Failed to create {username}/Examples - {e}")
+                    print(f"ERROR: Failed to create {username}/Lecture_Examples - {e}")
                     error_count += 1
 
         print("\n=== MIGRATION SUMMARY ===")

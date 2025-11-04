@@ -306,7 +306,7 @@ def create_efs_directories():
             os.makedirs(user_dir, exist_ok=True)
             workspace_dir = os.path.join(user_dir, "workspace")
             os.makedirs(workspace_dir, exist_ok=True)
-            examples_dir = os.path.join(user_dir, "Examples")
+            examples_dir = os.path.join(user_dir, "Lecture_Examples")
             os.makedirs(examples_dir, exist_ok=True)
 
             # Create welcome file for students

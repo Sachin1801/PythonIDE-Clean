@@ -75,7 +75,7 @@ class FileStorageManager:
 
         # Create user subdirectories
         os.makedirs(os.path.join(user_dir, "workspace"), exist_ok=True)
-        os.makedirs(os.path.join(user_dir, "Examples"), exist_ok=True)
+        os.makedirs(os.path.join(user_dir, "Lecture_Examples"), exist_ok=True)
         os.makedirs(os.path.join(user_dir, "submissions"), exist_ok=True)
 
         # Create welcome file

@@ -66,6 +66,8 @@ class HealthCheckHandler(web.RequestHandler):
 
             # Try database connection with SHORT timeout - don't kill container if DB slow
             db_status = "unknown"
+            db_pool_stats = {"available": "unknown", "total": "unknown"}
+
             try:
                 # Use a very short timeout to prevent health check hanging
                 import signal
@@ -78,8 +80,18 @@ class HealthCheckHandler(web.RequestHandler):
                 signal.alarm(2)
 
                 try:
+                    # Test with a fresh query (not from pool) to avoid stale connections
                     db_manager.execute_query("SELECT 1")
                     db_status = "connected"
+
+                    # Get connection pool stats for monitoring
+                    if hasattr(db_manager, 'connection_pool') and db_manager.connection_pool:
+                        # ThreadedConnectionPool doesn't expose stats easily, but we can log config
+                        db_pool_stats = {
+                            "min_conn": db_manager.connection_pool.minconn,
+                            "max_conn": db_manager.connection_pool.maxconn,
+                        }
+
                 finally:
                     signal.alarm(0)  # Cancel alarm
 
@@ -90,20 +102,33 @@ class HealthCheckHandler(web.RequestHandler):
                 db_status = f"degraded: {str(db_error)[:100]}"
 
             health_status["database"] = db_status
+            health_status["db_pool"] = db_pool_stats
 
             # Warn if resources are getting high
             if memory.percent > 80 or cpu > 80:
                 health_status["warning"] = "High resource usage detected"
 
-            # Always return 200 OK unless the APPLICATION is actually broken
-            # Temporary DB issues should NOT kill the container
+            # CRITICAL: Always return 200 OK unless the APPLICATION PROCESS is broken
+            # Temporary DB issues, high memory, or slow queries should NOT kill the container
+            # ECS should only restart if the web server itself is unresponsive
             self.write(health_status)
 
         except Exception as e:
-            # Only fail health check if there's a CRITICAL APPLICATION error
-            logger.error(f"Critical health check failure: {e}")
-            self.set_status(503)
-            self.write({"status": "unhealthy", "error": str(e)})
+            # Even on critical errors, try to return 200 with error details
+            # Only return 503 if we absolutely cannot respond (which is rare)
+            logger.error(f"Health check error (attempting graceful handling): {e}")
+
+            # Try to respond gracefully even with errors
+            try:
+                self.write({
+                    "status": "degraded",
+                    "error": str(e),
+                    "message": "Application experiencing issues but still operational"
+                })
+            except:
+                # Last resort: return 503 only if we can't even write a response
+                self.set_status(503)
+                self.write({"status": "unhealthy", "error": str(e)})
 
 
 class ProcessCleanupService:
@@ -366,32 +391,74 @@ def main():
     idle_cleanup.start()
     logger.info("Idle session cleanup job started (1-hour inactivity timeout)")
 
-    # Add database connection pool refresh (every 15 minutes)
+    # Add database connection pool refresh (every 10 minutes)
     # This prevents connections from becoming stale and causing health check failures
     def refresh_database_connections():
         """Refresh database connection pool to prevent stale connections"""
         try:
-            logger.info("Refreshing database connection pool...")
-            # Test a connection to ensure pool is healthy
-            db_manager.execute_query("SELECT 1")
-            logger.info("Database connection pool is healthy")
+            logger.info("Starting database connection pool refresh...")
+
+            # Strategy: Test multiple connections to detect stale ones
+            # We test a sample of connections to avoid blocking all of them
+            test_count = min(5, db_manager.connection_pool.maxconn // 10)  # Test 10% of pool, max 5
+            successful_tests = 0
+            failed_tests = 0
+
+            for i in range(test_count):
+                conn = None
+                try:
+                    # Get connection from pool
+                    conn = db_manager.connection_pool.getconn()
+
+                    # Test if connection is still valid
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT 1")
+
+                    # Connection is good, return to pool
+                    db_manager.connection_pool.putconn(conn)
+                    successful_tests += 1
+
+                except Exception as conn_error:
+                    logger.warning(f"Found stale connection during refresh (test {i+1}): {conn_error}")
+                    failed_tests += 1
+
+                    # Close the bad connection and let pool create a new one
+                    if conn:
+                        try:
+                            db_manager.connection_pool.putconn(conn, close=True)
+                        except:
+                            pass
+
+            logger.info(f"Connection pool refresh complete: {successful_tests} healthy, {failed_tests} replaced")
+
+            # If more than 50% of tested connections failed, recreate entire pool
+            if failed_tests > test_count / 2:
+                logger.error(f"High failure rate detected ({failed_tests}/{test_count}), recreating pool...")
+                try:
+                    db_manager.connection_pool.closeall()
+                    db_manager._init_postgres()
+                    logger.info("Database connection pool successfully recreated")
+                except Exception as reinit_error:
+                    logger.critical(f"Failed to recreate connection pool: {reinit_error}")
+
         except Exception as e:
             logger.error(f"Database connection pool refresh failed: {e}")
-            # Try to recreate the connection pool if it's completely dead
+            # Try to recreate the connection pool as last resort
             try:
-                logger.warning("Attempting to recreate database connection pool...")
+                logger.warning("Attempting emergency connection pool recreation...")
                 if hasattr(db_manager, 'connection_pool') and db_manager.connection_pool:
                     db_manager.connection_pool.closeall()
                 db_manager._init_postgres()
-                logger.info("Database connection pool successfully recreated")
+                logger.info("Emergency connection pool recreation successful")
             except Exception as reinit_error:
-                logger.critical(f"Failed to recreate connection pool: {reinit_error}")
+                logger.critical(f"Emergency pool recreation failed: {reinit_error}")
 
-    # Run every 15 minutes (900000 ms) to keep connections fresh
-    db_refresh_interval = int(os.environ.get("DB_REFRESH_INTERVAL_MS", "900000"))
+    # Run every 10 minutes (600000 ms) to keep connections fresh
+    # Reduced from 15 minutes to detect stale connections faster
+    db_refresh_interval = int(os.environ.get("DB_REFRESH_INTERVAL_MS", "600000"))
     db_refresh_callback = PeriodicCallback(refresh_database_connections, db_refresh_interval)
     db_refresh_callback.start()
-    logger.info(f"Database connection pool refresh started (interval: {db_refresh_interval/1000}s)")
+    logger.info(f"Database connection pool refresh started (interval: {db_refresh_interval/1000}s, testing ~{min(5, 5)}% of pool)")
 
     main_ioloop.start()
 

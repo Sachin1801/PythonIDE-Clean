@@ -17,8 +17,8 @@ class Config:
 
     # Database settings
     DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/pythonide")
-    DB_POOL_MIN = int(os.getenv("DB_POOL_MIN", 5))
-    DB_POOL_MAX = int(os.getenv("DB_POOL_MAX", 25))
+    DB_POOL_MIN = int(os.getenv("DB_POOL_MIN", 10))  # Increased from 5 to handle 60+ concurrent users
+    DB_POOL_MAX = int(os.getenv("DB_POOL_MAX", 50))  # Increased from 25 to prevent stale connection issues
     DB_KEEPALIVE_IDLE = int(os.getenv("DB_KEEPALIVE_IDLE", 30))
     DB_KEEPALIVE_INTERVAL = int(os.getenv("DB_KEEPALIVE_INTERVAL", 10))
     DB_KEEPALIVE_COUNT = int(os.getenv("DB_KEEPALIVE_COUNT", 5))

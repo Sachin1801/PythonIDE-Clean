@@ -56,11 +56,20 @@ class DatabaseManager:
                 max_conn = Config.DB_POOL_MAX
             except ImportError:
                 # Fallback to direct environment variables if config module not available
-                min_conn = int(os.getenv("DB_POOL_MIN", 5))
-                max_conn = int(os.getenv("DB_POOL_MAX", 25))
+                min_conn = int(os.getenv("DB_POOL_MIN", 10))
+                max_conn = int(os.getenv("DB_POOL_MAX", 50))
+
+            # Close existing pool if reinitializing
+            if self.connection_pool:
+                try:
+                    self.connection_pool.closeall()
+                    logger.info("Closed existing connection pool for reinitialization")
+                except Exception as close_error:
+                    logger.warning(f"Error closing existing pool: {close_error}")
+
             self.connection_pool = psycopg2.pool.ThreadedConnectionPool(
                 min_conn,
-                max_conn,  # increased from 2,10 to support 40+ concurrent students
+                max_conn,  # increased from 5-25 to 10-50 to support 60+ concurrent students
                 host=url.hostname,
                 port=url.port or 5432,
                 database=url.path[1:],
@@ -68,12 +77,13 @@ class DatabaseManager:
                 password=url.password,
                 # Add keepalive parameters to prevent connection drops
                 keepalives=1,
-                keepalives_idle=30,
-                keepalives_interval=10,
-                keepalives_count=5,
-                connect_timeout=10,
+                keepalives_idle=30,  # Send keepalive after 30s idle
+                keepalives_interval=10,  # Retry every 10s if no response
+                keepalives_count=5,  # Give up after 5 failed keepalives
+                connect_timeout=10,  # 10s timeout for initial connection
             )
-            logger.info("PostgreSQL connection pool created")
+            logger.info(f"PostgreSQL connection pool created: {min_conn}-{max_conn} connections")
+            logger.info(f"Database: {url.hostname}:{url.port or 5432}/{url.path[1:]}")
 
             # Initialize tables
             self._init_postgres_tables()
@@ -349,6 +359,34 @@ class DatabaseManager:
                 return results
             else:
                 return cursor.rowcount
+
+    def get_pool_stats(self):
+        """Get connection pool statistics for monitoring"""
+        if not self.is_postgres or not self.connection_pool:
+            return None
+
+        try:
+            stats = {
+                "min_connections": self.connection_pool.minconn,
+                "max_connections": self.connection_pool.maxconn,
+                "pool_type": "ThreadedConnectionPool",
+            }
+            return stats
+        except Exception as e:
+            logger.error(f"Error getting pool stats: {e}")
+            return None
+
+    def test_connection_health(self):
+        """Test if a connection from pool is healthy"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT 1")
+                result = cursor.fetchone()
+                return result is not None
+        except Exception as e:
+            logger.error(f"Connection health check failed: {e}")
+            return False
 
     def close(self):
         """Close all database connections"""

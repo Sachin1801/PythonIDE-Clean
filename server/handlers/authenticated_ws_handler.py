@@ -26,25 +26,45 @@ from command.file_sync import file_sync
 
 
 class RateLimiter:
-    """Rate limiting for user actions"""
+    """Rate limiting for user actions with burst protection"""
 
     def __init__(self):
         # Track different types of actions separately
         self.executions = defaultdict(list)  # Code executions
         self.file_ops = defaultdict(list)  # File operations
         self.messages = defaultdict(list)  # General messages
+        self.burst_tracker = defaultdict(list)  # Track rapid bursts (last 2 seconds)
 
     def check_execution_limit(self, username, limit=10, window=60):
         """Check if user can execute code (10 per minute default)"""
         return self._check_limit(self.executions, username, limit, window)
 
-    def check_file_ops_limit(self, username, limit=100, window=60):
-        """Check if user can perform file operations (100 per minute default)"""
+    def check_file_ops_limit(self, username, limit=30, window=10):
+        """Check if user can perform file operations (30 per 10 seconds = max 180/min with burst protection)"""
+        # First check for rapid burst (max 5 requests per 2 seconds)
+        if not self._check_burst_limit(username, burst_limit=5, burst_window=2):
+            return False
+
         return self._check_limit(self.file_ops, username, limit, window)
 
     def check_message_limit(self, username, limit=300, window=60):
         """Check general message rate limit (300 per minute default)"""
         return self._check_limit(self.messages, username, limit, window)
+
+    def _check_burst_limit(self, username, burst_limit=5, burst_window=2):
+        """Prevent rapid-fire requests that can overwhelm the server"""
+        now = time()
+        # Remove old burst entries outside the burst window
+        self.burst_tracker[username] = [t for t in self.burst_tracker[username] if now - t < burst_window]
+
+        # Check if burst limit exceeded
+        if len(self.burst_tracker[username]) >= burst_limit:
+            logger.warning(f"Burst limit exceeded for {username}: {len(self.burst_tracker[username])} requests in {burst_window}s")
+            return False
+
+        # Add current timestamp
+        self.burst_tracker[username].append(now)
+        return True
 
     def _check_limit(self, tracker, username, limit, window):
         """Generic rate limit check"""

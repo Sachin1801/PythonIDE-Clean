@@ -230,6 +230,16 @@ class SimpleExecutorV3(threading.Thread):
             if self.script_path:
                 # print(f"[SimpleExecutorV3-RUN] Executing script: {self.script_path}")
                 self.execute_script()
+
+                # CRITICAL: Release execution lock after script completes, BEFORE REPL starts
+                # This allows the same file to be run again while REPL is still active
+                if hasattr(self, 'username') and hasattr(self, 'script_path') and self.username and self.script_path:
+                    try:
+                        from .execution_lock_manager import execution_lock_manager
+                        execution_lock_manager.release_execution_lock(self.username, self.script_path, self.cmd_id)
+                        print(f"[SimpleExecutorV3-RUN] ✅ Released execution lock after script completion (before REPL)")
+                    except Exception as e:
+                        print(f"[SimpleExecutorV3-RUN] ⚠️ Error releasing lock after script: {e}")
             else:
                 # print(f"[SimpleExecutorV3-RUN] No script provided, starting REPL directly")
                 pass  # Keep the block valid even with commented prints
@@ -732,12 +742,13 @@ class SimpleExecutorV3(threading.Thread):
         self.state = ExecutionState.TERMINATED
         self._stop_event.set()
 
-        # Release any execution locks
+        # Release any execution locks (if not already released after script execution)
         if hasattr(self, 'username') and hasattr(self, 'script_path') and self.username and self.script_path:
             try:
                 from .execution_lock_manager import execution_lock_manager
+                # This will be a no-op if lock was already released after script execution
                 execution_lock_manager.release_execution_lock(self.username, self.script_path, self.cmd_id)
-                # print(f"[SimpleExecutorV3-CLEANUP] Released execution lock")
+                # print(f"[SimpleExecutorV3-CLEANUP] Released execution lock (or was already released)")
             except Exception as e:
                 # print(f"[SimpleExecutorV3-CLEANUP] Error releasing lock: {e}")
                 pass  # Keep the block valid even with commented prints

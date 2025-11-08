@@ -63,21 +63,16 @@ class SecureFileManager:
             logger.info(f"Path validated: {requested_path} matches {expected_prefix}")
             return True
 
-        # 2. Read-only access to lecture notes
-        if requested_path.startswith("Lecture Notes/"):
-            logger.info(f"Read-only access granted for: {requested_path}")
-            return "read_only"
-
-        # 3. Read-only access to professor-created root folders (anything that doesn't contain '/' is a root folder)
+        # 2. Read-only access to professor-created root folders (anything that doesn't contain '/' is a root folder)
         # Allow access to root-level folders created by professors, but read-only
-        if "/" not in requested_path and requested_path not in ["Local", "Lecture Notes"]:
+        if "/" not in requested_path and requested_path not in ["Local"]:
             logger.info(f"Read-only access granted to professor-created root folder: {requested_path}")
             return "read_only"
 
-        # 4. Read-only access to files inside professor-created root folders
+        # 3. Read-only access to files inside professor-created root folders
         # Check if the path starts with a professor-created root folder
         root_folder = requested_path.split("/")[0]
-        if root_folder not in ["Local", "Lecture Notes"] and root_folder != username:
+        if root_folder not in ["Local"] and root_folder != username:
             logger.info(f"Read-only access granted to file in professor-created root folder: {requested_path}")
             return "read_only"
 
@@ -202,9 +197,9 @@ class SecureFileManager:
         if dir_path == "" or dir_path == "/":
             # Show top-level directories based on role
             if role == "professor":
-                dirs = ["Local", "Lecture Notes"]
+                dirs = ["Local"]
             else:
-                dirs = [f"Local/{username}", "Lecture Notes"]
+                dirs = [f"Local/{username}"]
 
             return {"success": True, "directories": dirs, "files": []}
 

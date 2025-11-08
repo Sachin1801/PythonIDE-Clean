@@ -239,11 +239,8 @@ def create_efs_directories():
 
         print(f"Creating directories at: {base_path}")
 
-        # Create base directories
+        # Create base directories (only Local)
         os.makedirs(base_path, exist_ok=True)
-        os.makedirs(os.path.dirname(base_path) + "/Lecture Notes", exist_ok=True)
-        os.makedirs(os.path.dirname(base_path) + "/Assignments", exist_ok=True)
-        os.makedirs(os.path.dirname(base_path) + "/Tests", exist_ok=True)
 
         # Create directories ONLY for students (NOT admins/professors)
         student_usernames = [

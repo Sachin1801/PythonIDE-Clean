@@ -684,12 +684,26 @@ export default {
 <style>
 .tree {
   overflow-y: auto;
-  overflow-x: auto;
+  overflow-x: hidden; /* Prevent horizontal scrollbar */
 }
 .el-tree {
   /* min-width: 100%; */
   display: inline-block !important;
-  min-width: 200px;
+  min-width: max(150px, 15vw); /* Responsive min-width based on viewport */
+  width: 100%; /* Fill container width */
+}
+
+/* Responsive adjustments for smaller screens */
+@media (max-width: 1200px) {
+  .el-tree {
+    min-width: max(120px, 12vw);
+  }
+}
+
+@media (max-width: 900px) {
+  .el-tree {
+    min-width: 100px;
+  }
 }
 
 .tree::-webkit-scrollbar {/*scrollbar overall style*/
@@ -805,6 +819,7 @@ export default {
   color: #CCCCCC;
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden; /* Prevent horizontal scrollbar */
   /* padding-left: 10px; */
   /* padding-right: 10px; */
 }

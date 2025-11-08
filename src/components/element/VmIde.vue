@@ -5297,7 +5297,8 @@ Advanced packages (install with micropip):
   color: var(--text-primary, #CCCCCC);
   height: 100%;
   width: 100%; /* Ensure sidebar fills its pane container */
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden; /* Prevent horizontal scrollbar */
   flex-shrink: 0;
   /* Use normal flow inside Splitpanes */
   position: relative;
@@ -6721,7 +6722,7 @@ body {
 /* Responsive Design */
 @media (max-width: 1400px) {
   .left-sidebar {
-    max-width: 250px;
+    max-width: min(40vw, 500px); /* Flexible max-width based on viewport */
     width: 100%; /* Fill pane container */
   }
   
@@ -6746,8 +6747,8 @@ body {
 
 @media (max-width: 1200px) {
   .left-sidebar {
-    width: 100% !important; /* Fill pane, actual size controlled by splitpanes */
-    max-width: 180px;
+    width: 100%; /* Fill pane, actual size controlled by splitpanes */
+    max-width: min(35vw, 400px); /* Flexible max-width for medium screens */
   }
   
   /* Hide right sidebar completely on medium screens */
@@ -6786,7 +6787,7 @@ body {
 /* Tablet view */
 @media (max-width: 1024px) {
   .left-sidebar {
-    max-width: 180px;
+    max-width: min(35vw, 350px); /* Flexible max-width for tablets */
   }
   
   .right-sidebar {

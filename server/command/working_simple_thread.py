@@ -38,7 +38,8 @@ class WorkingSimpleThread(threading.Thread):
         if self.p:
             try:
                 self.p.kill()
-            except:
+            except (OSError, ProcessLookupError, AttributeError) as e:
+                print(f"[WorkingSimpleThread] Could not kill process: {e}")
                 pass
 
     def stop(self):
@@ -47,7 +48,8 @@ class WorkingSimpleThread(threading.Thread):
         if self.p:
             try:
                 self.p.terminate()
-            except:
+            except (OSError, ProcessLookupError, AttributeError) as e:
+                print(f"[WorkingSimpleThread] Could not terminate process: {e}")
                 pass
 
     def send_input(self, user_input):
@@ -116,7 +118,8 @@ class WorkingSimpleThread(threading.Thread):
                                     line = buffer.decode("utf-8", errors="replace")
                                     self.response_to_client(0, {"stdout": line})
                                     buffer = b""
-                                except:
+                                except (UnicodeDecodeError, AttributeError) as e:
+                                    print(f"[WorkingSimpleThread] Error decoding buffer: {e}")
                                     pass
                     except (OSError, IOError) as e:
                         if e.errno != 11:  # Ignore EAGAIN
@@ -140,7 +143,8 @@ class WorkingSimpleThread(threading.Thread):
 
                                 waiting_for_input = True
                                 last_activity = time.time()
-                        except:
+                        except (UnicodeDecodeError, AttributeError) as e:
+                            print(f"[WorkingSimpleThread] Error handling initial prompt: {e}")
                             pass
 
                 # Check if we're likely waiting for input
@@ -176,7 +180,8 @@ class WorkingSimpleThread(threading.Thread):
 
                             waiting_for_input = True
                             last_activity = time.time()
-                    except:
+                    except (UnicodeDecodeError, AttributeError) as e:
+                        print(f"[WorkingSimpleThread] Error handling waiting prompt: {e}")
                         pass
 
                 # Handle user input
@@ -206,7 +211,8 @@ class WorkingSimpleThread(threading.Thread):
                         if partial:
                             self.response_to_client(0, {"stdout": partial})
                             buffer = b""
-                    except:
+                    except (UnicodeDecodeError, AttributeError) as e:
+                        print(f"[WorkingSimpleThread] Error sending partial output: {e}")
                         pass
 
             # Send any remaining output
@@ -215,7 +221,8 @@ class WorkingSimpleThread(threading.Thread):
                     remaining = buffer.decode("utf-8", errors="replace")
                     if remaining:
                         self.response_to_client(0, {"stdout": remaining})
-                except:
+                except (UnicodeDecodeError, AttributeError) as e:
+                    print(f"[WorkingSimpleThread] Error sending remaining output: {e}")
                     pass
 
             # Read any final output
@@ -223,7 +230,8 @@ class WorkingSimpleThread(threading.Thread):
                 final = self.p.stdout.read()
                 if final:
                     self.response_to_client(0, {"stdout": final.decode("utf-8", errors="replace")})
-            except:
+            except (IOError, OSError, UnicodeDecodeError, AttributeError) as e:
+                print(f"[WorkingSimpleThread] Error reading final output: {e}")
                 pass
 
             # Get exit code
@@ -246,7 +254,8 @@ class WorkingSimpleThread(threading.Thread):
             if self.p:
                 try:
                     self.p.terminate()
-                except:
+                except (OSError, ProcessLookupError, AttributeError) as e:
+                    print(f"[WorkingSimpleThread] Could not terminate process in finally: {e}")
                     pass
 
             self.client.handler_info.remove_subprogram(self.cmd_id)

@@ -37,7 +37,6 @@ class FileStorageManager:
         directories = [
             self.ide_base,
             os.path.join(self.ide_base, "Local"),
-            os.path.join(self.ide_base, "Lecture Notes"),
         ]
 
         for directory in directories:
@@ -50,9 +49,6 @@ class FileStorageManager:
         """Get user's local directory path"""
         return os.path.join(self.ide_base, "Local", username)
 
-    def get_lecture_notes_directory(self):
-        """Get lecture notes directory path"""
-        return os.path.join(self.ide_base, "Lecture Notes")
 
     def validate_user_folder_name(self, username):
         """Validate that folder name matches username for exam environment"""

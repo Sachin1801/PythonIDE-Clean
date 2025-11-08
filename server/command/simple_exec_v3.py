@@ -23,6 +23,7 @@ import traceback
 from typing import Optional, Dict, Any
 import tempfile
 import resource
+import builtins
 
 from command.exec_protocol import (
     MessageType, ExecutionState, create_message,
@@ -118,6 +119,7 @@ class SimpleExecutorV3(threading.Thread):
         self._stop_event = threading.Event()  # For clean shutdown
         self._cleanup_done = False  # Prevent double cleanup
         self._lock_released = False  # Track if execution lock has been released
+        self._lock_release_mutex = threading.Lock()  # Mutex to protect lock release
 
         # ===== INFINITE LOOP DETECTION VARIABLES =====
         # Layer 1: Output rate limiting
@@ -165,8 +167,10 @@ class SimpleExecutorV3(threading.Thread):
             try:
                 from .execution_lock_manager import execution_lock_manager
                 execution_lock_manager.update_heartbeat(self.username, self.script_path)
-            except:
-                pass  # Don't fail if heartbeat update fails
+            except (ImportError, AttributeError, Exception) as e:
+                # Don't fail if heartbeat update fails - log for debugging
+                print(f"[SimpleExecutorV3-HEARTBEAT] Non-critical error updating heartbeat: {e}")
+                pass
 
         # Check for infinite loop on STDOUT/STDERR messages
         if msg_type in [MessageType.STDOUT, MessageType.STDERR] and data:
@@ -195,6 +199,40 @@ class SimpleExecutorV3(threading.Thread):
         if msg_type != MessageType.DEBUG:
             data_preview = str(data)[:100] if data else "None"
             # print(f"[SimpleExecutorV3-SEND] Sent {msg_type.value}: {data_preview}")
+
+    def _release_execution_lock_once(self, context="unknown"):
+        """
+        Centralized method to release execution lock exactly once.
+        Uses mutex to prevent race conditions and double-release.
+
+        Args:
+            context: String describing where the release is being called from (for debugging)
+
+        Returns:
+            bool: True if lock was released, False if already released or error
+        """
+        with self._lock_release_mutex:
+            # Check if already released while holding the mutex
+            if self._lock_released:
+                print(f"[SimpleExecutorV3-LOCK] Lock already released, skipping ({context})")
+                return False
+
+            # Check if we have the necessary attributes
+            if not (hasattr(self, 'username') and hasattr(self, 'script_path') and
+                    self.username and self.script_path):
+                print(f"[SimpleExecutorV3-LOCK] Missing required attributes for lock release ({context})")
+                return False
+
+            try:
+                from .execution_lock_manager import execution_lock_manager
+                execution_lock_manager.release_execution_lock(self.username, self.script_path, self.cmd_id)
+                self._lock_released = True  # Mark as released AFTER successful release
+                print(f"[SimpleExecutorV3-LOCK] ✅ Successfully released lock ({context})")
+                return True
+            except Exception as e:
+                print(f"[SimpleExecutorV3-LOCK] ❌ Failed to release lock ({context}): {e}")
+                # Don't set _lock_released to True on error - allow retry
+                return False
 
     def handle_input(self, text: str):
         """Handle input from WebSocket"""
@@ -234,14 +272,7 @@ class SimpleExecutorV3(threading.Thread):
 
                 # CRITICAL: Release execution lock after script completes, BEFORE REPL starts
                 # This allows the same file to be run again while REPL is still active
-                if not self._lock_released and hasattr(self, 'username') and hasattr(self, 'script_path') and self.username and self.script_path:
-                    try:
-                        from .execution_lock_manager import execution_lock_manager
-                        execution_lock_manager.release_execution_lock(self.username, self.script_path, self.cmd_id)
-                        self._lock_released = True  # Mark lock as released
-                        print(f"[SimpleExecutorV3-RUN] ✅ Released execution lock after script completion (before REPL)")
-                    except Exception as e:
-                        print(f"[SimpleExecutorV3-RUN] ⚠️ Error releasing lock after script: {e}")
+                self._release_execution_lock_once("after script completion, before REPL")
             else:
                 # print(f"[SimpleExecutorV3-RUN] No script provided, starting REPL directly")
                 pass  # Keep the block valid even with commented prints
@@ -343,6 +374,128 @@ class SimpleExecutorV3(threading.Thread):
             # print(f"[SimpleExecutorV3-SCRIPT] Script size: {len(script_code)} bytes")
             # print(f"[SimpleExecutorV3-SCRIPT] First 100 chars: {script_code[:100]}")
 
+            # Get script's directory for file operations (NO os.chdir to avoid race conditions)
+            script_dir = os.path.dirname(os.path.abspath(self.script_path))
+            # print(f"[SimpleExecutorV3-SCRIPT] Script directory: {script_dir}")
+
+            # Add __file__ and __dir__ to namespace so scripts can access their location
+            self.namespace['__file__'] = os.path.abspath(self.script_path)
+            self.namespace['__dir__'] = script_dir
+
+            # Store original working directory in namespace for scripts that need it
+            # This allows scripts to construct absolute paths without changing global cwd
+            self.namespace['__original_cwd__'] = os.getcwd()
+
+            # Monkey-patch open() to use script directory as base for relative paths
+            original_open = builtins.open
+            def contextualized_open(file, *args, **kwargs):
+                # If path is relative, make it relative to script directory
+                if isinstance(file, str) and not os.path.isabs(file):
+                    file = os.path.join(script_dir, file)
+                return original_open(file, *args, **kwargs)
+
+            # Monkey-patch os.getcwd() to return script directory
+            # This helps libraries like pandas that use getcwd() for relative paths
+            def contextualized_getcwd():
+                return script_dir
+
+            # Monkey-patch os.path.abspath to resolve relative to script dir
+            original_abspath = os.path.abspath
+            def contextualized_abspath(path):
+                if not os.path.isabs(path):
+                    # Make relative paths relative to script directory
+                    path = os.path.join(script_dir, path)
+                return original_abspath(path)
+
+            # Monkey-patch os.path.exists to check relative to script dir
+            original_exists = os.path.exists
+            def contextualized_exists(path):
+                if isinstance(path, str) and not os.path.isabs(path):
+                    path = os.path.join(script_dir, path)
+                return original_exists(path)
+
+            # Monkey-patch os.path.isfile to check relative to script dir
+            original_isfile = os.path.isfile
+            def contextualized_isfile(path):
+                if isinstance(path, str) and not os.path.isabs(path):
+                    path = os.path.join(script_dir, path)
+                return original_isfile(path)
+
+            # Monkey-patch os.path.isdir to check relative to script dir
+            original_isdir = os.path.isdir
+            def contextualized_isdir(path):
+                if isinstance(path, str) and not os.path.isabs(path):
+                    path = os.path.join(script_dir, path)
+                return original_isdir(path)
+
+            # Monkey-patch os.listdir to list relative to script dir
+            original_listdir = os.listdir
+            def contextualized_listdir(path='.'):
+                if path == '.' or (isinstance(path, str) and not os.path.isabs(path)):
+                    if path == '.':
+                        path = script_dir
+                    else:
+                        path = os.path.join(script_dir, path)
+                return original_listdir(path)
+
+            # Monkey-patch os.path.getsize to get size relative to script dir
+            original_getsize = os.path.getsize
+            def contextualized_getsize(path):
+                if isinstance(path, str) and not os.path.isabs(path):
+                    path = os.path.join(script_dir, path)
+                return original_getsize(path)
+
+            # Monkey-patch os.path.getmtime to get mtime relative to script dir
+            original_getmtime = os.path.getmtime
+            def contextualized_getmtime(path):
+                if isinstance(path, str) and not os.path.isabs(path):
+                    path = os.path.join(script_dir, path)
+                return original_getmtime(path)
+
+            # Apply monkey patches in the namespace
+            self.namespace['open'] = contextualized_open
+
+            # Create a patched os module for the namespace
+            import types
+            import sys
+            patched_os = types.ModuleType('os')
+            # Copy all attributes from original os
+            for attr in dir(os):
+                if not attr.startswith('_'):
+                    setattr(patched_os, attr, getattr(os, attr))
+
+            # Create a patched os.path submodule
+            patched_path = types.ModuleType('path')
+            # Copy all attributes from original os.path
+            for attr in dir(os.path):
+                if not attr.startswith('_'):
+                    setattr(patched_path, attr, getattr(os.path, attr))
+
+            # Override specific path functions
+            patched_path.abspath = contextualized_abspath
+            patched_path.exists = contextualized_exists
+            patched_path.isfile = contextualized_isfile
+            patched_path.isdir = contextualized_isdir
+            patched_path.getsize = contextualized_getsize
+            patched_path.getmtime = contextualized_getmtime
+
+            # Override specific os functions
+            patched_os.getcwd = contextualized_getcwd
+            patched_os.listdir = contextualized_listdir
+            patched_os.path = patched_path
+
+            # Store original os module to restore later
+            original_os_module = sys.modules.get('os')
+            original_os_path_module = sys.modules.get('os.path')
+
+            # Replace os module in sys.modules so imports get our patched version
+            sys.modules['os'] = patched_os
+            sys.modules['os.path'] = patched_path
+
+            self.namespace['os'] = patched_os
+            self.namespace['__original_os_module__'] = original_os_module
+            self.namespace['__original_os_path_module__'] = original_os_path_module
+
             # Compile and execute in namespace
             compiled_code = compile(script_code, self.script_path, 'exec')
 
@@ -393,10 +546,12 @@ class SimpleExecutorV3(threading.Thread):
             finally:
                 sys.stdout = old_stdout
                 sys.stderr = old_stderr
+                # No need to restore working directory - we didn't change it
 
         except KeyboardInterrupt:
             # This is from our timeout killer
             print(f"[SimpleExecutorV3-SCRIPT] Script interrupted by timeout")
+            # No need to restore working directory - we didn't change it
             # The error message was already sent by _kill_for_timeout
             self.alive = False
             self.state = ExecutionState.TERMINATED
@@ -407,6 +562,8 @@ class SimpleExecutorV3(threading.Thread):
             print(f"[SimpleExecutorV3-SCRIPT] ERROR: Script execution failed")
             print(f"[SimpleExecutorV3-SCRIPT] Exception: {e}")
             traceback.print_exc()
+
+            # No need to restore working directory - we didn't change it
 
             # Only send error if not already terminated
             if self.state != ExecutionState.TERMINATED:
@@ -542,14 +699,7 @@ class SimpleExecutorV3(threading.Thread):
             self.timeout_occurred = True
 
         # Release execution lock if not already released (only relevant for scripts stopped mid-execution)
-        if not self._lock_released and hasattr(self, 'username') and hasattr(self, 'script_path') and self.username and self.script_path:
-            try:
-                from .execution_lock_manager import execution_lock_manager
-                execution_lock_manager.release_execution_lock(self.username, self.script_path, self.cmd_id)
-                self._lock_released = True  # Mark lock as released
-                print(f"[SimpleExecutorV3-STOP] ✅ Lock released for {self.username}:{os.path.basename(self.script_path)}:{self.cmd_id}")
-            except Exception as e:
-                print(f"[SimpleExecutorV3-STOP] ⚠️ Error releasing lock: {e}")
+        self._release_execution_lock_once("stop() method")
 
         # Wake up any waiting input
         if self.waiting_for_input:
@@ -686,7 +836,9 @@ class SimpleExecutorV3(threading.Thread):
             try:
                 # Send interrupt to break out of any running code
                 os.kill(os.getpid(), signal.SIGINT)
-            except:
+            except (OSError, ProcessLookupError) as e:
+                # Process might have already terminated
+                print(f"[SimpleExecutorV3-TIMEOUT] Could not send interrupt signal: {e}")
                 pass
 
     def _kill_for_timeout(self, reason: str):
@@ -731,6 +883,18 @@ class SimpleExecutorV3(threading.Thread):
 
         self._cleanup_done = True
 
+        # Restore original os modules if they were patched
+        try:
+            import sys
+            if '__original_os_module__' in self.namespace:
+                if self.namespace['__original_os_module__']:
+                    sys.modules['os'] = self.namespace['__original_os_module__']
+            if '__original_os_path_module__' in self.namespace:
+                if self.namespace['__original_os_path_module__']:
+                    sys.modules['os.path'] = self.namespace['__original_os_path_module__']
+        except Exception as e:
+            print(f"[SimpleExecutorV3-CLEANUP] Error restoring os modules: {e}")
+
         # Send completion message if still connected
         if self.alive and self.client:
             duration = time.time() - self.start_time if self.start_time else 0
@@ -746,14 +910,6 @@ class SimpleExecutorV3(threading.Thread):
         self._stop_event.set()
 
         # Release any execution locks (if not already released)
-        if not self._lock_released and hasattr(self, 'username') and hasattr(self, 'script_path') and self.username and self.script_path:
-            try:
-                from .execution_lock_manager import execution_lock_manager
-                execution_lock_manager.release_execution_lock(self.username, self.script_path, self.cmd_id)
-                self._lock_released = True  # Mark lock as released
-                # print(f"[SimpleExecutorV3-CLEANUP] Released execution lock")
-            except Exception as e:
-                # print(f"[SimpleExecutorV3-CLEANUP] Error releasing lock: {e}")
-                pass  # Keep the block valid even with commented prints
+        self._release_execution_lock_once("cleanup() method")
 
         # print(f"[SimpleExecutorV3-CLEANUP] Cleanup completed")

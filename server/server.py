@@ -297,7 +297,6 @@ def main():
 
     file_storage._ensure_base_directories()
     logger.info(f"Directory ensured: {file_storage.ide_base}/Local")
-    logger.info(f"Directory ensured: {file_storage.ide_base}/Lecture Notes")
 
     # Initialize database
     logger.info("Initializing database...")

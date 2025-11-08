@@ -2,9 +2,9 @@ name: Development Tests
 
 on:
   push:
-    branches-ignore: [ main ]
+    branches-ignore: [ main, staging ]  # Don't run on main or staging (staging has its own workflow)
   pull_request:
-    branches: [ main ]
+    branches: [ main, staging ]  # Run on PRs to main or staging
   workflow_dispatch:
 
 jobs:

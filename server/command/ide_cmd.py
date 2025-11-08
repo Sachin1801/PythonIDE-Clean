@@ -36,7 +36,7 @@ if not os.path.exists(ide_base):
     os.makedirs(ide_base)
 
 # Ensure default folders exist
-default_folders = ["Local", "Lecture Notes"]
+default_folders = ["Local"]
 for folder_name in default_folders:
     folder_path = os.path.join(ide_base, folder_name)
     if not os.path.exists(folder_path):
@@ -49,7 +49,7 @@ for folder_name in default_folders:
             "openList": [],
             "selectFilePath": "",
             "lastAccessTime": time.time(),
-            "protected": folder_name in ["Lecture Notes"],  # Mark as protected
+            "protected": False,
         }
         with open(config_path, "w") as f:
             json.dump(config_data, f, indent=4)
@@ -194,8 +194,8 @@ print("="*50)
     async def ide_rename_project(self, client, cmd_id, data):
         old_name = data.get("oldName")
 
-        # Check if project is protected
-        protected_projects = ["Lecture Notes"]
+        # Check if project is protected (none currently)
+        protected_projects = []
         if old_name in protected_projects:
             await response(client, cmd_id, -1, f"Cannot rename protected folder: {old_name}")
             return
@@ -330,7 +330,7 @@ print("="*50)
         else:
             print(f"  ide_base does not exist!")
 
-        # Handle root-level folder creation (same level as Local/ and Lecture Notes/)
+        # Handle root-level folder creation (same level as Local/)
         if is_root_creation:
             # Create folder directly in ide_base (root level) using resource.create()
             folder_path = os.path.join(file_storage.ide_base, folder_name)
@@ -398,12 +398,12 @@ print("="*50)
             # Handle paths that might already include project context
             # If the path already starts with a project name, use it as-is
             # Otherwise, prepend the current project name
-            if "/" in old_path_relative and old_path_relative.split("/")[0] in ["Local", "Lecture Notes"]:
+            if "/" in old_path_relative and old_path_relative.split("/")[0] in ["Local"]:
                 old_path_full = old_path_relative  # Path already includes project context
             else:
                 old_path_full = f"{prj_name}/{old_path_relative}" if old_path_relative else prj_name
 
-            if "/" in new_path_relative and new_path_relative.split("/")[0] in ["Local", "Lecture Notes"]:
+            if "/" in new_path_relative and new_path_relative.split("/")[0] in ["Local"]:
                 new_path_full = new_path_relative  # Path already includes project context
             else:
                 new_path_full = f"{prj_name}/{new_path_relative}" if new_path_relative else prj_name
@@ -515,12 +515,12 @@ print("="*50)
             # Handle paths that might already include project context
             # If the path already starts with a project name, use it as-is
             # Otherwise, prepend the current project name
-            if "/" in old_path_relative and old_path_relative.split("/")[0] in ["Local", "Lecture Notes"]:
+            if "/" in old_path_relative and old_path_relative.split("/")[0] in ["Local"]:
                 old_path_full = old_path_relative  # Path already includes project context
             else:
                 old_path_full = f"{prj_name}/{old_path_relative}" if old_path_relative else prj_name
 
-            if "/" in new_path_relative and new_path_relative.split("/")[0] in ["Local", "Lecture Notes"]:
+            if "/" in new_path_relative and new_path_relative.split("/")[0] in ["Local"]:
                 new_path_full = new_path_relative  # Path already includes project context
             else:
                 new_path_full = f"{prj_name}/{new_path_relative}" if new_path_relative else prj_name
@@ -823,7 +823,9 @@ class SubProgramThread(threading.Thread):
         if self.p:
             try:
                 self.p.kill()
-            except:
+            except (OSError, ProcessLookupError, AttributeError) as e:
+                # Process might have already terminated
+                print(f"[IDE-CMD] Could not kill process: {e}")
                 pass
             self.p = None
 
@@ -883,7 +885,9 @@ class SubProgramThread(threading.Thread):
                     self.error_buffer = []
                 else:
                     self.response_to_client(0, stdout)
-            except:
+            except (IOError, OSError, AttributeError) as e:
+                # Error reading stdout or processing response
+                print(f"[IDE-CMD] Error processing output: {e}")
                 pass
             if self.client.connected:
                 stdout = "[Program exit with code {code}]".format(code=p.returncode)
@@ -907,11 +911,15 @@ class SubProgramThread(threading.Thread):
         finally:
             try:
                 p.kill()
-            except:
+            except (OSError, ProcessLookupError, AttributeError) as e:
+                # Process might have already terminated
+                print(f"[IDE-CMD] Could not kill process in finally: {e}")
                 pass
             try:
                 self.client.handler_info.remove_subprogram(self.cmd_id)
-            except:
+            except (AttributeError, KeyError, ValueError) as e:
+                # Subprogram might have already been removed or doesn't exist
+                print(f"[IDE-CMD] Could not remove subprogram from handler: {e}")
                 pass
 
     def run(self):

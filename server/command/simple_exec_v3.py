@@ -343,6 +343,15 @@ class SimpleExecutorV3(threading.Thread):
             # print(f"[SimpleExecutorV3-SCRIPT] Script size: {len(script_code)} bytes")
             # print(f"[SimpleExecutorV3-SCRIPT] First 100 chars: {script_code[:100]}")
 
+            # Change working directory to script's directory
+            script_dir = os.path.dirname(os.path.abspath(self.script_path))
+            original_cwd = os.getcwd()
+            os.chdir(script_dir)
+            # print(f"[SimpleExecutorV3-SCRIPT] Changed working directory to: {script_dir}")
+
+            # Add __file__ to namespace so scripts can access it
+            self.namespace['__file__'] = os.path.abspath(self.script_path)
+
             # Compile and execute in namespace
             compiled_code = compile(script_code, self.script_path, 'exec')
 
@@ -393,10 +402,14 @@ class SimpleExecutorV3(threading.Thread):
             finally:
                 sys.stdout = old_stdout
                 sys.stderr = old_stderr
+                # Restore original working directory
+                os.chdir(original_cwd)
 
         except KeyboardInterrupt:
             # This is from our timeout killer
             print(f"[SimpleExecutorV3-SCRIPT] Script interrupted by timeout")
+            # Restore original working directory
+            os.chdir(original_cwd)
             # The error message was already sent by _kill_for_timeout
             self.alive = False
             self.state = ExecutionState.TERMINATED
@@ -407,6 +420,12 @@ class SimpleExecutorV3(threading.Thread):
             print(f"[SimpleExecutorV3-SCRIPT] ERROR: Script execution failed")
             print(f"[SimpleExecutorV3-SCRIPT] Exception: {e}")
             traceback.print_exc()
+
+            # Restore original working directory
+            try:
+                os.chdir(original_cwd)
+            except:
+                pass
 
             # Only send error if not already terminated
             if self.state != ExecutionState.TERMINATED:

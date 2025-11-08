@@ -34,6 +34,9 @@ class RateLimiter:
         self.file_ops = defaultdict(list)  # File operations
         self.messages = defaultdict(list)  # General messages
         self.burst_tracker = defaultdict(list)  # Track rapid bursts (last 2 seconds)
+        self.last_cleanup = time()  # Track when we last cleaned up
+        self.cleanup_interval = 3600  # Clean up every hour
+        self.cleanup_lock = threading.Lock()  # Prevent concurrent cleanup
 
     def check_execution_limit(self, username, limit=10, window=60):
         """Check if user can execute code (10 per minute default)"""
@@ -74,6 +77,11 @@ class RateLimiter:
     def _check_limit(self, tracker, username, limit, window):
         """Generic rate limit check"""
         now = time()
+
+        # Periodically clean up stale user entries
+        if now - self.last_cleanup > self.cleanup_interval:
+            self._cleanup_stale_entries()
+
         # Remove old entries outside the time window
         tracker[username] = [t for t in tracker[username] if now - t < window]
 
@@ -84,6 +92,34 @@ class RateLimiter:
         # Add current timestamp
         tracker[username].append(now)
         return True
+
+    def _cleanup_stale_entries(self):
+        """Remove entries for users who haven't made requests in over an hour"""
+        with self.cleanup_lock:
+            now = time()
+            # Only cleanup if enough time has passed (prevent concurrent cleanups)
+            if now - self.last_cleanup < self.cleanup_interval:
+                return
+
+            self.last_cleanup = now
+            stale_threshold = 3600  # Remove entries older than 1 hour
+
+            # Clean up each tracker
+            for tracker in [self.executions, self.file_ops, self.messages, self.burst_tracker]:
+                users_to_remove = []
+                for username, timestamps in tracker.items():
+                    # Remove old timestamps
+                    tracker[username] = [t for t in timestamps if now - t < stale_threshold]
+                    # Mark user for removal if no recent activity
+                    if not tracker[username]:
+                        users_to_remove.append(username)
+
+                # Remove users with no recent activity
+                for username in users_to_remove:
+                    del tracker[username]
+
+            if users_to_remove:
+                logger.info(f"[RateLimiter] Cleaned up {len(users_to_remove)} inactive users from rate limiting trackers")
 
     def get_wait_time(self, tracker, username, window=60):
         """Get seconds until next action allowed"""

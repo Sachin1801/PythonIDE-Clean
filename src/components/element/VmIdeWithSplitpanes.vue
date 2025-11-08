@@ -28,9 +28,9 @@
     
     <div id="total-frame" class="total-frame">
       <!-- Main horizontal layout with splitpanes -->
-      <splitpanes class="default-theme">
+      <splitpanes class="default-theme" @resized="onMainPaneResized">
         <!-- Left sidebar pane -->
-        <pane v-if="leftSidebarVisible" :size="leftPaneSize" :min-size="10" :max-size="30">
+        <pane v-if="leftSidebarVisible" :size="leftPaneSize" :min-size="10" :max-size="40">
           <div class="left-sidebar">
             <ProjTree 
               v-on:get-item="getFile"
@@ -42,7 +42,7 @@
         <!-- Center content pane -->
         <pane :size="centerPaneSize">
           <!-- Vertical split for editor and console -->
-          <splitpanes horizontal class="editor-console-split">
+          <splitpanes horizontal class="editor-console-split" @resized="onEditorConsoleResized">
             <!-- Editor pane -->
             <pane :size="editorPaneSize" :min-size="30">
               <div class="editor-section">
@@ -224,6 +224,45 @@ export default {
       return 100 - this.leftPaneSize
     }
   },
+  mounted() {
+    // Load saved pane sizes from localStorage
+    try {
+      const savedLeftPaneSize = localStorage.getItem('ide_leftPaneSize')
+      const savedRightPaneSize = localStorage.getItem('ide_rightPaneSize')
+      const savedEditorPaneSize = localStorage.getItem('ide_editorPaneSize')
+      const savedConsolePaneSize = localStorage.getItem('ide_consolePaneSize')
+
+      if (savedLeftPaneSize) {
+        const size = parseFloat(savedLeftPaneSize)
+        if (size >= 10 && size <= 40) {
+          this.leftPaneSize = size
+        }
+      }
+
+      if (savedRightPaneSize) {
+        const size = parseFloat(savedRightPaneSize)
+        if (size >= 15 && size <= 40) {
+          this.rightPaneSize = size
+        }
+      }
+
+      if (savedEditorPaneSize) {
+        const size = parseFloat(savedEditorPaneSize)
+        if (size >= 30 && size <= 95) {
+          this.editorPaneSize = size
+        }
+      }
+
+      if (savedConsolePaneSize) {
+        const size = parseFloat(savedConsolePaneSize)
+        if (size >= 5 && size <= 70) {
+          this.consolePaneSize = size
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to load saved pane sizes from localStorage:', e)
+    }
+  },
   methods: {
     toggleConsole() {
       if (this.consolePaneSize > 10) {
@@ -246,6 +285,55 @@ export default {
     toggleReplMode() {
       this.isReplMode = !this.isReplMode
     },
+
+    // Splitpanes resize event handlers
+    onMainPaneResized(panes) {
+      // Update pane sizes when user drags the splitter
+      // panes is an array of objects with {min, max, size} for each pane
+      if (panes && panes.length >= 2) {
+        // Update left pane size
+        if (this.leftSidebarVisible) {
+          this.leftPaneSize = panes[0].size
+        }
+
+        // Center pane size is computed, no need to update
+
+        // Update right pane size if visible
+        if (this.rightSidebarVisible && panes.length >= 3) {
+          this.rightPaneSize = panes[2].size
+        }
+
+        // Save to localStorage for persistence
+        try {
+          localStorage.setItem('ide_leftPaneSize', this.leftPaneSize.toString())
+          if (this.rightSidebarVisible) {
+            localStorage.setItem('ide_rightPaneSize', this.rightPaneSize.toString())
+          }
+        } catch (e) {
+          console.warn('Failed to save pane sizes to localStorage:', e)
+        }
+      }
+    },
+
+    onEditorConsoleResized(panes) {
+      // Update editor and console pane sizes
+      if (panes && panes.length >= 2) {
+        this.editorPaneSize = panes[0].size
+        this.consolePaneSize = panes[1].size
+
+        // Update consoleMaximized state based on size
+        this.consoleMaximized = this.consolePaneSize >= 65
+
+        // Save to localStorage
+        try {
+          localStorage.setItem('ide_editorPaneSize', this.editorPaneSize.toString())
+          localStorage.setItem('ide_consolePaneSize', this.consolePaneSize.toString())
+        } catch (e) {
+          console.warn('Failed to save editor/console sizes to localStorage:', e)
+        }
+      }
+    },
+
     // Add all other methods from original VmIde.vue
   }
 }

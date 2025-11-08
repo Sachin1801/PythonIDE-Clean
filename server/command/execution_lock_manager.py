@@ -34,33 +34,34 @@ class ExecutionLockManager:
 
         acquired = file_lock.acquire(timeout=timeout)
         if acquired:
-            with self._cleanup_lock:
-                # Check if there's already an active execution for this user+file
-                if user_file_key in self._active_executions:
-                    old_cmd_id, old_timestamp = self._active_executions[user_file_key]
-                    print(
-                        f"[EXEC-LOCK] Found existing execution for {user_file_key}: cmd_id={old_cmd_id}, replacing with {cmd_id}"
-                    )
+            try:
+                with self._cleanup_lock:
+                    # Check if there's already an active execution for this user+file
+                    if user_file_key in self._active_executions:
+                        old_cmd_id, old_timestamp = self._active_executions[user_file_key]
+                        print(
+                            f"[EXEC-LOCK] Found existing execution for {user_file_key}: cmd_id={old_cmd_id}, replacing with {cmd_id}"
+                        )
 
-                # Register this execution
-                self._active_executions[user_file_key] = (cmd_id, time.time())
-                self._heartbeats[user_file_key] = time.time()
-                if executor_ref:
-                    self._executors[user_file_key] = executor_ref
-                print(f"[EXEC-LOCK] ✅ Lock acquired for {user_file_key}, cmd_id: {cmd_id}")
+                    # Register this execution
+                    self._active_executions[user_file_key] = (cmd_id, time.time())
+                    self._heartbeats[user_file_key] = time.time()
+                    if executor_ref:
+                        self._executors[user_file_key] = executor_ref
+                    print(f"[EXEC-LOCK] ✅ Lock acquired for {user_file_key}, cmd_id: {cmd_id}")
 
-                # Set up health check timer instead of auto-release
-                def health_check_timer():
-                    """Check if executor is still alive every 5 seconds"""
-                    check_interval = 5.0  # Check every 5 seconds
-                    max_stale_time = 30.0  # Consider dead if no heartbeat for 30 seconds
+                    # Set up health check timer instead of auto-release
+                    def health_check_timer():
+                        """Check if executor is still alive every 5 seconds"""
+                        check_interval = 5.0  # Check every 5 seconds
+                        max_stale_time = 30.0  # Consider dead if no heartbeat for 30 seconds
 
-                    while True:
-                        time.sleep(check_interval)
-                        with self._cleanup_lock:
-                            if user_file_key not in self._active_executions:
-                                # Lock already released, stop checking
-                                break
+                        while True:
+                            time.sleep(check_interval)
+                            with self._cleanup_lock:
+                                if user_file_key not in self._active_executions:
+                                    # Lock already released, stop checking
+                                    break
 
                             current_cmd_id, _ = self._active_executions.get(user_file_key, (None, None))
                             if current_cmd_id != cmd_id:
@@ -97,6 +98,21 @@ class ExecutionLockManager:
                 timer_thread.start()
 
                 return True
+            except Exception as e:
+                # If registration fails, release the lock immediately
+                print(f"[EXEC-LOCK] ❌ Error during lock registration for {user_file_key}: {e}")
+                try:
+                    file_lock.release()
+                except (RuntimeError, ValueError):
+                    pass  # Lock might not be held
+                # Clean up any partial registration
+                if user_file_key in self._active_executions:
+                    del self._active_executions[user_file_key]
+                if user_file_key in self._heartbeats:
+                    del self._heartbeats[user_file_key]
+                if user_file_key in self._executors:
+                    del self._executors[user_file_key]
+                raise  # Re-raise the exception
         else:
             print(f"[EXEC-LOCK] ❌ Failed to acquire lock for {user_file_key}, cmd_id: {cmd_id} (timeout)")
             return False
@@ -164,8 +180,10 @@ class ExecutionLockManager:
                 if key in self._locks:
                     try:
                         self._locks[key].release()
-                    except:
-                        pass  # Lock might not be held
+                    except (RuntimeError, ValueError) as e:
+                        # Lock might not be held or already released
+                        print(f"[ExecutionLockManager] Could not release lock for {key}: {e}")
+                        pass
                 del self._active_executions[key]
                 # Clean up tracking data
                 if key in self._heartbeats:
@@ -190,7 +208,9 @@ class ExecutionLockManager:
                 try:
                     if user_file_key in self._locks:
                         self._locks[user_file_key].release()
-                except:
+                except (RuntimeError, ValueError) as e:
+                    # Lock might not be held or already released
+                    print(f"[ExecutionLockManager] Could not release lock in cleanup: {e}")
                     pass
 
 

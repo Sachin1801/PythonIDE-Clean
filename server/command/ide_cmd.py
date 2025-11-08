@@ -823,7 +823,9 @@ class SubProgramThread(threading.Thread):
         if self.p:
             try:
                 self.p.kill()
-            except:
+            except (OSError, ProcessLookupError, AttributeError) as e:
+                # Process might have already terminated
+                print(f"[IDE-CMD] Could not kill process: {e}")
                 pass
             self.p = None
 
@@ -883,7 +885,9 @@ class SubProgramThread(threading.Thread):
                     self.error_buffer = []
                 else:
                     self.response_to_client(0, stdout)
-            except:
+            except (IOError, OSError, AttributeError) as e:
+                # Error reading stdout or processing response
+                print(f"[IDE-CMD] Error processing output: {e}")
                 pass
             if self.client.connected:
                 stdout = "[Program exit with code {code}]".format(code=p.returncode)
@@ -907,11 +911,15 @@ class SubProgramThread(threading.Thread):
         finally:
             try:
                 p.kill()
-            except:
+            except (OSError, ProcessLookupError, AttributeError) as e:
+                # Process might have already terminated
+                print(f"[IDE-CMD] Could not kill process in finally: {e}")
                 pass
             try:
                 self.client.handler_info.remove_subprogram(self.cmd_id)
-            except:
+            except (AttributeError, KeyError, ValueError) as e:
+                # Subprogram might have already been removed or doesn't exist
+                print(f"[IDE-CMD] Could not remove subprogram from handler: {e}")
                 pass
 
     def run(self):

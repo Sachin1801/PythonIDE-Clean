@@ -386,13 +386,85 @@ class SimpleExecutorV3(threading.Thread):
             # This allows scripts to construct absolute paths without changing global cwd
             self.namespace['__original_cwd__'] = os.getcwd()
 
+            # Security: Validate student file access
+            # Students can only access files within their Local/{username}/ directory
+            # and can read from other directories (like Lecture Notes) but NOT write to them
+            def validate_student_path(path, mode='r', username=None, role=None):
+                """
+                Validate that a student's file operation respects directory permissions.
+
+                Args:
+                    path: File path to validate (absolute or relative)
+                    mode: File open mode ('r', 'w', 'a', 'rb', 'wb', etc.)
+                    username: Student's username
+                    role: User's role ('student' or 'professor')
+
+                Returns:
+                    Validated absolute path
+
+                Raises:
+                    PermissionError: If student attempts unauthorized access
+                """
+                # Professors have unrestricted access
+                if role == 'professor':
+                    return path
+
+                # Convert to absolute path
+                if not os.path.isabs(path):
+                    path = os.path.join(script_dir, path)
+
+                # Resolve any .. or . in the path to prevent directory traversal
+                path = os.path.abspath(path)
+
+                # Get the base data directory (e.g., /mnt/efs/pythonide-data)
+                base_data_path = os.environ.get('IDE_DATA_PATH', '/mnt/efs/pythonide-data')
+
+                # Ensure path is within the data directory
+                if not path.startswith(base_data_path):
+                    raise PermissionError(f"Access denied: Path outside IDE workspace: {path}")
+
+                # Get relative path from base (e.g., "Local/sa9082/test.py" or "Lecture Notes/data.csv")
+                rel_path = os.path.relpath(path, base_data_path)
+
+                # Determine if this is a write operation
+                is_write_mode = False
+                if isinstance(mode, str):
+                    # Check for write modes: 'w', 'a', 'w+', 'r+', 'wb', 'ab', etc.
+                    is_write_mode = any(m in mode for m in ['w', 'a', '+'])
+
+                # For students, enforce directory restrictions
+                if role == 'student' and username:
+                    student_prefix = f"Local/{username}/"
+
+                    # Students can READ from anywhere in the workspace
+                    if not is_write_mode:
+                        return path
+
+                    # Students can WRITE only within their Local/{username}/ directory
+                    if not rel_path.startswith(student_prefix):
+                        raise PermissionError(
+                            f"Permission denied: Students can only write to their own directory (Local/{username}/). "
+                            f"Attempted write to: {rel_path}"
+                        )
+
+                return path
+
             # Monkey-patch open() to use script directory as base for relative paths
+            # AND validate student permissions for absolute paths
             original_open = builtins.open
-            def contextualized_open(file, *args, **kwargs):
+            def contextualized_open(file, mode='r', *args, **kwargs):
+                # Handle file descriptors (not paths)
+                if not isinstance(file, str):
+                    return original_open(file, mode, *args, **kwargs)
+
                 # If path is relative, make it relative to script directory
-                if isinstance(file, str) and not os.path.isabs(file):
+                if not os.path.isabs(file):
                     file = os.path.join(script_dir, file)
-                return original_open(file, *args, **kwargs)
+
+                # Validate student permissions (raises PermissionError if denied)
+                file = validate_student_path(file, mode, self.username, self.role)
+
+                return original_open(file, mode, *args, **kwargs)
 
             # Monkey-patch os.getcwd() to return script directory
             # This helps libraries like pandas that use getcwd() for relative paths
@@ -452,6 +524,66 @@ class SimpleExecutorV3(threading.Thread):
                     path = os.path.join(script_dir, path)
                 return original_getmtime(path)
 
+            # Security: Monkey-patch destructive file operations
+            # These operations can modify/delete files, so they need permission validation
+
+            # Monkey-patch os.remove (delete files)
+            original_remove = os.remove
+            def contextualized_remove(path):
+                if isinstance(path, str):
+                    if not os.path.isabs(path):
+                        path = os.path.join(script_dir, path)
+                    # Validate as write operation (deleting = writing)
+                    path = validate_student_path(path, 'w', self.username, self.role)
+                return original_remove(path)
+
+            # Monkey-patch os.rename (rename/move files)
+            original_rename = os.rename
+            def contextualized_rename(src, dst):
+                if isinstance(src, str):
+                    if not os.path.isabs(src):
+                        src = os.path.join(script_dir, src)
+                    # Validate source as write operation (moving from = modifying)
+                    src = validate_student_path(src, 'w', self.username, self.role)
+
+                if isinstance(dst, str):
+                    if not os.path.isabs(dst):
+                        dst = os.path.join(script_dir, dst)
+                    # Validate destination as write operation
+                    dst = validate_student_path(dst, 'w', self.username, self.role)
+
+                return original_rename(src, dst)
+
+            # Monkey-patch os.mkdir (create directories)
+            original_mkdir = os.mkdir
+            def contextualized_mkdir(path, *args, **kwargs):
+                if isinstance(path, str):
+                    if not os.path.isabs(path):
+                        path = os.path.join(script_dir, path)
+                    # Validate as write operation
+                    path = validate_student_path(path, 'w', self.username, self.role)
+                return original_mkdir(path, *args, **kwargs)
+
+            # Monkey-patch os.makedirs (create directories recursively)
+            original_makedirs = os.makedirs
+            def contextualized_makedirs(path, *args, **kwargs):
+                if isinstance(path, str):
+                    if not os.path.isabs(path):
+                        path = os.path.join(script_dir, path)
+                    # Validate as write operation
+                    path = validate_student_path(path, 'w', self.username, self.role)
+                return original_makedirs(path, *args, **kwargs)
+
+            # Monkey-patch os.rmdir (remove empty directory)
+            original_rmdir = os.rmdir
+            def contextualized_rmdir(path):
+                if isinstance(path, str):
+                    if not os.path.isabs(path):
+                        path = os.path.join(script_dir, path)
+                    # Validate as write operation
+                    path = validate_student_path(path, 'w', self.username, self.role)
+                return original_rmdir(path)
+
             # Apply monkey patches in the namespace
             self.namespace['open'] = contextualized_open
 
@@ -484,17 +616,110 @@ class SimpleExecutorV3(threading.Thread):
             patched_os.listdir = contextualized_listdir
             patched_os.path = patched_path
 
+            # Override destructive file operations with security validation
+            patched_os.remove = contextualized_remove
+            patched_os.rename = contextualized_rename
+            patched_os.mkdir = contextualized_mkdir
+            patched_os.makedirs = contextualized_makedirs
+            patched_os.rmdir = contextualized_rmdir
+
+            # Security: Monkey-patch pathlib.Path operations
+            # pathlib provides an object-oriented interface to file operations
+            from pathlib import Path as OriginalPath
+
+            class SecurePath(type(OriginalPath())):
+                """Secure wrapper for pathlib.Path with permission validation"""
+
+                def __new__(cls, *args, **kwargs):
+                    # Create the path object
+                    if args and isinstance(args[0], str):
+                        path_str = args[0]
+                        # Convert relative paths to absolute based on script_dir
+                        if not os.path.isabs(path_str):
+                            path_str = os.path.join(script_dir, path_str)
+                        args = (path_str,) + args[1:]
+                    return super().__new__(cls, *args, **kwargs)
+
+                def open(self, mode='r', *args, **kwargs):
+                    # Validate permissions before opening
+                    validated_path = validate_student_path(str(self), mode, self._username, self._role)
+                    return OriginalPath(validated_path).open(mode, *args, **kwargs)
+
+                def write_text(self, data, *args, **kwargs):
+                    # Validate as write operation
+                    validated_path = validate_student_path(str(self), 'w', self._username, self._role)
+                    return OriginalPath(validated_path).write_text(data, *args, **kwargs)
+
+                def write_bytes(self, data, *args, **kwargs):
+                    # Validate as write operation
+                    validated_path = validate_student_path(str(self), 'wb', self._username, self._role)
+                    return OriginalPath(validated_path).write_bytes(data, *args, **kwargs)
+
+                def mkdir(self, *args, **kwargs):
+                    # Validate as write operation
+                    validated_path = validate_student_path(str(self), 'w', self._username, self._role)
+                    return OriginalPath(validated_path).mkdir(*args, **kwargs)
+
+                def rmdir(self, *args, **kwargs):
+                    # Validate as write operation
+                    validated_path = validate_student_path(str(self), 'w', self._username, self._role)
+                    return OriginalPath(validated_path).rmdir(*args, **kwargs)
+
+                def unlink(self, *args, **kwargs):
+                    # Validate as write operation (delete file)
+                    validated_path = validate_student_path(str(self), 'w', self._username, self._role)
+                    return OriginalPath(validated_path).unlink(*args, **kwargs)
+
+                def rename(self, target, *args, **kwargs):
+                    # Validate both source and destination
+                    validate_student_path(str(self), 'w', self._username, self._role)
+                    target_str = str(target)
+                    if not os.path.isabs(target_str):
+                        target_str = os.path.join(script_dir, target_str)
+                    validated_target = validate_student_path(target_str, 'w', self._username, self._role)
+                    return OriginalPath(str(self)).rename(validated_target)
+
+                def replace(self, target, *args, **kwargs):
+                    # Validate both source and destination
+                    validate_student_path(str(self), 'w', self._username, self._role)
+                    target_str = str(target)
+                    if not os.path.isabs(target_str):
+                        target_str = os.path.join(script_dir, target_str)
+                    validated_target = validate_student_path(target_str, 'w', self._username, self._role)
+                    return OriginalPath(str(self)).replace(validated_target)
+
+            # Store username and role in the SecurePath class for access in methods
+            SecurePath._username = self.username
+            SecurePath._role = self.role
+
+            # Create patched pathlib module
+            import pathlib
+            patched_pathlib = types.ModuleType('pathlib')
+            # Copy all attributes from original pathlib
+            for attr in dir(pathlib):
+                if not attr.startswith('_'):
+                    setattr(patched_pathlib, attr, getattr(pathlib, attr))
+
+            # Override Path class
+            patched_pathlib.Path = SecurePath
+
+            # Store original modules
+            original_pathlib_module = sys.modules.get('pathlib')
+
             # Store original os module to restore later
             original_os_module = sys.modules.get('os')
             original_os_path_module = sys.modules.get('os.path')
 
-            # Replace os module in sys.modules so imports get our patched version
+            # Replace os and pathlib modules in sys.modules so imports get our patched versions
             sys.modules['os'] = patched_os
             sys.modules['os.path'] = patched_path
+            sys.modules['pathlib'] = patched_pathlib
 
             self.namespace['os'] = patched_os
+            self.namespace['pathlib'] = patched_pathlib
             self.namespace['__original_os_module__'] = original_os_module
             self.namespace['__original_os_path_module__'] = original_os_path_module
+            self.namespace['__original_pathlib_module__'] = original_pathlib_module
 
             # Compile and execute in namespace
             compiled_code = compile(script_code, self.script_path, 'exec')
@@ -883,7 +1108,7 @@ class SimpleExecutorV3(threading.Thread):
 
         self._cleanup_done = True
 
-        # Restore original os modules if they were patched
+        # Restore original os and pathlib modules if they were patched
         try:
             import sys
             if '__original_os_module__' in self.namespace:
@@ -892,8 +1117,11 @@ class SimpleExecutorV3(threading.Thread):
             if '__original_os_path_module__' in self.namespace:
                 if self.namespace['__original_os_path_module__']:
                     sys.modules['os.path'] = self.namespace['__original_os_path_module__']
+            if '__original_pathlib_module__' in self.namespace:
+                if self.namespace['__original_pathlib_module__']:
+                    sys.modules['pathlib'] = self.namespace['__original_pathlib_module__']
         except Exception as e:
-            print(f"[SimpleExecutorV3-CLEANUP] Error restoring os modules: {e}")
+            print(f"[SimpleExecutorV3-CLEANUP] Error restoring os/pathlib modules: {e}")
 
         # Send completion message if still connected
         if self.alive and self.client:

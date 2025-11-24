@@ -417,8 +417,12 @@ class SimpleExecutorV3(threading.Thread):
                 Raises:
                     PermissionError: If student attempts unauthorized access
                 """
+                # Debug logging to diagnose role issues
+                print(f"[VALIDATE-PATH-DEBUG] path={path}, mode={mode}, username={username}, role={role}, role_type={type(role)}")
+
                 # Professors have unrestricted access
                 if role == 'professor':
+                    print(f"[VALIDATE-PATH-DEBUG] ✅ Professor access granted for {username}")
                     return path
 
                 # Convert to absolute path
@@ -779,20 +783,24 @@ class SimpleExecutorV3(threading.Thread):
                 # Create wrapped version of Figure.savefig that validates path
                 def secure_figure_savefig(fig_self, fname, *args, **kwargs):
                     """Secure wrapper for Figure.savefig that validates file paths"""
+                    print(f"[MATPLOTLIB-DEBUG] Figure.savefig called: fname={fname}, username={self.username}, role={self.role}")
                     if isinstance(fname, str):
                         # Validate path before allowing write
                         # Note: matplotlib also accepts file-like objects (io.BytesIO, etc.)
                         # which don't need validation
                         validated_path = validate_student_path(fname, 'w', self.username, self.role)
+                        print(f"[MATPLOTLIB-DEBUG] Figure.savefig validated_path={validated_path}")
                         fname = validated_path
                     return original_figure_savefig(fig_self, fname, *args, **kwargs)
 
                 # Create wrapped version of pyplot.savefig that validates path
                 def secure_pyplot_savefig(fname, *args, **kwargs):
                     """Secure wrapper for pyplot.savefig that validates file paths"""
+                    print(f"[MATPLOTLIB-DEBUG] pyplot.savefig called: fname={fname}, username={self.username}, role={self.role}")
                     if isinstance(fname, str):
                         # Validate path before allowing write
                         validated_path = validate_student_path(fname, 'w', self.username, self.role)
+                        print(f"[MATPLOTLIB-DEBUG] pyplot.savefig validated_path={validated_path}")
                         fname = validated_path
                     return original_pyplot_savefig(fname, *args, **kwargs)
 

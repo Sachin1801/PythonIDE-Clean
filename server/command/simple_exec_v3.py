@@ -417,15 +417,25 @@ class SimpleExecutorV3(threading.Thread):
                 # Resolve any .. or . in the path to prevent directory traversal
                 path = os.path.abspath(path)
 
-                # Get the base data directory (e.g., /mnt/efs/pythonide-data)
+                # Get the base data directory (e.g., /mnt/efs/pythonide-data or /app/server/projects)
                 base_data_path = os.environ.get('IDE_DATA_PATH', '/mnt/efs/pythonide-data')
+
+                # Normalize base path (resolve symlinks, remove trailing slashes)
+                base_data_path = os.path.realpath(base_data_path)
+                path = os.path.realpath(path)
 
                 # Ensure path is within the data directory
                 if not path.startswith(base_data_path):
                     raise PermissionError(f"Access denied: Path outside IDE workspace: {path}")
 
-                # Get relative path from base (e.g., "Local/sa9082/test.py" or "Lecture Notes/data.csv")
+                # Get relative path from base (e.g., "ide/Local/sa9082/test.py" or "Local/sa9082/test.py")
                 rel_path = os.path.relpath(path, base_data_path)
+
+                # Normalize path separators and remove leading "ide/" if present
+                # (Docker uses /app/server/projects/ide/Local/..., AWS uses /mnt/efs/pythonide-data/ide/Local/...)
+                rel_path = rel_path.replace('\\', '/')
+                if rel_path.startswith('ide/'):
+                    rel_path = rel_path[4:]  # Remove 'ide/' prefix
 
                 # Determine if this is a write operation
                 is_write_mode = False
@@ -706,6 +716,43 @@ class SimpleExecutorV3(threading.Thread):
 
             # Store original modules
             original_pathlib_module = sys.modules.get('pathlib')
+
+            # Security: Monkey-patch pandas DataFrame.to_csv and read_csv
+            # Pandas uses C-level file operations that bypass our open() patches
+            try:
+                import pandas as pd
+
+                # Store original pandas functions
+                original_to_csv = pd.DataFrame.to_csv
+                original_read_csv = pd.read_csv
+
+                # Create wrapped version of to_csv that validates path
+                def secure_to_csv(df_self, path_or_buf=None, *args, **kwargs):
+                    if isinstance(path_or_buf, str):
+                        # Validate path before allowing write
+                        validated_path = validate_student_path(path_or_buf, 'w', self.username, self.role)
+                        path_or_buf = validated_path
+                    return original_to_csv(df_self, path_or_buf, *args, **kwargs)
+
+                # Create wrapped version of read_csv that validates path
+                def secure_read_csv(filepath_or_buffer, *args, **kwargs):
+                    if isinstance(filepath_or_buffer, str):
+                        # Validate path (read mode is allowed)
+                        validated_path = validate_student_path(filepath_or_buffer, 'r', self.username, self.role)
+                        filepath_or_buffer = validated_path
+                    return original_read_csv(filepath_or_buffer, *args, **kwargs)
+
+                # Replace pandas functions with secure versions
+                pd.DataFrame.to_csv = secure_to_csv
+                pd.read_csv = secure_read_csv
+
+                # Store in namespace so student imports get patched version
+                self.namespace['__original_pandas_to_csv__'] = original_to_csv
+                self.namespace['__original_pandas_read_csv__'] = original_read_csv
+
+            except ImportError:
+                # Pandas not installed, skip patching
+                pass
 
             # Store original os module to restore later
             original_os_module = sys.modules.get('os')
@@ -1109,7 +1156,7 @@ class SimpleExecutorV3(threading.Thread):
 
         self._cleanup_done = True
 
-        # Restore original os and pathlib modules if they were patched
+        # Restore original os, pathlib, and pandas modules if they were patched
         try:
             import sys
             if '__original_os_module__' in self.namespace:
@@ -1121,8 +1168,17 @@ class SimpleExecutorV3(threading.Thread):
             if '__original_pathlib_module__' in self.namespace:
                 if self.namespace['__original_pathlib_module__']:
                     sys.modules['pathlib'] = self.namespace['__original_pathlib_module__']
+
+            # Restore pandas functions if they were patched
+            if '__original_pandas_to_csv__' in self.namespace:
+                try:
+                    import pandas as pd
+                    pd.DataFrame.to_csv = self.namespace['__original_pandas_to_csv__']
+                    pd.read_csv = self.namespace['__original_pandas_read_csv__']
+                except:
+                    pass
         except Exception as e:
-            print(f"[SimpleExecutorV3-CLEANUP] Error restoring os/pathlib modules: {e}")
+            print(f"[SimpleExecutorV3-CLEANUP] Error restoring os/pathlib/pandas modules: {e}")
 
         # Send completion message if still connected
         if self.alive and self.client:

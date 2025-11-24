@@ -610,6 +610,42 @@ class SimpleExecutorV3(threading.Thread):
                     path = validate_student_path(path, 'w', self.username, self.role)
                 return original_rmdir(path)
 
+            # Monkey-patch os.open (low-level file descriptor operations)
+            # This is CRITICAL for matplotlib/PIL which uses os.open() instead of builtins.open()
+            original_os_open = os.open
+            def contextualized_os_open(path, flags, mode=0o777, *args, **kwargs):
+                """
+                Secure wrapper for os.open() - validates file paths for write operations.
+
+                os.open() is used by C libraries like PIL/Pillow (matplotlib's backend).
+                It returns a file descriptor (integer), not a file object.
+
+                Args:
+                    path: File path
+                    flags: os.O_RDONLY, os.O_WRONLY, os.O_RDWR, os.O_CREAT, etc.
+                    mode: File permissions (default 0o777)
+                """
+                print(f"[OS-OPEN-DEBUG] os.open called: path={path}, flags={flags}, username={self.username}, role={self.role}")
+
+                if isinstance(path, str):
+                    # Convert relative paths to absolute
+                    if not os.path.isabs(path):
+                        path = os.path.join(script_dir, path)
+
+                    # Check if this is a write operation
+                    # os.O_WRONLY (write-only), os.O_RDWR (read-write), os.O_CREAT (create file)
+                    is_write = (flags & os.O_WRONLY) or (flags & os.O_RDWR) or (flags & os.O_CREAT)
+
+                    if is_write:
+                        # Validate write operations
+                        path = validate_student_path(path, 'w', self.username, self.role)
+                        print(f"[OS-OPEN-DEBUG] Write operation validated: {path}")
+                    else:
+                        # Read operations - just contextualize the path
+                        print(f"[OS-OPEN-DEBUG] Read operation: {path}")
+
+                return original_os_open(path, flags, mode, *args, **kwargs)
+
             # Apply monkey patches in the namespace
             self.namespace['open'] = contextualized_open
 
@@ -648,6 +684,7 @@ class SimpleExecutorV3(threading.Thread):
             patched_os.mkdir = contextualized_mkdir
             patched_os.makedirs = contextualized_makedirs
             patched_os.rmdir = contextualized_rmdir
+            patched_os.open = contextualized_os_open  # Critical for matplotlib/PIL
 
             # Security: Monkey-patch pathlib.Path operations
             # pathlib provides an object-oriented interface to file operations

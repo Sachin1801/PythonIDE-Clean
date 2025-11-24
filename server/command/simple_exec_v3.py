@@ -258,6 +258,17 @@ class SimpleExecutorV3(threading.Thread):
             # Set resource limits before execution
             self.set_resource_limits()
 
+            # Configure matplotlib for headless operation (server environment)
+            # Must be set BEFORE any matplotlib imports in user code
+            os.environ['MPLBACKEND'] = 'Agg'
+
+            # Configure matplotlib cache directory to prevent permission errors
+            # Matplotlib tries to write font cache to ~/.matplotlib/ which may not be writable
+            # Set cache to a temp directory that gets cleaned up after execution
+            import tempfile
+            self.mpl_cache_dir = tempfile.mkdtemp(prefix='mpl_cache_')
+            os.environ['MPLCONFIGDIR'] = self.mpl_cache_dir
+
             # Create namespace for execution
             self.namespace = {
                 '__name__': '__main__',
@@ -754,6 +765,49 @@ class SimpleExecutorV3(threading.Thread):
                 # Pandas not installed, skip patching
                 pass
 
+            # Security: Monkey-patch matplotlib Figure.savefig and pyplot.savefig
+            # Matplotlib uses PIL/Pillow and C-level file operations that bypass open() patches
+            try:
+                import matplotlib
+                import matplotlib.pyplot as plt
+                import matplotlib.figure
+
+                # Store original matplotlib functions
+                original_figure_savefig = matplotlib.figure.Figure.savefig
+                original_pyplot_savefig = plt.savefig
+
+                # Create wrapped version of Figure.savefig that validates path
+                def secure_figure_savefig(fig_self, fname, *args, **kwargs):
+                    """Secure wrapper for Figure.savefig that validates file paths"""
+                    if isinstance(fname, str):
+                        # Validate path before allowing write
+                        # Note: matplotlib also accepts file-like objects (io.BytesIO, etc.)
+                        # which don't need validation
+                        validated_path = validate_student_path(fname, 'w', self.username, self.role)
+                        fname = validated_path
+                    return original_figure_savefig(fig_self, fname, *args, **kwargs)
+
+                # Create wrapped version of pyplot.savefig that validates path
+                def secure_pyplot_savefig(fname, *args, **kwargs):
+                    """Secure wrapper for pyplot.savefig that validates file paths"""
+                    if isinstance(fname, str):
+                        # Validate path before allowing write
+                        validated_path = validate_student_path(fname, 'w', self.username, self.role)
+                        fname = validated_path
+                    return original_pyplot_savefig(fname, *args, **kwargs)
+
+                # Replace matplotlib functions with secure versions
+                matplotlib.figure.Figure.savefig = secure_figure_savefig
+                plt.savefig = secure_pyplot_savefig
+
+                # Store in namespace for restoration
+                self.namespace['__original_figure_savefig__'] = original_figure_savefig
+                self.namespace['__original_pyplot_savefig__'] = original_pyplot_savefig
+
+            except ImportError:
+                # Matplotlib not installed, skip patching
+                pass
+
             # Store original os module to restore later
             original_os_module = sys.modules.get('os')
             original_os_path_module = sys.modules.get('os.path')
@@ -1177,8 +1231,26 @@ class SimpleExecutorV3(threading.Thread):
                     pd.read_csv = self.namespace['__original_pandas_read_csv__']
                 except:
                     pass
+
+            # Restore matplotlib functions if they were patched
+            if '__original_figure_savefig__' in self.namespace:
+                try:
+                    import matplotlib.figure
+                    import matplotlib.pyplot as plt
+                    matplotlib.figure.Figure.savefig = self.namespace['__original_figure_savefig__']
+                    plt.savefig = self.namespace['__original_pyplot_savefig__']
+                except:
+                    pass
         except Exception as e:
-            print(f"[SimpleExecutorV3-CLEANUP] Error restoring os/pathlib/pandas modules: {e}")
+            print(f"[SimpleExecutorV3-CLEANUP] Error restoring os/pathlib/pandas/matplotlib modules: {e}")
+
+        # Clean up matplotlib cache directory
+        if hasattr(self, 'mpl_cache_dir') and os.path.exists(self.mpl_cache_dir):
+            try:
+                import shutil
+                shutil.rmtree(self.mpl_cache_dir)
+            except Exception as e:
+                print(f"[SimpleExecutorV3-CLEANUP] Error removing matplotlib cache dir: {e}")
 
         # Send completion message if still connected
         if self.alive and self.client:

@@ -386,9 +386,17 @@ class SimpleExecutorV3(threading.Thread):
             # print(f"[SimpleExecutorV3-SCRIPT] Script size: {len(script_code)} bytes")
             # print(f"[SimpleExecutorV3-SCRIPT] First 100 chars: {script_code[:100]}")
 
-            # Get script's directory for file operations (NO os.chdir to avoid race conditions)
+            # Get script's directory for file operations
             script_dir = os.path.dirname(os.path.abspath(self.script_path))
             # print(f"[SimpleExecutorV3-SCRIPT] Script directory: {script_dir}")
+
+            # CRITICAL: Actually change working directory for C-level operations
+            # Libraries like PIL/Pillow (used by matplotlib) use C's getcwd() which
+            # bypasses our Python monkey-patches. We MUST use os.chdir() here.
+            # This is safe because each script execution runs in isolation.
+            original_cwd = os.getcwd()
+            os.chdir(script_dir)
+            print(f"[CWD-DEBUG] Changed working directory from {original_cwd} to {script_dir}")
 
             # Add __file__ and __dir__ to namespace so scripts can access their location
             self.namespace['__file__'] = os.path.abspath(self.script_path)
@@ -825,7 +833,13 @@ class SimpleExecutorV3(threading.Thread):
                         # Validate path before allowing write
                         # Note: matplotlib also accepts file-like objects (io.BytesIO, etc.)
                         # which don't need validation
+
+                        # Convert relative paths to absolute based on script directory
+                        if not os.path.isabs(fname):
+                            fname = os.path.join(script_dir, fname)
+
                         validated_path = validate_student_path(fname, 'w', self.username, self.role)
+                        print(f"[MATPLOTLIB-DEBUG] Figure.savefig absolute_path={fname}")
                         print(f"[MATPLOTLIB-DEBUG] Figure.savefig validated_path={validated_path}")
                         fname = validated_path
                     return original_figure_savefig(fig_self, fname, *args, **kwargs)
@@ -835,8 +849,13 @@ class SimpleExecutorV3(threading.Thread):
                     """Secure wrapper for pyplot.savefig that validates file paths"""
                     print(f"[MATPLOTLIB-DEBUG] pyplot.savefig called: fname={fname}, username={self.username}, role={self.role}")
                     if isinstance(fname, str):
+                        # Convert relative paths to absolute based on script directory
+                        if not os.path.isabs(fname):
+                            fname = os.path.join(script_dir, fname)
+
                         # Validate path before allowing write
                         validated_path = validate_student_path(fname, 'w', self.username, self.role)
+                        print(f"[MATPLOTLIB-DEBUG] pyplot.savefig absolute_path={fname}")
                         print(f"[MATPLOTLIB-DEBUG] pyplot.savefig validated_path={validated_path}")
                         fname = validated_path
                     return original_pyplot_savefig(fname, *args, **kwargs)
@@ -844,6 +863,12 @@ class SimpleExecutorV3(threading.Thread):
                 # Replace matplotlib functions with secure versions
                 matplotlib.figure.Figure.savefig = secure_figure_savefig
                 plt.savefig = secure_pyplot_savefig
+
+                # CRITICAL: Update sys.modules so student imports get patched version
+                # Without this, "import matplotlib.pyplot as plt" in student code
+                # gets a fresh pyplot module that bypasses our security patches
+                sys.modules['matplotlib.figure'].Figure.savefig = secure_figure_savefig
+                sys.modules['matplotlib.pyplot'].savefig = secure_pyplot_savefig
 
                 # Store in namespace for restoration
                 self.namespace['__original_figure_savefig__'] = original_figure_savefig
@@ -918,12 +943,19 @@ class SimpleExecutorV3(threading.Thread):
             finally:
                 sys.stdout = old_stdout
                 sys.stderr = old_stderr
-                # No need to restore working directory - we didn't change it
+                # Restore original working directory
+                os.chdir(original_cwd)
+                print(f"[CWD-DEBUG] Restored working directory to {original_cwd}")
 
         except KeyboardInterrupt:
             # This is from our timeout killer
             print(f"[SimpleExecutorV3-SCRIPT] Script interrupted by timeout")
-            # No need to restore working directory - we didn't change it
+            # Restore working directory even on timeout
+            try:
+                os.chdir(original_cwd)
+                print(f"[CWD-DEBUG] Restored working directory to {original_cwd} (after timeout)")
+            except:
+                pass  # If restoration fails, continue anyway
             # The error message was already sent by _kill_for_timeout
             self.alive = False
             self.state = ExecutionState.TERMINATED
@@ -935,7 +967,12 @@ class SimpleExecutorV3(threading.Thread):
             print(f"[SimpleExecutorV3-SCRIPT] Exception: {e}")
             traceback.print_exc()
 
-            # No need to restore working directory - we didn't change it
+            # Restore working directory even on error
+            try:
+                os.chdir(original_cwd)
+                print(f"[CWD-DEBUG] Restored working directory to {original_cwd} (after error)")
+            except:
+                pass  # If restoration fails, continue anyway
 
             # Only send error if not already terminated
             if self.state != ExecutionState.TERMINATED:

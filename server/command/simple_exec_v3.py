@@ -83,13 +83,14 @@ class SimpleExecutorV3(threading.Thread):
     """
 
     def __init__(self, cmd_id: str, client, event_loop,
-                 script_path: Optional[str] = None, username: Optional[str] = None):
+                 script_path: Optional[str] = None, username: Optional[str] = None, role: Optional[str] = None):
         super().__init__()
         self.cmd_id = cmd_id
         self.client = client
         self.event_loop = event_loop
         self.script_path = script_path
         self.username = username
+        self.role = role or "student"  # Default to student if not provided
 
         # Process management
         self.process = None

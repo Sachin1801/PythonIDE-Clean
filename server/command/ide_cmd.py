@@ -663,6 +663,7 @@ print("="*50)
         file_path_input = data.get("filePath", "")
         use_hybrid = data.get("hybrid", True)  # Default to hybrid mode
         username = data.get("username", "unknown")  # Get username from authenticated handler
+        role = data.get("role", "student")  # Get user role from authenticated handler
 
         # Handle case where filePath already includes the project name
         if file_path_input.startswith(prj_name + "/"):
@@ -694,6 +695,7 @@ print("="*50)
                         asyncio.get_event_loop(),
                         script_path=file_path,
                         username=username,
+                        role=role,
                     )
 
                     # Try to acquire execution lock with executor reference for health checking
@@ -782,7 +784,8 @@ print("="*50)
         # print(f"[BACKEND-DEBUG] Starting empty Python REPL for project: {prj_name}")
 
         # Create SimpleExecutorV3 thread without script (empty REPL)
-        thread = SimpleExecutorV3(cmd_id, client, asyncio.get_event_loop(), script_path=None, username=username)
+        role = data.get("role", "student")  # Get user role
+        thread = SimpleExecutorV3(cmd_id, client, asyncio.get_event_loop(), script_path=None, username=username, role=role)
         # print(f"[BACKEND-DEBUG] Empty REPL thread created for cmd_id: {cmd_id}")
 
         # Register the thread

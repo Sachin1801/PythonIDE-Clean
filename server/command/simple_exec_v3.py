@@ -645,9 +645,13 @@ class SimpleExecutorV3(threading.Thread):
                     is_write = (flags & os.O_WRONLY) or (flags & os.O_RDWR) or (flags & os.O_CREAT)
 
                     if is_write:
-                        # Validate write operations
-                        path = validate_student_path(path, 'w', self.username, self.role)
-                        print(f"[OS-OPEN-DEBUG] Write operation validated: {path}")
+                        # Professors bypass validation
+                        if self.role == 'professor':
+                            print(f"[OS-OPEN-DEBUG] Professor bypass for write: {path}")
+                        else:
+                            # Validate write operations for students
+                            path = validate_student_path(path, 'w', self.username, self.role)
+                            print(f"[OS-OPEN-DEBUG] Student write validated: {path}")
                     else:
                         # Read operations - just contextualize the path
                         print(f"[OS-OPEN-DEBUG] Read operation: {path}")
@@ -830,7 +834,6 @@ class SimpleExecutorV3(threading.Thread):
                     """Secure wrapper for Figure.savefig that validates file paths"""
                     print(f"[MATPLOTLIB-DEBUG] Figure.savefig called: fname={fname}, username={self.username}, role={self.role}")
                     if isinstance(fname, str):
-                        # Validate path before allowing write
                         # Note: matplotlib also accepts file-like objects (io.BytesIO, etc.)
                         # which don't need validation
 
@@ -838,10 +841,18 @@ class SimpleExecutorV3(threading.Thread):
                         if not os.path.isabs(fname):
                             fname = os.path.join(script_dir, fname)
 
-                        validated_path = validate_student_path(fname, 'w', self.username, self.role)
-                        print(f"[MATPLOTLIB-DEBUG] Figure.savefig absolute_path={fname}")
-                        print(f"[MATPLOTLIB-DEBUG] Figure.savefig validated_path={validated_path}")
-                        fname = validated_path
+                        # CRITICAL: Normalize the path to resolve any .. or .
+                        fname = os.path.normpath(fname)
+
+                        # For professors, skip validation but still use absolute path
+                        if self.role == 'professor':
+                            print(f"[MATPLOTLIB-DEBUG] Professor bypass - saving to: {fname}")
+                        else:
+                            # Validate path for students
+                            fname = validate_student_path(fname, 'w', self.username, self.role)
+                            print(f"[MATPLOTLIB-DEBUG] Student validated_path={fname}")
+
+                        print(f"[MATPLOTLIB-DEBUG] Final save path: {fname}")
                     return original_figure_savefig(fig_self, fname, *args, **kwargs)
 
                 # Create wrapped version of pyplot.savefig that validates path
@@ -853,11 +864,18 @@ class SimpleExecutorV3(threading.Thread):
                         if not os.path.isabs(fname):
                             fname = os.path.join(script_dir, fname)
 
-                        # Validate path before allowing write
-                        validated_path = validate_student_path(fname, 'w', self.username, self.role)
-                        print(f"[MATPLOTLIB-DEBUG] pyplot.savefig absolute_path={fname}")
-                        print(f"[MATPLOTLIB-DEBUG] pyplot.savefig validated_path={validated_path}")
-                        fname = validated_path
+                        # CRITICAL: Normalize the path to resolve any .. or .
+                        fname = os.path.normpath(fname)
+
+                        # For professors, skip validation but still use absolute path
+                        if self.role == 'professor':
+                            print(f"[MATPLOTLIB-DEBUG] Professor bypass - saving to: {fname}")
+                        else:
+                            # Validate path for students
+                            fname = validate_student_path(fname, 'w', self.username, self.role)
+                            print(f"[MATPLOTLIB-DEBUG] Student validated_path={fname}")
+
+                        print(f"[MATPLOTLIB-DEBUG] Final save path: {fname}")
                     return original_pyplot_savefig(fname, *args, **kwargs)
 
                 # Replace matplotlib functions with secure versions
@@ -886,6 +904,15 @@ class SimpleExecutorV3(threading.Thread):
             sys.modules['os'] = patched_os
             sys.modules['os.path'] = patched_path
             sys.modules['pathlib'] = patched_pathlib
+
+            # CRITICAL: Patch PIL's internal os reference if it was already imported
+            # PIL/Pillow (used by matplotlib) may have cached the original os module
+            try:
+                import PIL.Image as _pil_image
+                if hasattr(_pil_image, 'os'):
+                    _pil_image.os = patched_os
+            except ImportError:
+                pass  # PIL not installed, skip
 
             self.namespace['os'] = patched_os
             self.namespace['pathlib'] = patched_pathlib

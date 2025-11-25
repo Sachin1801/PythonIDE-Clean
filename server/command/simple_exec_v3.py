@@ -396,7 +396,6 @@ class SimpleExecutorV3(threading.Thread):
             # This is safe because each script execution runs in isolation.
             original_cwd = os.getcwd()
             os.chdir(script_dir)
-            print(f"[CWD-DEBUG] Changed working directory from {original_cwd} to {script_dir}")
 
             # Add __file__ and __dir__ to namespace so scripts can access their location
             self.namespace['__file__'] = os.path.abspath(self.script_path)
@@ -425,12 +424,8 @@ class SimpleExecutorV3(threading.Thread):
                 Raises:
                     PermissionError: If student attempts unauthorized access
                 """
-                # Debug logging to diagnose role issues
-                print(f"[VALIDATE-PATH-DEBUG] path={path}, mode={mode}, username={username}, role={role}, role_type={type(role)}")
-
                 # Professors have unrestricted access
                 if role == 'professor':
-                    print(f"[VALIDATE-PATH-DEBUG] ✅ Professor access granted for {username}")
                     return path
 
                 # Convert to absolute path
@@ -633,8 +628,6 @@ class SimpleExecutorV3(threading.Thread):
                     flags: os.O_RDONLY, os.O_WRONLY, os.O_RDWR, os.O_CREAT, etc.
                     mode: File permissions (default 0o777)
                 """
-                print(f"[OS-OPEN-DEBUG] os.open called: path={path}, flags={flags}, username={self.username}, role={self.role}")
-
                 if isinstance(path, str):
                     # Convert relative paths to absolute
                     if not os.path.isabs(path):
@@ -644,17 +637,9 @@ class SimpleExecutorV3(threading.Thread):
                     # os.O_WRONLY (write-only), os.O_RDWR (read-write), os.O_CREAT (create file)
                     is_write = (flags & os.O_WRONLY) or (flags & os.O_RDWR) or (flags & os.O_CREAT)
 
-                    if is_write:
-                        # Professors bypass validation
-                        if self.role == 'professor':
-                            print(f"[OS-OPEN-DEBUG] Professor bypass for write: {path}")
-                        else:
-                            # Validate write operations for students
-                            path = validate_student_path(path, 'w', self.username, self.role)
-                            print(f"[OS-OPEN-DEBUG] Student write validated: {path}")
-                    else:
-                        # Read operations - just contextualize the path
-                        print(f"[OS-OPEN-DEBUG] Read operation: {path}")
+                    # Validate write operations for students (professors bypass)
+                    if is_write and self.role != 'professor':
+                        path = validate_student_path(path, 'w', self.username, self.role)
 
                 return original_os_open(path, flags, mode, *args, **kwargs)
 
@@ -832,7 +817,6 @@ class SimpleExecutorV3(threading.Thread):
                 # Create wrapped version of Figure.savefig that validates path
                 def secure_figure_savefig(fig_self, fname, *args, **kwargs):
                     """Secure wrapper for Figure.savefig that validates file paths"""
-                    print(f"[MATPLOTLIB-DEBUG] Figure.savefig called: fname={fname}, username={self.username}, role={self.role}")
                     if isinstance(fname, str):
                         # Note: matplotlib also accepts file-like objects (io.BytesIO, etc.)
                         # which don't need validation
@@ -841,41 +825,30 @@ class SimpleExecutorV3(threading.Thread):
                         if not os.path.isabs(fname):
                             fname = os.path.join(script_dir, fname)
 
-                        # CRITICAL: Normalize the path to resolve any .. or .
+                        # Normalize the path to resolve any .. or .
                         fname = os.path.normpath(fname)
 
                         # For professors, skip validation but still use absolute path
-                        if self.role == 'professor':
-                            print(f"[MATPLOTLIB-DEBUG] Professor bypass - saving to: {fname}")
-                        else:
-                            # Validate path for students
+                        # For students, validate path restrictions
+                        if self.role != 'professor':
                             fname = validate_student_path(fname, 'w', self.username, self.role)
-                            print(f"[MATPLOTLIB-DEBUG] Student validated_path={fname}")
-
-                        print(f"[MATPLOTLIB-DEBUG] Final save path: {fname}")
                     return original_figure_savefig(fig_self, fname, *args, **kwargs)
 
                 # Create wrapped version of pyplot.savefig that validates path
                 def secure_pyplot_savefig(fname, *args, **kwargs):
                     """Secure wrapper for pyplot.savefig that validates file paths"""
-                    print(f"[MATPLOTLIB-DEBUG] pyplot.savefig called: fname={fname}, username={self.username}, role={self.role}")
                     if isinstance(fname, str):
                         # Convert relative paths to absolute based on script directory
                         if not os.path.isabs(fname):
                             fname = os.path.join(script_dir, fname)
 
-                        # CRITICAL: Normalize the path to resolve any .. or .
+                        # Normalize the path to resolve any .. or .
                         fname = os.path.normpath(fname)
 
                         # For professors, skip validation but still use absolute path
-                        if self.role == 'professor':
-                            print(f"[MATPLOTLIB-DEBUG] Professor bypass - saving to: {fname}")
-                        else:
-                            # Validate path for students
+                        # For students, validate path restrictions
+                        if self.role != 'professor':
                             fname = validate_student_path(fname, 'w', self.username, self.role)
-                            print(f"[MATPLOTLIB-DEBUG] Student validated_path={fname}")
-
-                        print(f"[MATPLOTLIB-DEBUG] Final save path: {fname}")
                     return original_pyplot_savefig(fname, *args, **kwargs)
 
                 # Replace matplotlib functions with secure versions
@@ -972,15 +945,11 @@ class SimpleExecutorV3(threading.Thread):
                 sys.stderr = old_stderr
                 # Restore original working directory
                 os.chdir(original_cwd)
-                print(f"[CWD-DEBUG] Restored working directory to {original_cwd}")
 
         except KeyboardInterrupt:
-            # This is from our timeout killer
-            print(f"[SimpleExecutorV3-SCRIPT] Script interrupted by timeout")
-            # Restore working directory even on timeout
+            # This is from our timeout killer - restore working directory
             try:
                 os.chdir(original_cwd)
-                print(f"[CWD-DEBUG] Restored working directory to {original_cwd} (after timeout)")
             except:
                 pass  # If restoration fails, continue anyway
             # The error message was already sent by _kill_for_timeout
@@ -990,14 +959,9 @@ class SimpleExecutorV3(threading.Thread):
             return
 
         except Exception as e:
-            print(f"[SimpleExecutorV3-SCRIPT] ERROR: Script execution failed")
-            print(f"[SimpleExecutorV3-SCRIPT] Exception: {e}")
-            traceback.print_exc()
-
             # Restore working directory even on error
             try:
                 os.chdir(original_cwd)
-                print(f"[CWD-DEBUG] Restored working directory to {original_cwd} (after error)")
             except:
                 pass  # If restoration fails, continue anyway
 
@@ -1010,7 +974,6 @@ class SimpleExecutorV3(threading.Thread):
 
             # Mark as not alive to prevent REPL from starting
             self.alive = False
-            print(f"[SimpleExecutorV3-SCRIPT] Set alive=False due to error")
             # Don't start REPL if script had errors
             raise
 

@@ -109,7 +109,8 @@
                 </button>
               </li>
               <li class="nav__dropdown-divider"></li>
-              <li class="nav__dropdown-item">
+              <!-- TEMPORARILY DISABLED FOR FILE HANDLING ASSIGNMENT -->
+              <!-- <li class="nav__dropdown-item">
                 <button @click="find()">
                   <span>Find</span>
                   <span class="nav__keyboard-shortcut">Ctrl+F</span>
@@ -120,8 +121,8 @@
                   <span>Replace</span>
                   <span class="nav__keyboard-shortcut">Ctrl+H</span>
                 </button>
-              </li>
-              <li class="nav__dropdown-divider"></li>
+              </li> -->
+              <!-- <li class="nav__dropdown-divider"></li> -->
               <li class="nav__dropdown-item">
                 <button @click="comment()">
                   <span>Comment</span>
@@ -520,20 +521,21 @@ export default {
         this.paste();
         return;
       }
+      // TEMPORARILY DISABLED FOR FILE HANDLING ASSIGNMENT
       // Ctrl+F - Find
-      if (e.ctrlKey && !e.shiftKey && e.key === 'f') {
-        e.preventDefault();
-        e.stopPropagation();
-        this.find();
-        return;
-      }
+      // if (e.ctrlKey && !e.shiftKey && e.key === 'f') {
+      //   e.preventDefault();
+      //   e.stopPropagation();
+      //   this.find();
+      //   return;
+      // }
       // Ctrl+H - Replace
-      if (e.ctrlKey && !e.shiftKey && e.key === 'h') {
-        e.preventDefault();
-        e.stopPropagation();
-        this.replace();
-        return;
-      }
+      // if (e.ctrlKey && !e.shiftKey && e.key === 'h') {
+      //   e.preventDefault();
+      //   e.stopPropagation();
+      //   this.replace();
+      //   return;
+      // }
       // Ctrl+/ - Comment
       if (e.ctrlKey && e.key === '/') {
         e.preventDefault();

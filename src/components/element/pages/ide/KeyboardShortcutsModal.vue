@@ -65,14 +65,15 @@
                 <span class="shortcut-action">Paste</span>
                 <span class="shortcut-keys">Ctrl+V</span>
               </div>
-              <div class="shortcut-item">
+              <!-- TEMPORARILY DISABLED FOR FILE HANDLING ASSIGNMENT -->
+              <!-- <div class="shortcut-item">
                 <span class="shortcut-action">Find</span>
                 <span class="shortcut-keys">Ctrl+F</span>
               </div>
               <div class="shortcut-item">
                 <span class="shortcut-action">Replace</span>
                 <span class="shortcut-keys">Ctrl+H</span>
-              </div>
+              </div> -->
               <!-- <div class="shortcut-item">
                 <span class="shortcut-action">Comment/Uncomment</span>
                 <span class="shortcut-keys">Ctrl+/</span>

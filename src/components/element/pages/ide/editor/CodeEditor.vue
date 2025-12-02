@@ -175,7 +175,8 @@ export default {
           
           'Ctrl-Enter': 'insertLineAfter',
           'Shift-Ctrl-Enter': 'insertLineBefore',
-          'Ctrl-H': 'replace',
+          // TEMPORARILY DISABLED FOR FILE HANDLING ASSIGNMENT
+          // 'Ctrl-H': 'replace',
           'Backspace': (cm) => {
             if (cm.somethingSelected())
               cm.replaceSelection('', cm.getSelection());

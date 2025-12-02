@@ -2775,14 +2775,18 @@ export default {
       }
     },
     handleFind() {
+      // TEMPORARILY DISABLED FOR FILE HANDLING ASSIGNMENT
       // Open custom Find/Replace modal in find mode
-      this.findReplaceMode = 'find';
-      this.showFindReplaceModal = true;
+      // this.findReplaceMode = 'find';
+      // this.showFindReplaceModal = true;
+      console.log('[FIND DISABLED] Find feature temporarily disabled for file handling assignment');
     },
     handleReplace() {
+      // TEMPORARILY DISABLED FOR FILE HANDLING ASSIGNMENT
       // Open custom Find/Replace modal in replace mode
-      this.findReplaceMode = 'replace';
-      this.showFindReplaceModal = true;
+      // this.findReplaceMode = 'replace';
+      // this.showFindReplaceModal = true;
+      console.log('[REPLACE DISABLED] Replace feature temporarily disabled for file handling assignment');
     },
     handleComment() {
       // Toggle comment in the active editor

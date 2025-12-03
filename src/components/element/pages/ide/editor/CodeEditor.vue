@@ -175,8 +175,25 @@ export default {
           
           'Ctrl-Enter': 'insertLineAfter',
           'Shift-Ctrl-Enter': 'insertLineBefore',
-          // TEMPORARILY DISABLED FOR FILE HANDLING ASSIGNMENT
-          // 'Ctrl-H': 'replace',
+
+          // TEMPORARILY DISABLED FOR FILE HANDLING ASSIGNMENT - Block Find/Replace
+          'Ctrl-F': (cm) => {
+            console.log('[FIND BLOCKED] Ctrl+F disabled for assignment');
+            return false;
+          }, // Block Ctrl+F (Windows/Linux)
+          'Cmd-F': (cm) => {
+            console.log('[FIND BLOCKED] Cmd+F disabled for assignment');
+            return false;
+          },  // Block Cmd+F (Mac)
+          'Ctrl-H': (cm) => {
+            console.log('[REPLACE BLOCKED] Ctrl+H disabled for assignment');
+            return false;
+          }, // Block Ctrl+H (Windows/Linux)
+          'Cmd-H': (cm) => {
+            console.log('[REPLACE BLOCKED] Cmd+H disabled for assignment');
+            return false;
+          },  // Block Cmd+H (Mac)
+
           'Backspace': (cm) => {
             if (cm.somethingSelected())
               cm.replaceSelection('', cm.getSelection());

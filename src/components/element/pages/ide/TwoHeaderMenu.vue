@@ -522,20 +522,20 @@ export default {
         return;
       }
       // TEMPORARILY DISABLED FOR FILE HANDLING ASSIGNMENT
-      // Ctrl+F - Find
-      // if (e.ctrlKey && !e.shiftKey && e.key === 'f') {
-      //   e.preventDefault();
-      //   e.stopPropagation();
-      //   this.find();
-      //   return;
-      // }
-      // Ctrl+H - Replace
-      // if (e.ctrlKey && !e.shiftKey && e.key === 'h') {
-      //   e.preventDefault();
-      //   e.stopPropagation();
-      //   this.replace();
-      //   return;
-      // }
+      // Ctrl+F or Cmd+F - Find (block both Ctrl and Meta/Cmd keys)
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'f') {
+        e.preventDefault();
+        e.stopPropagation();
+        // this.find(); // DISABLED
+        return;
+      }
+      // Ctrl+H or Cmd+H - Replace (block both Ctrl and Meta/Cmd keys)
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'h') {
+        e.preventDefault();
+        e.stopPropagation();
+        // this.replace(); // DISABLED
+        return;
+      }
       // Ctrl+/ - Comment
       if (e.ctrlKey && e.key === '/') {
         e.preventDefault();

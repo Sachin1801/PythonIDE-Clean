@@ -412,6 +412,7 @@ import DialogImportFile from './pages/ide/dialog/DialogImportFile';
 import DialogBulkUpload from './pages/ide/dialog/DialogBulkUpload';
 import DialogFileBrowser from './pages/ide/dialog/DialogFileBrowser';
 import sessionManager from '../../utils/sessionManager';
+import clipboardTracker from '../../utils/clipboardTracker';
 import CsvViewer from './pages/ide/CsvViewer';
 import MediaViewer from './pages/ide/editor/MediaViewer';
 import SettingsModal from './pages/ide/SettingsModal';
@@ -2761,17 +2762,31 @@ export default {
         document.execCommand('copy');
       }
     },
-    handlePaste() {
-      // Trigger paste in the active editor
+    async handlePaste() {
+      // Trigger paste in the active editor with clipboard validation
       const activeEditor = this.getActiveCodeMirrorInstance();
       if (activeEditor) {
-        navigator.clipboard.readText().then(text => {
-          activeEditor.replaceSelection(text);
-        }).catch(() => {
-          document.execCommand('paste');
-        });
+        try {
+          const text = await navigator.clipboard.readText();
+          // Validate paste for students - professors bypass all restrictions
+          const isAllowed = await clipboardTracker.validatePaste(text);
+          if (isAllowed) {
+            activeEditor.replaceSelection(text);
+          }
+          // If not allowed, toast notification is shown by clipboardTracker
+        } catch (err) {
+          // Clipboard API failed - only allow fallback for professors
+          if (clipboardTracker.isProfessor()) {
+            document.execCommand('paste');
+          } else {
+            console.log('[VmIde] Paste blocked for student (clipboard API failed)');
+          }
+        }
       } else {
-        document.execCommand('paste');
+        // No active editor - only allow for professors
+        if (clipboardTracker.isProfessor()) {
+          document.execCommand('paste');
+        }
       }
     },
     handleFind() {

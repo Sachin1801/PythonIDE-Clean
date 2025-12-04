@@ -485,8 +485,11 @@ export default {
         );
       };
 
-      // Ctrl+X - Cut (allow native cut in all text inputs)
-      if (e.ctrlKey && !e.shiftKey && e.key === 'x') {
+      // Helper: Check for Ctrl (Windows/Linux) or Cmd (Mac)
+      const isCopyPasteModifier = e.ctrlKey || e.metaKey;
+
+      // Ctrl+X or Cmd+X - Cut (allow native cut in all text inputs)
+      if (isCopyPasteModifier && !e.shiftKey && e.key === 'x') {
         if (shouldAllowNativeCopyPaste()) {
           // Let the input handle cut naturally
           return;
@@ -497,8 +500,8 @@ export default {
         this.cut();
         return;
       }
-      // Ctrl+C - Copy (allow native copy in all text inputs)
-      if (e.ctrlKey && !e.shiftKey && e.key === 'c') {
+      // Ctrl+C or Cmd+C - Copy (allow native copy in all text inputs)
+      if (isCopyPasteModifier && !e.shiftKey && e.key === 'c') {
         if (shouldAllowNativeCopyPaste()) {
           // Let the input handle copy naturally
           return;
@@ -509,8 +512,8 @@ export default {
         this.copy();
         return;
       }
-      // Ctrl+V or Ctrl+Shift+V - Paste (allow native paste in all text inputs)
-      if (e.ctrlKey && e.key === 'v') {
+      // Ctrl+V, Ctrl+Shift+V, Cmd+V, or Cmd+Shift+V - Paste (allow native paste in all text inputs)
+      if (isCopyPasteModifier && e.key === 'v') {
         if (shouldAllowNativeCopyPaste()) {
           // Let the input handle paste naturally
           return;

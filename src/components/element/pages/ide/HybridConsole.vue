@@ -83,6 +83,7 @@
         <textarea
           v-model="userInput"
           @keydown="handleKeyDown"
+          @paste="handleTextareaPaste"
           ref="inputField"
           class="user-input-field"
           placeholder="Type your input and press Enter..."
@@ -148,6 +149,7 @@
 <script>
 import { ref, watch, nextTick, computed } from 'vue'
 import { ElMessage } from 'element-plus'
+import clipboardTracker from '../../../../utils/clipboardTracker'
 // CodeMirror for REPL syntax highlighting
 import Codemirror from 'codemirror-editor-vue3'
 import CodeMirror from 'codemirror'
@@ -272,6 +274,41 @@ export default {
         },
         'Shift-Tab': (cm) => {
           cm.indentSelection('subtract')
+        },
+        // Paste validation for students (Ctrl+V and Ctrl+Shift+V)
+        'Ctrl-V': async (cm) => {
+          await handleReplPaste(cm)
+        },
+        'Shift-Ctrl-V': async (cm) => {
+          await handleReplPaste(cm)
+        },
+        // Mac paste shortcuts
+        'Cmd-V': async (cm) => {
+          await handleReplPaste(cm)
+        },
+        'Shift-Cmd-V': async (cm) => {
+          await handleReplPaste(cm)
+        },
+        // Track copy operations from REPL (Ctrl+C and Cmd+C)
+        'Ctrl-C': (cm) => {
+          const selectedText = cm.getSelection()
+          if (selectedText) {
+            clipboardTracker.trackIDECopy(selectedText)
+            if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) {
+              navigator.clipboard.writeText(selectedText)
+            }
+          }
+          return false
+        },
+        'Cmd-C': (cm) => {
+          const selectedText = cm.getSelection()
+          if (selectedText) {
+            clipboardTracker.trackIDECopy(selectedText)
+            if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) {
+              navigator.clipboard.writeText(selectedText)
+            }
+          }
+          return false
         }
       }
     })
@@ -289,6 +326,59 @@ export default {
     })
     
     // Methods
+
+    // Handle paste validation for REPL (students can only paste content copied from IDE)
+    const handleReplPaste = async (cm) => {
+      try {
+        if (navigator.clipboard && navigator.clipboard.readText && window.isSecureContext) {
+          const text = await navigator.clipboard.readText()
+          const isAllowed = await clipboardTracker.validatePaste(text)
+          if (isAllowed) {
+            cm.replaceSelection(text)
+          }
+          // If not allowed, toast notification is shown by clipboardTracker
+        }
+      } catch (err) {
+        // Clipboard API failed - only allow for professors
+        if (clipboardTracker.isProfessor()) {
+          // Can't read clipboard, let native behavior work
+          console.log('[HybridConsole] Clipboard read failed for professor, native paste allowed')
+        } else {
+          console.log('[HybridConsole] Paste blocked for student (clipboard API failed)')
+        }
+      }
+    }
+
+    // Handle paste for regular textarea input (script input mode)
+    const handleTextareaPaste = async (e) => {
+      // Check if student - professors can paste freely
+      if (!clipboardTracker.isProfessor()) {
+        e.preventDefault()
+        e.stopPropagation()
+
+        const clipboardData = e.clipboardData || window.clipboardData
+        const pastedText = clipboardData?.getData('text')
+
+        if (pastedText) {
+          const isAllowed = await clipboardTracker.validatePaste(pastedText)
+          if (isAllowed) {
+            // Insert at cursor position
+            const textarea = e.target
+            const start = textarea.selectionStart
+            const end = textarea.selectionEnd
+            const value = textarea.value
+            userInput.value = value.substring(0, start) + pastedText + value.substring(end)
+            // Set cursor position after pasted text
+            nextTick(() => {
+              textarea.selectionStart = textarea.selectionEnd = start + pastedText.length
+            })
+          }
+          // If not allowed, toast notification is shown by clipboardTracker
+        }
+      }
+      // Professors: allow default paste behavior
+    }
+
     const addOutput = (content, type = 'text', className = '') => {
       outputLines.value.push({
         type,
@@ -355,19 +445,47 @@ export default {
       })
     }
     
+    // Handle DOM paste events on REPL CodeMirror (right-click paste)
+    const handleReplDOMPaste = async (e) => {
+      // Check if student - professors can paste freely
+      if (!clipboardTracker.isProfessor()) {
+        e.preventDefault()
+        e.stopPropagation()
+
+        const clipboardData = e.clipboardData || window.clipboardData
+        const pastedText = clipboardData?.getData('text')
+
+        if (pastedText) {
+          const isAllowed = await clipboardTracker.validatePaste(pastedText)
+          if (isAllowed && replEditor.value?.cminstance) {
+            replEditor.value.cminstance.replaceSelection(pastedText)
+          }
+          // If not allowed, toast notification is shown by clipboardTracker
+        }
+      }
+      // Professors: allow default paste behavior
+    }
+
     const enterReplMode = () => {
       isReplMode.value = true
       waitingForInput.value = false
       replPrompt.value = '>>> '
       userInput.value = ''
       historyIndex.value = -1
-      
+
       // Focus REPL editor with delay for proper initialization
       nextTick(() => {
         setTimeout(() => {
           if (replEditor.value?.cminstance) {
             replEditor.value.cminstance.refresh()
             replEditor.value.cminstance.focus()
+
+            // Add DOM paste listener for right-click paste protection
+            const cmWrapper = replEditor.value.$el
+            if (cmWrapper && !cmWrapper._replPasteListenerAdded) {
+              cmWrapper.addEventListener('paste', handleReplDOMPaste, true)
+              cmWrapper._replPasteListenerAdded = true
+            }
           } else if (inputField.value) {
             inputField.value.focus()
           }
@@ -684,7 +802,8 @@ export default {
       stopProgram,
       exportOutput,
       downloadFigure,
-      openFigureInNewTab
+      openFigureInNewTab,
+      handleTextareaPaste
     }
   }
 }

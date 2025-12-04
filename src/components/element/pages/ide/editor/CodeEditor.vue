@@ -268,6 +268,54 @@ export default {
           },
           'Shift-Ctrl-V': async (cm) => {
             await this.handlePasteOperation(cm);
+          },
+
+          // Mac shortcuts - Copy (Cmd+C)
+          'Cmd-C': (cm) => {
+            const selectedText = cm.getSelection();
+            if (selectedText) {
+              clipboardTracker.trackIDECopy(selectedText);
+              console.log('[CodeMirror] Mac Copy tracked:', selectedText.substring(0, 50));
+
+              if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) {
+                navigator.clipboard.writeText(selectedText).catch((error) => {
+                  console.error('[CodeMirror] Mac clipboard API failed:', error);
+                  this.copyTextFallback(selectedText, cm);
+                });
+              } else {
+                this.copyTextFallback(selectedText, cm);
+              }
+            }
+            return false;
+          },
+
+          // Mac shortcuts - Cut (Cmd+X)
+          'Cmd-X': (cm) => {
+            const selectedText = cm.getSelection();
+            if (selectedText) {
+              clipboardTracker.trackIDECopy(selectedText);
+              console.log('[CodeMirror] Mac Cut tracked:', selectedText.substring(0, 50));
+
+              if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) {
+                navigator.clipboard.writeText(selectedText).then(() => {
+                  cm.replaceSelection('');
+                }).catch((error) => {
+                  console.error('[CodeMirror] Mac clipboard cut failed:', error);
+                  this.cutTextFallback(selectedText, cm);
+                });
+              } else {
+                this.cutTextFallback(selectedText, cm);
+              }
+            }
+            return false;
+          },
+
+          // Mac shortcuts - Paste (Cmd+V and Cmd+Shift+V)
+          'Cmd-V': async (cm) => {
+            await this.handlePasteOperation(cm);
+          },
+          'Shift-Cmd-V': async (cm) => {
+            await this.handlePasteOperation(cm);
           }
         },
       }
@@ -287,6 +335,12 @@ export default {
         setTimeout(() => {
           this.$refs.codeEditor.cminstance.refresh();
         }, 100);
+
+        // Add DOM paste event listener for right-click paste protection
+        const cmWrapper = this.$refs.codeEditor.$el;
+        if (cmWrapper) {
+          cmWrapper.addEventListener('paste', this.handleDOMPaste, true);
+        }
       }
     });
     
@@ -335,6 +389,11 @@ export default {
     // Clean up the timeout when component is destroyed
     if (this.writeTimeout) {
       clearTimeout(this.writeTimeout);
+    }
+
+    // Remove DOM paste event listener
+    if (this.$refs.codeEditor && this.$refs.codeEditor.$el) {
+      this.$refs.codeEditor.$el.removeEventListener('paste', this.handleDOMPaste, true);
     }
   },
   computed: {
@@ -388,6 +447,27 @@ export default {
     }
   },
   methods: {
+    // Handle DOM paste events (right-click paste, etc.)
+    async handleDOMPaste(e) {
+      // Always intercept paste events to validate
+      e.preventDefault();
+      e.stopPropagation();
+
+      const clipboardData = e.clipboardData || window.clipboardData;
+      const pastedText = clipboardData?.getData('text');
+
+      if (pastedText) {
+        const isAllowed = await clipboardTracker.validatePaste(pastedText);
+        if (isAllowed) {
+          const cm = this.$refs.codeEditor?.cminstance;
+          if (cm) {
+            cm.replaceSelection(pastedText);
+          }
+        }
+        // If not allowed, toast notification shown by clipboardTracker
+      }
+    },
+
     applySavedSettings() {
       // Apply saved font size
       const savedFontSize = localStorage.getItem('fontSize') || localStorage.getItem('editorFontSize');

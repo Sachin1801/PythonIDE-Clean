@@ -5,6 +5,11 @@
 
 import { ElMessage } from 'element-plus';
 
+// Toggle copy-paste restrictions for students
+// Set to false to allow students to paste from external sources
+// Set to true to restrict students to only paste content copied within the IDE
+const PASTE_RESTRICTIONS_ENABLED = false;
+
 class ClipboardTracker {
   constructor() {
     this.allowedContentHashes = new Set();
@@ -128,8 +133,15 @@ class ClipboardTracker {
       userRole: this.getCurrentUserRole(),
       isStudent: this.isStudent(),
       isProfessor: this.isProfessor(),
+      restrictionsEnabled: PASTE_RESTRICTIONS_ENABLED,
       environment: window.location.origin
     });
+
+    // Check if restrictions are disabled globally
+    if (!PASTE_RESTRICTIONS_ENABLED) {
+      console.log('[ClipboardTracker] Paste restrictions disabled - allowing all pastes');
+      return true;
+    }
 
     // Always allow professors to paste anything
     if (this.isProfessor()) {

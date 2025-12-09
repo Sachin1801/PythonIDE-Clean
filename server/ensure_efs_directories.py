@@ -97,9 +97,11 @@ def copy_local_to_efs():
     created_count = 0
     existing_count = 0
 
+    # Check if we're in exam mode - skip workspace/welcome.py creation
+    is_exam_mode = os.environ.get("IS_EXAM_MODE", "false").lower() == "true"
+
     for username in student_usernames:
         user_dir = efs_base / "Local" / username
-        workspace_dir = user_dir / "workspace"
 
         # Check if directory exists
         if user_dir.exists():
@@ -109,15 +111,17 @@ def copy_local_to_efs():
             created_count += 1
             logger.info(f"  Created: {username}/")
 
-        # Ensure workspace exists
-        workspace_dir.mkdir(parents=True, exist_ok=True)
+        # Skip workspace/ and welcome.py in exam mode
+        if not is_exam_mode:
+            workspace_dir = user_dir / "workspace"
+            workspace_dir.mkdir(parents=True, exist_ok=True)
 
-        # Create welcome.py if it doesn't exist
-        welcome_file = user_dir / "welcome.py"
-        if not welcome_file.exists():
-            with open(welcome_file, "w") as f:
-                f.write(
-                    f"""# Welcome to Python IDE, {username}!
+            # Create welcome.py if it doesn't exist
+            welcome_file = user_dir / "welcome.py"
+            if not welcome_file.exists():
+                with open(welcome_file, "w") as f:
+                    f.write(
+                        f"""# Welcome to Python IDE, {username}!
 # This is your personal workspace.
 
 print("Hello, {username}!")
@@ -128,8 +132,8 @@ print("Only you can see files in your Local/{username}/ folder.")
 
 # Try writing your first Python program below:
 """
-                )
-            logger.info(f"  Created welcome.py for {username}")
+                    )
+                logger.info(f"  Created welcome.py for {username}")
 
         # Copy existing files from local if they exist (but don't overwrite)
         local_user_dir = local_base / "Local" / username

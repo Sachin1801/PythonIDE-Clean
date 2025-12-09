@@ -5,10 +5,18 @@
 
 import { ElMessage } from 'element-plus';
 
-// Toggle copy-paste restrictions for students
-// Set to false to allow students to paste from external sources
-// Set to true to restrict students to only paste content copied within the IDE
-const PASTE_RESTRICTIONS_ENABLED = false;
+// Detect if we're on the exam IDE based on hostname
+// Exam IDE: exam.pythonide-classroom.tech (no restrictions for students)
+// Main IDE: pythonide-classroom.tech (restrictions enabled for students)
+const isExamEnvironment = () => {
+  const hostname = window.location.hostname;
+  return hostname.startsWith('exam.') || hostname.includes('exam.');
+};
+
+// Enable restrictions on Main IDE, disable on Exam IDE
+// - On exam.pythonide-classroom.tech: students CAN paste from external sources
+// - On pythonide-classroom.tech: students CANNOT paste from external sources
+const PASTE_RESTRICTIONS_ENABLED = !isExamEnvironment();
 
 class ClipboardTracker {
   constructor() {

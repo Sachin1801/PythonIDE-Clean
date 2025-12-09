@@ -68,16 +68,18 @@ class FileStorageManager:
         self.validate_user_folder_name(username)
 
         user_dir = self.get_user_directory(username)
+        is_exam_mode = os.environ.get("IS_EXAM_MODE", "false").lower() == "true"
 
-        # Create user subdirectories
-        os.makedirs(os.path.join(user_dir, "workspace"), exist_ok=True)
+        # Skip workspace/ and welcome.py in exam mode
+        if not is_exam_mode:
+            os.makedirs(os.path.join(user_dir, "workspace"), exist_ok=True)
+            welcome_path = os.path.join(user_dir, "welcome.py")
+            with open(welcome_path, "w", encoding="utf-8") as f:
+                f.write(f'# Welcome {full_name}!\nprint("Hello, {username}!")\n')
+
+        # Always create these subdirectories
         os.makedirs(os.path.join(user_dir, "Lecture_Examples"), exist_ok=True)
         os.makedirs(os.path.join(user_dir, "submissions"), exist_ok=True)
-
-        # Create welcome file
-        welcome_path = os.path.join(user_dir, "welcome.py")
-        with open(welcome_path, "w", encoding="utf-8") as f:
-            f.write(f'# Welcome {full_name}!\nprint("Hello, {username}!")\n')
 
         return user_dir
 

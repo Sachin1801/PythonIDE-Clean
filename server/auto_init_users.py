@@ -297,21 +297,27 @@ def create_efs_directories():
             "test_10",
         ]
 
+        # Check if we're in exam mode - skip workspace/welcome.py creation
+        is_exam_mode = os.environ.get("IS_EXAM_MODE", "false").lower() == "true"
+
         # Only create directories for students
         for username in student_usernames:
             user_dir = os.path.join(base_path, username)
             os.makedirs(user_dir, exist_ok=True)
-            workspace_dir = os.path.join(user_dir, "workspace")
-            os.makedirs(workspace_dir, exist_ok=True)
             examples_dir = os.path.join(user_dir, "Lecture_Examples")
             os.makedirs(examples_dir, exist_ok=True)
 
-            # Create welcome file for students
-            welcome_file = os.path.join(user_dir, "welcome.py")
-            if not os.path.exists(welcome_file):
-                with open(welcome_file, "w") as f:
-                    f.write(
-                        f"""# Welcome {username}!
+            # Skip workspace/ and welcome.py in exam mode
+            if not is_exam_mode:
+                workspace_dir = os.path.join(user_dir, "workspace")
+                os.makedirs(workspace_dir, exist_ok=True)
+
+                # Create welcome file for students
+                welcome_file = os.path.join(user_dir, "welcome.py")
+                if not os.path.exists(welcome_file):
+                    with open(welcome_file, "w") as f:
+                        f.write(
+                            f"""# Welcome {username}!
 # This is your personal workspace directory.
 # Only you and the teaching staff can access files here.
 
@@ -321,7 +327,7 @@ print("Start coding and have fun learning Python!")
 
 # Try running this file by clicking the Run button!
 """
-                    )
+                        )
             print(f"Created directory for: {username}")
 
         print("✅ All student directories created")

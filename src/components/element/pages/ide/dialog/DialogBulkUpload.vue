@@ -67,12 +67,12 @@
 
         <!-- Common Folder Path -->
         <div class="folder-section">
-          <label>Destination Folder (in each student's directory):</label>
+          <label>Destination Folder (optional - leave empty for root):</label>
           <div class="folder-input-group">
             <input
               type="text"
               v-model="commonFolder"
-              placeholder="e.g., Examples"
+              placeholder="Leave empty for root, or e.g., Examples"
               class="folder-input"
             />
             <span class="path-separator">/</span>
@@ -197,7 +197,7 @@ export default {
       selectedStudents: [],
       studentSearch: '',
       allStudents: [],
-      commonFolder: 'Examples',
+      commonFolder: '',
       subPath: '',
       uploadMode: 'files', // 'files' or 'folder'
       selectedFiles: [],
@@ -233,16 +233,21 @@ export default {
       return this.targetMode === 'all' ? this.totalStudents : this.selectedStudents.length;
     },
     previewPath() {
-      if (this.subPath) {
-        return `${this.commonFolder}/${this.subPath}/`;
+      const folder = this.commonFolder.trim();
+      const sub = this.subPath.trim();
+      if (folder && sub) {
+        return `${folder}/${sub}/`;
+      } else if (folder) {
+        return `${folder}/`;
+      } else if (sub) {
+        return `${sub}/`;
       }
-      return `${this.commonFolder}/`;
+      return '(root directory)';
     },
     canUpload() {
       const hasFiles = this.selectedFiles.length > 0;
       const hasTarget = this.targetMode === 'all' || this.selectedStudents.length > 0;
-      const hasFolder = this.commonFolder.trim().length > 0;
-      return hasFiles && hasTarget && hasFolder;
+      return hasFiles && hasTarget;
     }
   },
   components: {

@@ -30,6 +30,31 @@ from command.exec_protocol import (
     debug_log, set_debug_mode
 )
 
+# Thread-local storage for executor context (username, role, script_dir)
+# This prevents race conditions when multiple users run scripts concurrently
+_executor_context = threading.local()
+
+
+def get_executor_context():
+    """Get the current thread's executor context (username, role, script_dir)"""
+    return getattr(_executor_context, 'username', None), \
+           getattr(_executor_context, 'role', 'student'), \
+           getattr(_executor_context, 'script_dir', None)
+
+
+def set_executor_context(username, role, script_dir):
+    """Set the current thread's executor context"""
+    _executor_context.username = username
+    _executor_context.role = role
+    _executor_context.script_dir = script_dir
+
+
+def clear_executor_context():
+    """Clear the current thread's executor context"""
+    _executor_context.username = None
+    _executor_context.role = None
+    _executor_context.script_dir = None
+
 
 class InteractiveREPLConsole(code.InteractiveConsole):
     """Custom InteractiveConsole that sends output to WebSocket"""
@@ -287,7 +312,9 @@ class SimpleExecutorV3(threading.Thread):
                 self._release_execution_lock_once("after script completion, before REPL")
             else:
                 # print(f"[SimpleExecutorV3-RUN] No script provided, starting REPL directly")
-                pass  # Keep the block valid even with commented prints
+                # CRITICAL: Set thread-local context for empty REPL mode
+                # (when script runs, this is set in execute_script instead)
+                set_executor_context(self.username, self.role, os.getcwd())
 
             # Start REPL (whether script was run or not)
             if self.alive:  # Only start REPL if still alive
@@ -390,6 +417,10 @@ class SimpleExecutorV3(threading.Thread):
             script_dir = os.path.dirname(os.path.abspath(self.script_path))
             # print(f"[SimpleExecutorV3-SCRIPT] Script directory: {script_dir}")
 
+            # CRITICAL: Set thread-local context for this execution
+            # This prevents race conditions when multiple users run scripts concurrently
+            set_executor_context(self.username, self.role, script_dir)
+
             # CRITICAL: Actually change working directory for C-level operations
             # Libraries like PIL/Pillow (used by matplotlib) use C's getcwd() which
             # bypasses our Python monkey-patches. We MUST use os.chdir() here.
@@ -415,8 +446,8 @@ class SimpleExecutorV3(threading.Thread):
                 Args:
                     path: File path to validate (absolute or relative)
                     mode: File open mode ('r', 'w', 'a', 'rb', 'wb', etc.)
-                    username: Student's username
-                    role: User's role ('student' or 'professor')
+                    username: Student's username (falls back to thread-local context if None)
+                    role: User's role ('student' or 'professor') (falls back to thread-local context if None)
 
                 Returns:
                     Validated absolute path
@@ -424,6 +455,15 @@ class SimpleExecutorV3(threading.Thread):
                 Raises:
                     PermissionError: If student attempts unauthorized access
                 """
+                # CRITICAL: Use thread-local context as fallback for concurrent execution safety
+                # This prevents race conditions when global patches (pandas, matplotlib) are called
+                if username is None or role is None:
+                    ctx_username, ctx_role, ctx_script_dir = get_executor_context()
+                    if username is None:
+                        username = ctx_username
+                    if role is None:
+                        role = ctx_role
+
                 # Professors have unrestricted access
                 if role == 'professor':
                     return path
@@ -979,7 +1019,9 @@ class SimpleExecutorV3(threading.Thread):
 
         finally:
             # print(f"[SimpleExecutorV3-SCRIPT] ===== SCRIPT EXECUTION END =====")
-            pass  # Keep the block valid even with commented prints
+            # Note: Do NOT clear thread-local context here as REPL may continue to use it
+            # Context is cleared in the cleanup() method when executor fully finishes
+            pass
 
     def start_repl(self):
         """Start the interactive REPL"""
@@ -1340,5 +1382,8 @@ class SimpleExecutorV3(threading.Thread):
 
         # Release any execution locks (if not already released)
         self._release_execution_lock_once("cleanup() method")
+
+        # CRITICAL: Clear thread-local context to prevent leaks
+        clear_executor_context()
 
         # print(f"[SimpleExecutorV3-CLEANUP] Cleanup completed")

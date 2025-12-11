@@ -468,6 +468,13 @@ class SimpleExecutorV3(threading.Thread):
                 if role == 'professor':
                     return path
 
+                # Determine if this is a write operation FIRST
+                # This must be checked before path restrictions to allow reading system files
+                is_write_mode = False
+                if isinstance(mode, str):
+                    # Check for write modes: 'w', 'a', 'w+', 'r+', 'wb', 'ab', etc.
+                    is_write_mode = any(m in mode for m in ['w', 'a', '+'])
+
                 # Convert to absolute path
                 if not os.path.isabs(path):
                     path = os.path.join(script_dir, path)
@@ -482,9 +489,14 @@ class SimpleExecutorV3(threading.Thread):
                 base_data_path = os.path.realpath(base_data_path)
                 path = os.path.realpath(path)
 
-                # Ensure path is within the data directory
+                # For READ operations, allow reading from ANYWHERE (system libraries, config files, etc.)
+                # This is necessary for matplotlib, pandas, and other libraries that read their config files
+                if not is_write_mode:
+                    return path
+
+                # For WRITE operations, ensure path is within the data directory
                 if not path.startswith(base_data_path):
-                    raise PermissionError(f"Access denied: Path outside IDE workspace: {path}")
+                    raise PermissionError(f"Access denied: Cannot write outside IDE workspace: {path}")
 
                 # Get relative path from base (e.g., "ide/Local/sa9082/test.py" or "Local/sa9082/test.py")
                 rel_path = os.path.relpath(path, base_data_path)
@@ -495,19 +507,9 @@ class SimpleExecutorV3(threading.Thread):
                 if rel_path.startswith('ide/'):
                     rel_path = rel_path[4:]  # Remove 'ide/' prefix
 
-                # Determine if this is a write operation
-                is_write_mode = False
-                if isinstance(mode, str):
-                    # Check for write modes: 'w', 'a', 'w+', 'r+', 'wb', 'ab', etc.
-                    is_write_mode = any(m in mode for m in ['w', 'a', '+'])
-
-                # For students, enforce directory restrictions
+                # For students, enforce directory restrictions on WRITE operations
                 if role == 'student' and username:
                     student_prefix = f"Local/{username}/"
-
-                    # Students can READ from anywhere in the workspace
-                    if not is_write_mode:
-                        return path
 
                     # Students can WRITE only within their Local/{username}/ directory
                     if not rel_path.startswith(student_prefix):

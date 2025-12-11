@@ -61,3 +61,8 @@ deployment/*password*.txt
 backup/*
 backup/repl_backup_20251027_003330
 server/.venv
+
+
+# Test files
+matplotlibSavefig.py
+LOCAL_TEST_ACCOUNTS.md

@@ -4,9 +4,9 @@
       <div class="csv-info">
         <span>{{ rowCount }} rows × {{ columnCount }} columns</span>
       </div>
-      <div class="csv-search">
-        <input 
-          v-model="searchQuery" 
+      <div class="csv-search" v-if="!isExamMode">
+        <input
+          v-model="searchQuery"
           placeholder="Search..."
           class="search-input"
         />
@@ -17,11 +17,11 @@
         <thead>
           <tr>
             <th class="row-number-header">#</th>
-            <th 
-              v-for="(header, index) in displayHeaders" 
+            <th
+              v-for="(header, index) in displayHeaders"
               :key="index"
-              class="csv-header"
-              @click="sortBy(index)"
+              :class="['csv-header', { 'sortable': !isExamMode }]"
+              @click="!isExamMode && sortBy(index)"
             >
               <div class="header-content">
                 <span>{{ header || `Column ${index + 1}` }}</span>
@@ -112,6 +112,23 @@ export default {
     }
   },
   computed: {
+    isExamMode() {
+      // Primary check: URL-based detection (most reliable)
+      // Exam IDE runs on exam.* subdomain
+      const hostname = window.location.hostname;
+      if (hostname.startsWith('exam.') || hostname.includes('exam')) {
+        return true;
+      }
+
+      // Fallback: Check Vuex state
+      const vuexValue = this.$store?.state?.ide?.ideInfo?.isExamMode;
+      if (vuexValue !== undefined && vuexValue !== null) {
+        return vuexValue;
+      }
+
+      // Final fallback: localStorage
+      return localStorage.getItem('is_exam_mode') === 'true';
+    },
     parsedData() {
       if (!this.content) return { headers: [], rows: [] };
       
@@ -333,15 +350,22 @@ export default {
   border-bottom: 2px solid var(--border-color, #3e3e42);
   border-right: 1px solid var(--border-color, #3e3e42);
   font-weight: 600;
-  cursor: pointer;
   user-select: none;
   white-space: nowrap;
   min-width: 150px; /* Increased minimum width for better visibility */
   position: relative;
 }
 
-.csv-table th:hover {
+.csv-table th.sortable {
+  cursor: pointer;
+}
+
+.csv-table th.sortable:hover {
   background: rgba(255, 255, 255, 0.05);
+}
+
+.csv-table th:not(.sortable):not(.row-number-header) {
+  cursor: default;
 }
 
 .row-number-header {

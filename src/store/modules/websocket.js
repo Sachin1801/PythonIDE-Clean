@@ -403,6 +403,13 @@ const actions = {
         // Use mutation to set authenticated state
         context.commit('setAuthenticated', { wsKey: wsKey, authenticated: true });
 
+        // Store exam mode flag for CSV viewer and other components
+        if (dict.is_exam_mode !== undefined) {
+          localStorage.setItem('is_exam_mode', dict.is_exam_mode ? 'true' : 'false');
+          // Also commit to Vuex for reactivity
+          context.commit('ide/setExamMode', dict.is_exam_mode === true, { root: true });
+        }
+
         // Load the user's initial project structure
         const username = dict.username || localStorage.getItem('username');
         const role = dict.role || localStorage.getItem('role');

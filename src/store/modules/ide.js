@@ -57,7 +57,9 @@ const ideInfo = {
     active: false,
     file: null,
     content: null
-  }
+  },
+  // Exam mode flag (disables CSV search/sort)
+  isExamMode: false
 }
 
 const state = {
@@ -71,6 +73,9 @@ const getters = {
 };
 
 const mutations = {
+  setExamMode(state, isExamMode) {
+    state.ideInfo.isExamMode = isExamMode;
+  },
   addConsoleOutput(state, { id, type, text, prompt, content }) {
     for (let i = 0; i < state.ideInfo.consoleItems.length; i++) {
       if (state.ideInfo.consoleItems[i].id === id) {

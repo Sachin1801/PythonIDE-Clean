@@ -11,6 +11,10 @@ export default {
   mounted() {
     // SINGLE-SESSION & AUTO-LOGOUT: Listen for session termination events
     window.addEventListener('session-terminated', this.handleSessionTerminated);
+
+    // Initialize exam mode from localStorage (for page refreshes)
+    const isExamMode = localStorage.getItem('is_exam_mode') === 'true';
+    this.$store.commit('ide/setExamMode', isExamMode);
   },
   beforeUnmount() {
     window.removeEventListener('session-terminated', this.handleSessionTerminated);

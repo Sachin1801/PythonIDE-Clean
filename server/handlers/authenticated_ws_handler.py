@@ -24,6 +24,9 @@ from auth.user_manager_postgres import UserManager
 from command.secure_file_manager import SecureFileManager
 from command.file_sync import file_sync
 
+# Check if running in exam mode (disables certain features like CSV search/sort)
+is_exam_mode = os.environ.get("IS_EXAM_MODE", "false").lower() == "true"
+
 
 class RateLimiter:
     """Rate limiting for user actions with burst protection"""
@@ -430,6 +433,7 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler, WebSocketKeepali
                                 "role": self.role,
                                 "session_id": self.session_id,
                                 "full_name": self.full_name,
+                                "is_exam_mode": is_exam_mode,
                             }
                         )
                     )
@@ -472,7 +476,7 @@ class AuthenticatedWebSocketHandler(websocket.WebSocketHandler, WebSocketKeepali
 
             self.write_message(
                 json.dumps(
-                    {"type": "auth_success", "username": self.username, "role": self.role, "full_name": self.full_name}
+                    {"type": "auth_success", "username": self.username, "role": self.role, "full_name": self.full_name, "is_exam_mode": is_exam_mode}
                 )
             )
             logger.info(f"Session validated for: {self.username} ({self.role})")

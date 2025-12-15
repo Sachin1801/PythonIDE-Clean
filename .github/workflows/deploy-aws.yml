@@ -1,4 +1,4 @@
-name: Deploy to AWS ECS
+name: Deploy to AWS ECS (Main + Exam IDE)
 
 on:
   push:
@@ -8,13 +8,16 @@ on:
 env:
   AWS_REGION: us-east-2
   ECR_REPOSITORY: pythonide-backend
-  ECS_SERVICE: pythonide-service
   ECS_CLUSTER: pythonide-cluster
+  # Main IDE service
+  ECS_SERVICE_MAIN: pythonide-service
+  # Exam IDE service
+  ECS_SERVICE_EXAM: pythonide-exam-task-service
   ECS_TASK_DEFINITION: .github/ecs-task-definition.json
 
 jobs:
   deploy:
-    name: Deploy
+    name: Deploy to Main + Exam IDE
     runs-on: ubuntu-latest
 
     steps:
@@ -41,11 +44,11 @@ jobs:
         # Build Docker image for linux/amd64 platform
         docker build --platform linux/amd64 -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
         docker build --platform linux/amd64 -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
-        
+
         # Push both tags
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
-        
+
         echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
     - name: Fill in the new image ID in the Amazon ECS task definition
@@ -56,45 +59,44 @@ jobs:
         container-name: pythonide-backend
         image: ${{ steps.build-image.outputs.image }}
 
-    - name: Deploy Amazon ECS task definition
+    # ==================== MAIN IDE DEPLOYMENT ====================
+    - name: Deploy to Main IDE (pythonide-service)
       uses: aws-actions/amazon-ecs-deploy-task-definition@v1
       with:
         task-definition: ${{ steps.task-def.outputs.task-definition }}
-        service: ${{ env.ECS_SERVICE }}
+        service: ${{ env.ECS_SERVICE_MAIN }}
         cluster: ${{ env.ECS_CLUSTER }}
         wait-for-service-stability: true
 
-    - name: Ensure Auto-Scaling Configuration
+    - name: Ensure Auto-Scaling Configuration (Main IDE)
       run: |
-        echo "🎯 Verifying and maintaining auto-scaling configuration..."
-        
+        echo "🎯 Verifying auto-scaling for Main IDE..."
+
         # Check if auto-scaling target exists
         SCALING_TARGET=$(aws application-autoscaling describe-scalable-targets \
           --service-namespace ecs \
-          --resource-ids "service/${{ env.ECS_CLUSTER }}/${{ env.ECS_SERVICE }}" \
+          --resource-ids "service/${{ env.ECS_CLUSTER }}/${{ env.ECS_SERVICE_MAIN }}" \
           --region ${{ env.AWS_REGION }} \
           --query 'ScalableTargets[0].ResourceId' \
           --output text 2>/dev/null) || SCALING_TARGET="None"
-        
+
         if [ "$SCALING_TARGET" = "None" ] || [ "$SCALING_TARGET" = "" ]; then
-          echo "⚠️ Auto-scaling not configured. Setting up now..."
-          
+          echo "⚠️ Auto-scaling not configured for Main IDE. Setting up now..."
+
           # Register scalable target
           aws application-autoscaling register-scalable-target \
             --service-namespace ecs \
-            --resource-id "service/${{ env.ECS_CLUSTER }}/${{ env.ECS_SERVICE }}" \
+            --resource-id "service/${{ env.ECS_CLUSTER }}/${{ env.ECS_SERVICE_MAIN }}" \
             --scalable-dimension ecs:service:DesiredCount \
             --min-capacity 2 \
             --max-capacity 6 \
             --region ${{ env.AWS_REGION }}
-          
-          echo "✅ Scalable target registered: 2-6 tasks"
-          
+
           # Create scaling policy
           aws application-autoscaling put-scaling-policy \
-            --policy-name "pythonide-cpu-scaling-policy" \
+            --policy-name "pythonide-main-cpu-scaling-policy" \
             --service-namespace ecs \
-            --resource-id "service/${{ env.ECS_CLUSTER }}/${{ env.ECS_SERVICE }}" \
+            --resource-id "service/${{ env.ECS_CLUSTER }}/${{ env.ECS_SERVICE_MAIN }}" \
             --scalable-dimension ecs:service:DesiredCount \
             --policy-type TargetTrackingScaling \
             --target-tracking-scaling-policy-configuration '{
@@ -106,91 +108,111 @@ jobs:
                 "ScaleInCooldown": 300
             }' \
             --region ${{ env.AWS_REGION }}
-          
-          echo "✅ Auto-scaling policy created: CPU target 45%"
-          
+
+          echo "✅ Main IDE auto-scaling configured"
         else
-          echo "✅ Auto-scaling configuration already exists"
-        fi
-        
-        # Ensure minimum 2 tasks are running (for high availability)
-        CURRENT_DESIRED=$(aws ecs describe-services \
-          --cluster ${{ env.ECS_CLUSTER }} \
-          --services ${{ env.ECS_SERVICE }} \
-          --region ${{ env.AWS_REGION }} \
-          --query 'services[0].desiredCount' \
-          --output text)
-        
-        if [ "$CURRENT_DESIRED" -lt "2" ]; then
-          echo "⚠️ Desired count is $CURRENT_DESIRED, updating to minimum 2 tasks..."
-          aws ecs update-service \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --service ${{ env.ECS_SERVICE }} \
-            --desired-count 2 \
-            --region ${{ env.AWS_REGION }}
-          echo "✅ Service updated to run minimum 2 tasks"
-        else
-          echo "✅ Service already running $CURRENT_DESIRED tasks"
+          echo "✅ Main IDE auto-scaling already configured"
         fi
 
-    - name: Verify Deployment and Auto-Scaling
+    # ==================== EXAM IDE DEPLOYMENT ====================
+    - name: Deploy to Exam IDE (pythonide-exam-task-service)
       run: |
-        echo "🔍 Final verification of deployment and auto-scaling..."
-        
-        # Get service status
-        SERVICE_INFO=$(aws ecs describe-services \
+        echo "🎓 Deploying to Exam IDE..."
+        aws ecs update-service \
           --cluster ${{ env.ECS_CLUSTER }} \
-          --services ${{ env.ECS_SERVICE }} \
-          --region ${{ env.AWS_REGION }} \
-          --query 'services[0].{RunningCount:runningCount,DesiredCount:desiredCount,TaskDefinition:taskDefinition}')
-        
-        echo "Service Status:"
-        echo "$SERVICE_INFO"
-        
-        # Get task resources
-        TASK_DEF=$(echo "$SERVICE_INFO" | python3 -c "import sys,json; print(json.load(sys.stdin)['TaskDefinition'])" 2>/dev/null)
-        TASK_RESOURCES=$(aws ecs describe-task-definition \
-          --task-definition "$TASK_DEF" \
-          --region ${{ env.AWS_REGION }} \
-          --query 'taskDefinition.{CPU:cpu,Memory:memory}')
-        
-        echo "Task Resources:"
-        echo "$TASK_RESOURCES"
-        
-        # Get auto-scaling config
-        SCALING_CONFIG=$(aws application-autoscaling describe-scalable-targets \
+          --service ${{ env.ECS_SERVICE_EXAM }} \
+          --force-new-deployment \
+          --region ${{ env.AWS_REGION }}
+
+        echo "⏳ Waiting for Exam IDE deployment to stabilize..."
+        aws ecs wait services-stable \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --services ${{ env.ECS_SERVICE_EXAM }} \
+          --region ${{ env.AWS_REGION }}
+
+        echo "✅ Exam IDE deployment complete"
+
+    - name: Ensure Auto-Scaling Configuration (Exam IDE)
+      run: |
+        echo "🎯 Verifying auto-scaling for Exam IDE..."
+
+        # Check if auto-scaling target exists for exam IDE
+        SCALING_TARGET=$(aws application-autoscaling describe-scalable-targets \
           --service-namespace ecs \
-          --resource-ids "service/${{ env.ECS_CLUSTER }}/${{ env.ECS_SERVICE }}" \
+          --resource-ids "service/${{ env.ECS_CLUSTER }}/${{ env.ECS_SERVICE_EXAM }}" \
           --region ${{ env.AWS_REGION }} \
-          --query 'ScalableTargets[0].{MinCapacity:MinCapacity,MaxCapacity:MaxCapacity}')
-        
-        echo "Auto-Scaling Configuration:"
-        echo "$SCALING_CONFIG"
-        
-        # Calculate estimated capacity from service info
-        RUNNING_TASKS=$(echo "$SERVICE_INFO" | grep -o '"RunningCount":[0-9]*' | cut -d: -f2)
-        CPU=$(echo "$TASK_RESOURCES" | grep -o '"CPU":"[0-9]*"' | cut -d\" -f4)
-        
-        if [ "$CPU" = "2048" ]; then
-          ESTIMATED_CAPACITY=$((RUNNING_TASKS * 20))
-          echo "✅ Deployment successful! Estimated capacity: ~$ESTIMATED_CAPACITY concurrent students"
-          echo "🎯 Auto-scaling active: Scales 2-6 tasks based on CPU > 45%"
+          --query 'ScalableTargets[0].ResourceId' \
+          --output text 2>/dev/null) || SCALING_TARGET="None"
+
+        if [ "$SCALING_TARGET" = "None" ] || [ "$SCALING_TARGET" = "" ]; then
+          echo "⚠️ Auto-scaling not configured for Exam IDE. Setting up now..."
+
+          # Register scalable target for exam IDE
+          aws application-autoscaling register-scalable-target \
+            --service-namespace ecs \
+            --resource-id "service/${{ env.ECS_CLUSTER }}/${{ env.ECS_SERVICE_EXAM }}" \
+            --scalable-dimension ecs:service:DesiredCount \
+            --min-capacity 1 \
+            --max-capacity 4 \
+            --region ${{ env.AWS_REGION }}
+
+          # Create scaling policy for exam IDE
+          aws application-autoscaling put-scaling-policy \
+            --policy-name "pythonide-exam-cpu-scaling-policy" \
+            --service-namespace ecs \
+            --resource-id "service/${{ env.ECS_CLUSTER }}/${{ env.ECS_SERVICE_EXAM }}" \
+            --scalable-dimension ecs:service:DesiredCount \
+            --policy-type TargetTrackingScaling \
+            --target-tracking-scaling-policy-configuration '{
+                "TargetValue": 45.0,
+                "PredefinedMetricSpecification": {
+                    "PredefinedMetricType": "ECSServiceAverageCPUUtilization"
+                },
+                "ScaleOutCooldown": 300,
+                "ScaleInCooldown": 300
+            }' \
+            --region ${{ env.AWS_REGION }}
+
+          echo "✅ Exam IDE auto-scaling configured"
         else
-          echo "⚠️ Task resources may need updating to 2048 CPU for optimal performance"
+          echo "✅ Exam IDE auto-scaling already configured"
         fi
+
+    # ==================== VERIFICATION ====================
+    - name: Verify Both Deployments
+      run: |
+        echo "🔍 Verifying deployments..."
+        echo ""
+
+        echo "📊 MAIN IDE Status:"
+        aws ecs describe-services \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --services ${{ env.ECS_SERVICE_MAIN }} \
+          --region ${{ env.AWS_REGION }} \
+          --query 'services[0].{Service:serviceName,Status:status,Running:runningCount,Desired:desiredCount}' \
+          --output table
+
+        echo ""
+        echo "📊 EXAM IDE Status:"
+        aws ecs describe-services \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --services ${{ env.ECS_SERVICE_EXAM }} \
+          --region ${{ env.AWS_REGION }} \
+          --query 'services[0].{Service:serviceName,Status:status,Running:runningCount,Desired:desiredCount}' \
+          --output table
 
     - name: Post-Deployment Summary
       run: |
+        echo ""
         echo "🎉 DEPLOYMENT SUMMARY"
-        echo "===================="
-        echo "✅ New Docker image deployed successfully"
-        echo "✅ Auto-scaling configuration verified/updated"
-        echo "✅ Service running with high availability (min 2 tasks)"
-        echo "✅ Ready to handle 60+ concurrent students"
+        echo "====================="
+        echo "✅ Docker image built and pushed to ECR"
+        echo "✅ Main IDE (pythonide-service) deployed"
+        echo "✅ Exam IDE (pythonide-exam-task-service) deployed"
+        echo "✅ Auto-scaling verified for both services"
         echo ""
-        echo "🔗 Monitor your service:"
-        echo "  • ECS Console: https://console.aws.amazon.com/ecs/home?region=${{ env.AWS_REGION }}#/clusters/${{ env.ECS_CLUSTER }}/services"
-        echo "  • Application: http://pythonide-classroom.tech/editor"
+        echo "🔗 Services:"
+        echo "  • Main IDE: http://pythonide-classroom.tech/editor"
+        echo "  • Exam IDE: http://exam.pythonide-classroom.tech/editor"
         echo ""
-        echo "💰 Current configuration supports automatic scaling based on demand"
-        echo "   with cost-effective resource management."
+        echo "📈 Both services now running the same codebase (commit: ${{ github.sha }})"

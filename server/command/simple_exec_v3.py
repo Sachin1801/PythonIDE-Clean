@@ -857,40 +857,49 @@ class SimpleExecutorV3(threading.Thread):
                 original_pyplot_savefig = plt.savefig
 
                 # Create wrapped version of Figure.savefig that validates path
+                # CRITICAL: Use thread-local context instead of closure variables
+                # to avoid race conditions when multiple users run scripts concurrently
                 def secure_figure_savefig(fig_self, fname, *args, **kwargs):
                     """Secure wrapper for Figure.savefig that validates file paths"""
+                    # Get the CURRENT thread's context (not closure variables which can be stale)
+                    ctx_username, ctx_role, ctx_script_dir = get_executor_context()
+
                     if isinstance(fname, str):
                         # Note: matplotlib also accepts file-like objects (io.BytesIO, etc.)
                         # which don't need validation
 
                         # Convert relative paths to absolute based on script directory
                         if not os.path.isabs(fname):
-                            fname = os.path.join(script_dir, fname)
+                            fname = os.path.join(ctx_script_dir, fname)
 
                         # Normalize the path to resolve any .. or .
                         fname = os.path.normpath(fname)
 
                         # For professors, skip validation but still use absolute path
                         # For students, validate path restrictions
-                        if self.role != 'professor':
-                            fname = validate_student_path(fname, 'w', self.username, self.role)
+                        if ctx_role != 'professor':
+                            fname = validate_student_path(fname, 'w', ctx_username, ctx_role)
                     return original_figure_savefig(fig_self, fname, *args, **kwargs)
 
                 # Create wrapped version of pyplot.savefig that validates path
+                # CRITICAL: Use thread-local context instead of closure variables
                 def secure_pyplot_savefig(fname, *args, **kwargs):
                     """Secure wrapper for pyplot.savefig that validates file paths"""
+                    # Get the CURRENT thread's context (not closure variables which can be stale)
+                    ctx_username, ctx_role, ctx_script_dir = get_executor_context()
+
                     if isinstance(fname, str):
                         # Convert relative paths to absolute based on script directory
                         if not os.path.isabs(fname):
-                            fname = os.path.join(script_dir, fname)
+                            fname = os.path.join(ctx_script_dir, fname)
 
                         # Normalize the path to resolve any .. or .
                         fname = os.path.normpath(fname)
 
                         # For professors, skip validation but still use absolute path
                         # For students, validate path restrictions
-                        if self.role != 'professor':
-                            fname = validate_student_path(fname, 'w', self.username, self.role)
+                        if ctx_role != 'professor':
+                            fname = validate_student_path(fname, 'w', ctx_username, ctx_role)
                     return original_pyplot_savefig(fname, *args, **kwargs)
 
                 # Replace matplotlib functions with secure versions
@@ -1355,6 +1364,10 @@ class SimpleExecutorV3(threading.Thread):
                     import matplotlib.pyplot as plt
                     matplotlib.figure.Figure.savefig = self.namespace['__original_figure_savefig__']
                     plt.savefig = self.namespace['__original_pyplot_savefig__']
+                    # CRITICAL: Also restore sys.modules to prevent cross-user state pollution
+                    # Without this, the patched functions persist in sys.modules after cleanup
+                    sys.modules['matplotlib.figure'].Figure.savefig = self.namespace['__original_figure_savefig__']
+                    sys.modules['matplotlib.pyplot'].savefig = self.namespace['__original_pyplot_savefig__']
                 except:
                     pass
         except Exception as e:

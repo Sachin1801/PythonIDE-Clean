@@ -7,7 +7,8 @@ on:
 
 env:
   AWS_REGION: us-east-2
-  ECR_REPOSITORY: pythonide-backend
+  ECR_REPOSITORY_MAIN: pythonide-backend
+  ECR_REPOSITORY_EXAM: pythonide-exam
   ECS_CLUSTER: pythonide-cluster
   # Main IDE service
   ECS_SERVICE_MAIN: pythonide-service
@@ -42,14 +43,20 @@ jobs:
         IMAGE_TAG: ${{ github.sha }}
       run: |
         # Build Docker image for linux/amd64 platform
-        docker build --platform linux/amd64 -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-        docker build --platform linux/amd64 -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+        docker build --platform linux/amd64 -t $ECR_REGISTRY/$ECR_REPOSITORY_MAIN:$IMAGE_TAG .
+        docker build --platform linux/amd64 -t $ECR_REGISTRY/$ECR_REPOSITORY_MAIN:latest .
 
-        # Push both tags
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        # Push to Main IDE repository (pythonide-backend)
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY_MAIN:$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY_MAIN:latest
 
-        echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+        # Tag and push to Exam IDE repository (pythonide-exam)
+        docker tag $ECR_REGISTRY/$ECR_REPOSITORY_MAIN:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY_EXAM:$IMAGE_TAG
+        docker tag $ECR_REGISTRY/$ECR_REPOSITORY_MAIN:latest $ECR_REGISTRY/$ECR_REPOSITORY_EXAM:latest
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY_EXAM:$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY_EXAM:latest
+
+        echo "image=$ECR_REGISTRY/$ECR_REPOSITORY_MAIN:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
     - name: Fill in the new image ID in the Amazon ECS task definition
       id: task-def

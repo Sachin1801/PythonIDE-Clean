@@ -605,6 +605,37 @@ export default {
         this.openSettings();
         return;
       }
+
+      // Tab Navigation - Alt+Arrow (Option+Arrow on Mac)
+      if (e.altKey && !e.ctrlKey && !e.shiftKey && !e.metaKey) {
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          e.stopPropagation();
+          this.$emit('navigate-tab', 'previous');
+          return;
+        }
+        if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          e.stopPropagation();
+          this.$emit('navigate-tab', 'next');
+          return;
+        }
+        // Direct tab access - Alt+1-6 (Option+1-6 on Mac)
+        if (e.key >= '1' && e.key <= '6') {
+          e.preventDefault();
+          e.stopPropagation();
+          this.$emit('jump-to-tab', parseInt(e.key) - 1);
+          return;
+        }
+      }
+
+      // Close current tab - Ctrl+W / Cmd+W
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === 'w') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.$emit('close-current-tab');
+        return;
+      }
     },
     newFile() {
       this.closeDropdowns();

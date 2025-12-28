@@ -2,39 +2,54 @@
   <!-- Single Combined Tabs Container -->
   <div class="code-tabs-container">
     <!-- Sidebar Toggle Button (on left) -->
-    <button 
+    <button
       v-if="sidebarVisible"
-      class="sidebar__contract" 
+      class="sidebar__contract"
       @click="toggleSidebar"
       aria-label="Close files navigation"
       title="Hide file explorer"
     >
       <ChevronLeft :size="16" />
     </button>
-    <button 
+    <button
       v-else
-      class="sidebar__expand" 
+      class="sidebar__expand"
       @click="toggleSidebar"
       aria-label="Open files navigation"
       title="Show file explorer"
     >
       <ChevronRight :size="16" />
     </button>
-    
+
     <!-- Tabs List -->
-    <div class="code-tab-list">
+    <div class="code-tab-list" @dragover.prevent @drop="handleDropOnContainer">
       <button
-        v-for="item in codeItems"
+        v-for="(item, index) in codeItems"
         :key="`${item.projectName || 'default'}:${item.path}`"
-        :class="['code-tab', { 'active': isActiveTab(item) }]"
+        :class="[
+          'code-tab',
+          {
+            'active': isActiveTab(item),
+            'dragging': draggedIndex === index,
+            'drop-target-left': dropTargetIndex === index && draggedIndex > index,
+            'drop-target-right': dropTargetIndex === index && draggedIndex < index
+          }
+        ]"
+        draggable="true"
         @click="selectTab(item)"
+        @dragstart="handleDragStart($event, index)"
+        @dragover="handleDragOver($event, index)"
+        @dragenter="handleDragEnter($event, index)"
+        @dragleave="handleDragLeave($event)"
+        @drop="handleDrop($event, index)"
+        @dragend="handleDragEnd"
       >
         <img :src="getIconUrl(item.path)" alt="" class="tab-file-icon" />
         <span class="tab-file-name">
           {{ getTabLabel(item) }}
         </span>
-        <span 
-          class="tab-close-btn" 
+        <span
+          class="tab-close-btn"
           @click.stop="removeTab(item)"
           title="Close"
         >
@@ -42,12 +57,12 @@
         </span>
       </button>
     </div>
-    
+
     <!-- Tab Actions (on right) -->
     <div class="tab-actions">
       <!-- Tab count indicator -->
       <span class="tab-count-indicator" v-if="codeItems.length > 0">
-        {{ codeItems.length }}/5
+        {{ codeItems.length }}/6
       </span>
     </div>
   </div>
@@ -60,7 +75,10 @@ import { ChevronLeft, ChevronRight } from 'lucide-vue-next';
 export default {
   data() {
     return {
-      sidebarVisible: true
+      sidebarVisible: true,
+      // Drag-and-drop state
+      draggedIndex: -1,
+      dropTargetIndex: -1
     };
   },
   mounted() {
@@ -73,7 +91,7 @@ export default {
     isActiveTab(item) {
       // Check if this tab is currently selected
       // Compare both path and projectName to ensure uniqueness
-      return this.ideInfo.codeSelected && 
+      return this.ideInfo.codeSelected &&
              this.ideInfo.codeSelected.path === item.path &&
              this.ideInfo.codeSelected.projectName === item.projectName;
     },
@@ -91,12 +109,12 @@ export default {
     getTabLabel(item) {
       // Check if there are files from different projects
       const projectNames = new Set(this.codeItems.map(i => i.projectName).filter(p => p));
-      
+
       // If files are from multiple projects, show project name in the label
       if (projectNames.size > 1 && item.projectName) {
         return `${item.name} [${item.projectName}]`;
       }
-      
+
       return item.name;
     },
     selectTab(item) {
@@ -104,6 +122,61 @@ export default {
     },
     removeTab(item) {
       this.$emit('close-item', item);
+    },
+
+    // Drag-and-drop methods
+    handleDragStart(e, index) {
+      this.draggedIndex = index;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', index.toString());
+      // Add slight delay for visual feedback
+      setTimeout(() => {
+        if (e.target) {
+          e.target.classList.add('dragging');
+        }
+      }, 0);
+    },
+
+    handleDragOver(e, index) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    },
+
+    handleDragEnter(e, index) {
+      e.preventDefault();
+      if (index !== this.draggedIndex && this.draggedIndex !== -1) {
+        this.dropTargetIndex = index;
+      }
+    },
+
+    handleDragLeave(e) {
+      // Only clear if we're leaving to outside the tab list
+      const relatedTarget = e.relatedTarget;
+      if (!relatedTarget || !e.currentTarget.contains(relatedTarget)) {
+        // Don't clear immediately to prevent flickering
+      }
+    },
+
+    handleDrop(e, targetIndex) {
+      e.preventDefault();
+      if (this.draggedIndex !== -1 && targetIndex !== this.draggedIndex) {
+        this.$emit('reorder-tabs', this.draggedIndex, targetIndex);
+      }
+      this.resetDragState();
+    },
+
+    handleDropOnContainer(e) {
+      // Handle drop on the container (not on a specific tab)
+      this.resetDragState();
+    },
+
+    handleDragEnd() {
+      this.resetDragState();
+    },
+
+    resetDragState() {
+      this.draggedIndex = -1;
+      this.dropTargetIndex = -1;
     }
   },
   watch: {
@@ -209,7 +282,7 @@ export default {
   color: var(--text-secondary, #969696);
   padding: 6px 8px;
   padding-right: 28px; /* Space for close button */
-  cursor: pointer;
+  cursor: grab;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -217,7 +290,7 @@ export default {
   position: relative;
   min-width: 100px;
   max-width: 200px;
-  transition: all 0.2s ease;
+  transition: transform 0.15s ease, opacity 0.15s ease, background 0.2s ease;
   font-size: 13px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   white-space: nowrap;
@@ -238,11 +311,52 @@ export default {
   border-bottom-color: var(--accent-color, #007ACC);
 }
 
+/* Dragging state */
+.code-tab.dragging {
+  opacity: 0.5;
+  cursor: grabbing;
+}
+
+/* Drop target indicators */
+.code-tab.drop-target-left::before {
+  content: '';
+  position: absolute;
+  left: -3px;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  background: var(--accent-color, #007ACC);
+  border-radius: 2px;
+  animation: pulse 0.5s ease-in-out infinite alternate;
+}
+
+.code-tab.drop-target-right::after {
+  content: '';
+  position: absolute;
+  right: -3px;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  background: var(--accent-color, #007ACC);
+  border-radius: 2px;
+  animation: pulse 0.5s ease-in-out infinite alternate;
+}
+
+@keyframes pulse {
+  from {
+    opacity: 0.6;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 /* File icon in tab */
 .tab-file-icon {
   width: 16px;
   height: 16px;
   flex-shrink: 0;
+  pointer-events: none;
 }
 
 /* File name in tab */
@@ -253,6 +367,7 @@ export default {
   text-align: left;
   font-weight: 400;
   letter-spacing: 0.3px;
+  pointer-events: none;
 }
 
 /* Close button */
@@ -272,6 +387,7 @@ export default {
   color: var(--text-secondary, #969696);
   opacity: 0;
   transition: all 0.2s ease;
+  cursor: pointer;
 }
 
 /* Show close button on tab hover */

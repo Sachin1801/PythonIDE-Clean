@@ -341,8 +341,8 @@ const mutations = {
       }
     }
     
-    // Check tab limit (max 5 tabs)
-    const MAX_TABS = 5;
+    // Check tab limit (max 6 tabs)
+    const MAX_TABS = 6;
     if (state.ideInfo.codeItems.length >= MAX_TABS) {
       // Remove the oldest tab (first item) to make room
       const closedTab = state.ideInfo.codeItems.shift();
@@ -781,6 +781,13 @@ const mutations = {
     state.ideInfo.codeItems.push(item);
   },
   setCodeItems(state, items) {
+    state.ideInfo.codeItems = items;
+  },
+  reorderCodeItems(state, { fromIndex, toIndex }) {
+    // Reorder tabs by moving item from fromIndex to toIndex
+    const items = [...state.ideInfo.codeItems];
+    const [movedItem] = items.splice(fromIndex, 1);
+    items.splice(toIndex, 0, movedItem);
     state.ideInfo.codeItems = items;
   },
   setCodeItemMirror(state, { index, codemirror }) {

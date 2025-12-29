@@ -66,3 +66,5 @@ server/.venv
 # Test files
 matplotlibSavefig.py
 LOCAL_TEST_ACCOUNTS.md
+
+docs/

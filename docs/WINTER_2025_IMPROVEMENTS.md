@@ -100,7 +100,6 @@ Preview files (CSV, PDF, TXT, images) now open in the right panel by default ins
 | Previous Tab | `Alt + ←` | `Option + ←` |
 | Next Tab | `Alt + →` | `Option + →` |
 | Go to Tab 1-6 | `Alt + 1-6` | `Option + 1-6` |
-| Close Current Tab | `Ctrl + W` | `Cmd + W` |
 
 ### Focus-Aware Navigation
 - Shortcuts affect the currently focused panel
@@ -206,12 +205,12 @@ The Keyboard Shortcuts modal now displays platform-appropriate symbols.
 - [ ] Dropping outside cancels the drag
 
 ### Keyboard Shortcuts
-- [ ] Alt+← goes to previous tab
-- [ ] Alt+→ goes to next tab
-- [ ] Alt+1-6 jumps to specific tab
-- [ ] Ctrl+W closes current tab
+- [ ] Alt+← (Option+← on Mac) goes to previous tab
+- [ ] Alt+→ (Option+→ on Mac) goes to next tab
+- [ ] Alt+1-6 (Option+1-6 on Mac) jumps to specific tab
 - [ ] Shortcuts work for focused panel only
 - [ ] F1 shows shortcuts modal
+- [ ] Ctrl+Shift+P toggles preview panel
 
 ### CSV Virtual Scroll
 - [ ] Small CSV scrolls smoothly

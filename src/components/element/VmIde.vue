@@ -2521,6 +2521,7 @@ export default {
 
     // Tab navigation keyboard shortcuts
     handleNavigateTab(direction) {
+      console.log('🎹 [TAB-NAV] handleNavigateTab called:', direction, 'focusedPanel:', this.focusedPanel);
       // Navigate tabs based on which panel has focus
       if (this.focusedPanel === 'editor') {
         this.navigateEditorTab(direction);
@@ -2530,6 +2531,7 @@ export default {
     },
     navigateEditorTab(direction) {
       const items = this.ideInfo.codeItems;
+      console.log('🎹 [TAB-NAV] navigateEditorTab:', direction, 'items count:', items.length);
       if (items.length === 0) return;
 
       const currentIndex = items.findIndex(
@@ -2544,9 +2546,11 @@ export default {
         newIndex = (currentIndex - 1 + items.length) % items.length;
       }
 
+      console.log('🎹 [TAB-NAV] Moving from index', currentIndex, 'to', newIndex);
       this.selectFile(items[newIndex]);
     },
     navigatePreviewTab(direction) {
+      console.log('🎹 [TAB-NAV] navigatePreviewTab:', direction, 'previewTabs count:', this.previewTabs.length);
       if (this.previewTabs.length === 0) return;
 
       const currentIndex = this.previewTabs.findIndex(
@@ -2560,18 +2564,28 @@ export default {
         newIndex = (currentIndex - 1 + this.previewTabs.length) % this.previewTabs.length;
       }
 
+      console.log('🎹 [TAB-NAV] Preview tab moving from index', currentIndex, 'to', newIndex);
       this.selectedPreviewTab = this.previewTabs[newIndex].id;
     },
     handleJumpToTab(index) {
+      console.log('🎹 [TAB-NAV] handleJumpToTab called:', index, 'focusedPanel:', this.focusedPanel);
       // Jump to specific tab based on which panel has focus
       if (this.focusedPanel === 'editor') {
         const items = this.ideInfo.codeItems;
+        console.log('🎹 [TAB-NAV] Editor tabs:', items.length, 'jumping to index:', index);
         if (index < items.length) {
+          console.log('🎹 [TAB-NAV] Selecting file:', items[index]?.fileName);
           this.selectFile(items[index]);
+        } else {
+          console.log('🎹 [TAB-NAV] Index out of bounds, max is:', items.length - 1);
         }
       } else {
+        console.log('🎹 [TAB-NAV] Preview tabs:', this.previewTabs.length, 'jumping to index:', index);
         if (index < this.previewTabs.length) {
+          console.log('🎹 [TAB-NAV] Selecting preview tab:', this.previewTabs[index]?.name);
           this.selectedPreviewTab = this.previewTabs[index].id;
+        } else {
+          console.log('🎹 [TAB-NAV] Index out of bounds, max is:', this.previewTabs.length - 1);
         }
       }
     },
@@ -3136,15 +3150,23 @@ export default {
         run: true
       });
     },
-    togglePreviewPanel(visible) {
-      // Toggle preview panel visibility
-      if (visible && this.previewTabs.length === 0) {
-        // Add a default preview tab if none exists
-        this.$message.info('No files to preview. Open an image, PDF, or CSV file.');
-      } else if (!visible) {
-        this.rightPanelMode = 'closed';
+    togglePreviewPanel() {
+      // Toggle preview panel visibility based on current state (ignore parameter)
+      console.log('🎹 [TOGGLE-PREVIEW] Current rightPanelMode:', this.rightPanelMode, 'previewTabs:', this.previewTabs.length);
+
+      if (this.rightPanelMode === 'closed') {
+        // Opening the panel
+        if (this.previewTabs.length === 0) {
+          this.$message.info('No files to preview. Open an image, PDF, or CSV file.');
+          console.log('🎹 [TOGGLE-PREVIEW] No preview tabs, showing info message');
+        } else {
+          this.rightPanelMode = 'normal';
+          console.log('🎹 [TOGGLE-PREVIEW] Opening panel -> normal');
+        }
       } else {
-        this.rightPanelMode = 'normal';
+        // Closing the panel
+        this.rightPanelMode = 'closed';
+        console.log('🎹 [TOGGLE-PREVIEW] Closing panel -> closed');
       }
     },
     handleOpenFile(filePath) {

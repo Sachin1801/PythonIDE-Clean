@@ -135,10 +135,6 @@
                 <span class="shortcut-action">Go to Tab 1-6</span>
                 <span class="shortcut-keys">{{ formatKey('Alt') }}+1-6</span>
               </div>
-              <div class="shortcut-item">
-                <span class="shortcut-action">Close Current Tab</span>
-                <span class="shortcut-keys">{{ formatKey('Ctrl') }}+W</span>
-              </div>
             </div>
           </div>
 

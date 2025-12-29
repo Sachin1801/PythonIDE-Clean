@@ -32,6 +32,9 @@
       @toggle-preview-panel="togglePreviewPanel"
       @toggle-sidebar="toggleLeftSidebar"
       @show-keyboard-shortcuts="showKeyboardShortcutsModal = !showKeyboardShortcutsModal"
+      @navigate-tab="handleNavigateTab"
+      @jump-to-tab="handleJumpToTab"
+      @close-current-tab="handleCloseCurrentTab"
     ></TwoHeaderMenu>
     
     <!-- Settings Modal -->
@@ -62,10 +65,10 @@
         <!-- Left Sidebar Pane - Always present in DOM -->
         <pane :size="leftSidebarSize" :min-size="leftSidebarMinSize" :max-size="leftSidebarMaxSize">
           <div id="left-sidebar" class="left-sidebar" v-show="leftSidebarVisible && windowWidth > 900">
-            <ProjTree 
+            <ProjTree
               :currentUser="currentUser"
               v-on:get-item="getFile"
-              @get-item-right-panel="getFileForRightPanel"
+              @open-in-editor="getFileForEditor"
               @context-menu="showContextMenu"
               @rename-item="handleRenameItem"
               @delete-item="handleDeleteItem"
@@ -82,20 +85,21 @@
         <pane :size="centerSize" :min-size="30">
           <div id="center-frame" class="center-frame">
             <!-- Fullscreen Preview -->
-            <FullscreenPreview 
-              @open-in-right-panel="getFileForRightPanel" 
+            <FullscreenPreview
+              @open-in-right-panel="getFileForRightPanel"
             />
             <!-- Nested Horizontal Splitpanes for Editor/Console -->
             <splitpanes horizontal class="default-theme">
               <!-- Editor Pane -->
               <pane :size="editorPaneSize" :min-size="5" :max-size="95">
-                <div class="editor-section">
+                <div class="editor-section" @click="setFocusedPanel('editor')">
           <div class="editor-tab-bar">
             <CodeTabs
               v-if="ideInfo.codeItems.length > 0"
               v-on:select-item="selectFile"
               v-on:close-item="closeFile"
-              @toggle-sidebar="toggleLeftSidebar">
+              @toggle-sidebar="toggleLeftSidebar"
+              @reorder-tabs="handleReorderTabs">
             </CodeTabs>
           </div>
           <div class="editor-content">
@@ -274,12 +278,27 @@
             
             <!-- Preview/Output Tabs -->
             <div class="preview-tabs" v-show="rightSidebarVisible && previewTabs.length > 0">
-              <div class="preview-tab-list">
-                <button 
-                  v-for="tab in previewTabs" 
+              <div class="preview-tab-list" @dragover.prevent @drop="handlePreviewDropOnContainer">
+                <button
+                  v-for="(tab, index) in previewTabs"
                   :key="tab.id"
-                  :class="['preview-tab', { 'active': selectedPreviewTab === tab.id }]"
-                  @click="selectPreviewTab(tab.id)">
+                  :class="[
+                    'preview-tab',
+                    {
+                      'active': selectedPreviewTab === tab.id,
+                      'dragging': previewDraggedIndex === index,
+                      'drop-target-left': previewDropTargetIndex === index && previewDraggedIndex > index,
+                      'drop-target-right': previewDropTargetIndex === index && previewDraggedIndex < index
+                    }
+                  ]"
+                  draggable="true"
+                  @click="selectPreviewTab(tab.id)"
+                  @dragstart="handlePreviewDragStart($event, index)"
+                  @dragover="handlePreviewDragOver($event, index)"
+                  @dragenter="handlePreviewDragEnter($event, index)"
+                  @dragleave="handlePreviewDragLeave($event)"
+                  @drop="handlePreviewDrop($event, index)"
+                  @dragend="handlePreviewDragEnd">
                   <span class="tab-icon">{{ getTabIcon(tab.type) }}</span>
                   <span class="tab-title">{{ tab.title }}</span>
                   <span class="tab-close" @click.stop="closePreviewTab(tab.id)">×</span>
@@ -288,7 +307,7 @@
             </div>
             
             <!-- Preview Content Area -->
-            <div class="preview-content" v-show="rightSidebarVisible && previewTabs.length > 0">
+            <div class="preview-content" v-show="rightSidebarVisible && previewTabs.length > 0" @click="setFocusedPanel('preview')">
               <template v-for="tab in previewTabs" :key="tab.id">
                 <div v-show="selectedPreviewTab === tab.id" class="preview-panel">
                   <!-- Output Panel -->
@@ -519,7 +538,13 @@ export default {
       previewTabs: [], // Start with no tabs
       selectedPreviewTab: null,
       previewTabCounter: 0,
-      
+      // Preview tab drag-and-drop state
+      previewDraggedIndex: -1,
+      previewDropTargetIndex: -1,
+
+      // Track which panel has focus for keyboard shortcuts
+      focusedPanel: 'editor', // 'editor' or 'preview'
+
       // Terminal (moved to REPL)
       terminalOutput: [],
       terminalSessionActive: false,
@@ -1807,7 +1832,7 @@ export default {
       if (existingTab) {
         // Tab already exists, just switch to it
         this.selectedPreviewTab = existingTab.id;
-        
+
         // Update content if it has changed
         if (existingTab.content !== content) {
           // Clean up old blob URL if it exists
@@ -1817,6 +1842,23 @@ export default {
           existingTab.content = content;
         }
       } else {
+        // Enforce right panel tab limit (max 5 tabs)
+        const MAX_PREVIEW_TABS = 5;
+        if (this.previewTabs.length >= MAX_PREVIEW_TABS) {
+          // Remove the oldest tab (first item) to make room
+          const closedTab = this.previewTabs.shift();
+          // Clean up blob URL if PDF
+          if (closedTab.type === 'pdf' && closedTab.content && closedTab.content.startsWith('blob:')) {
+            URL.revokeObjectURL(closedTab.content);
+          }
+          console.log(`Preview tab limit (${MAX_PREVIEW_TABS}) reached. Closed "${closedTab.title}" to open new file.`);
+          ElMessage({
+            type: 'warning',
+            message: `Tab limit (${MAX_PREVIEW_TABS}) reached. Closed "${closedTab.title}" to open new file.`,
+            duration: 3000
+          });
+        }
+
         // Create new tab with projectName
         const id = `${type}-${++this.previewTabCounter}`;
         this.previewTabs.push({ id, type, title, content, filePath, projectName });
@@ -1844,7 +1886,8 @@ export default {
         'output': '📄',
         'image': '🖼️',
         'pdf': '📑',
-        'data': '📊'
+        'data': '📊',
+        'text': '📝'
       };
       return icons[type] || '📄';
     },
@@ -2270,36 +2313,41 @@ export default {
         }
       });
     },
-    getFile(path, save, projectName, openInPanel = false) {
+    getFile(path, save, projectName, openInEditor = false) {
       const self = this;
-      
+
       console.log('[getFile] Called with:', {
         path: path,
         save: save,
         projectName: projectName,
-        openInPanel: openInPanel
+        openInEditor: openInEditor
       });
-      
+
       // Determine the project name - from parameter, current selection, or current project
-      const actualProjectName = projectName || 
+      const actualProjectName = projectName ||
                                (this.ideInfo.nodeSelected && this.ideInfo.nodeSelected.projectName) ||
                                this.ideInfo.currProj?.data?.name ||
                                this.ideInfo.currProj?.config?.name;
-      
-      // Check if it's a media or data file
+
+      // Check if it's a preview file (should open in right panel by default)
+      // Preview files: images, PDFs, CSVs, and plain text files
       const mediaExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.webp', '.pdf'];
       const dataExtensions = ['.csv'];
+      const textExtensions = ['.txt'];
       const isMediaFile = mediaExtensions.some(ext => path.toLowerCase().endsWith(ext));
       const isDataFile = dataExtensions.some(ext => path.toLowerCase().endsWith(ext));
-      
-      // If it's a preview file and openInPanel is false, open in fullscreen
-      if ((isMediaFile || isDataFile) && !openInPanel) {
-        // Open preview files in fullscreen mode by default
+      const isTextFile = textExtensions.some(ext => path.toLowerCase().endsWith(ext));
+      const isPreviewFile = isMediaFile || isDataFile || isTextFile;
+
+      // If it's a preview file and openInEditor is true (from "Open in Editor" context menu)
+      // open it in the editor area instead of the right panel
+      if (isPreviewFile && openInEditor) {
+        // Open preview files in fullscreen/editor mode when explicitly requested
         this.openFullscreenPreview(path, actualProjectName);
         return;
       }
-      
-      // Otherwise, handle normally (open in panel if preview file and openInPanel is true)
+
+      // Default behavior: open preview files in the right panel
       if (isMediaFile) {
         // For media files, add tab without preloading content
         // MediaViewer component will handle loading with retry logic
@@ -2324,7 +2372,7 @@ export default {
       } else if (isDataFile) {
         // For CSV files, fetch content and display in preview panel
         const fileName = path.split('/').pop();
-        
+
         this.$store.dispatch(`ide/${types.IDE_GET_FILE}`, {
           projectName: actualProjectName,
           filePath: path,
@@ -2333,13 +2381,40 @@ export default {
               // Parse CSV content and add to preview tabs
               const csvContent = response.data.content || response.data;
               self.addPreviewTab('data', fileName, csvContent, path, actualProjectName);
-              
+
               // Update file tree selection
               if (save !== false) {
                 self.$store.dispatch(`ide/${types.IDE_SAVE_PROJECT}`, {});
               }
             } else {
               console.error('Failed to get CSV file:', path, response);
+              ElMessage({
+                type: 'error',
+                message: `Failed to load ${fileName}`,
+                duration: 3000
+              });
+            }
+          }
+        });
+      } else if (isTextFile) {
+        // For text files, fetch content and display in preview panel
+        const fileName = path.split('/').pop();
+
+        this.$store.dispatch(`ide/${types.IDE_GET_FILE}`, {
+          projectName: actualProjectName,
+          filePath: path,
+          callback: (response) => {
+            if (response.code === 0 && response.data) {
+              // Get text content and add to preview tabs
+              const textContent = response.data.content || response.data;
+              self.addPreviewTab('text', fileName, textContent, path, actualProjectName);
+
+              // Update file tree selection
+              if (save !== false) {
+                self.$store.dispatch(`ide/${types.IDE_SAVE_PROJECT}`, {});
+              }
+            } else {
+              console.error('Failed to get text file:', path, response);
               ElMessage({
                 type: 'error',
                 message: `Failed to load ${fileName}`,
@@ -2388,12 +2463,148 @@ export default {
         });
       }
     },
-    getFileForRightPanel(path, projectName) {
-      // Open preview files specifically in the right panel
-      // This is called from context menu "Open in Right Panel" option
-      this.getFile(path, false, projectName, true); // openInPanel = true
+    getFileForEditor(path, projectName) {
+      // Open preview files in the editor/fullscreen area instead of right panel
+      // This is called from context menu "Open in Editor" option
+      this.getFile(path, false, projectName, true); // openInEditor = true
     },
-    
+    getFileForRightPanel(path, projectName) {
+      // Open preview files in the right panel (default behavior)
+      // This is called from FullscreenPreview's "Open in Right Panel" button
+      this.getFile(path, false, projectName, false); // openInEditor = false (default)
+    },
+    handleReorderTabs(fromIndex, toIndex) {
+      // Reorder editor tabs via Vuex mutation
+      this.$store.commit('ide/reorderCodeItems', { fromIndex, toIndex });
+    },
+
+    // Preview tab drag-and-drop methods
+    handlePreviewDragStart(e, index) {
+      this.previewDraggedIndex = index;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', index.toString());
+    },
+    handlePreviewDragOver(e, index) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    },
+    handlePreviewDragEnter(e, index) {
+      e.preventDefault();
+      if (index !== this.previewDraggedIndex && this.previewDraggedIndex !== -1) {
+        this.previewDropTargetIndex = index;
+      }
+    },
+    handlePreviewDragLeave(e) {
+      // Don't clear immediately to prevent flickering
+    },
+    handlePreviewDrop(e, targetIndex) {
+      e.preventDefault();
+      if (this.previewDraggedIndex !== -1 && targetIndex !== this.previewDraggedIndex) {
+        // Reorder preview tabs
+        const items = [...this.previewTabs];
+        const [movedItem] = items.splice(this.previewDraggedIndex, 1);
+        items.splice(targetIndex, 0, movedItem);
+        this.previewTabs = items;
+      }
+      this.resetPreviewDragState();
+    },
+    handlePreviewDropOnContainer(e) {
+      this.resetPreviewDragState();
+    },
+    handlePreviewDragEnd() {
+      this.resetPreviewDragState();
+    },
+    resetPreviewDragState() {
+      this.previewDraggedIndex = -1;
+      this.previewDropTargetIndex = -1;
+    },
+
+    // Tab navigation keyboard shortcuts
+    handleNavigateTab(direction) {
+      console.log('🎹 [TAB-NAV] handleNavigateTab called:', direction, 'focusedPanel:', this.focusedPanel);
+      // Navigate tabs based on which panel has focus
+      if (this.focusedPanel === 'editor') {
+        this.navigateEditorTab(direction);
+      } else {
+        this.navigatePreviewTab(direction);
+      }
+    },
+    navigateEditorTab(direction) {
+      const items = this.ideInfo.codeItems;
+      console.log('🎹 [TAB-NAV] navigateEditorTab:', direction, 'items count:', items.length);
+      if (items.length === 0) return;
+
+      const currentIndex = items.findIndex(
+        item => item.path === this.ideInfo.codeSelected?.path &&
+                item.projectName === this.ideInfo.codeSelected?.projectName
+      );
+
+      let newIndex;
+      if (direction === 'next') {
+        newIndex = (currentIndex + 1) % items.length;
+      } else {
+        newIndex = (currentIndex - 1 + items.length) % items.length;
+      }
+
+      console.log('🎹 [TAB-NAV] Moving from index', currentIndex, 'to', newIndex);
+      this.selectFile(items[newIndex]);
+    },
+    navigatePreviewTab(direction) {
+      console.log('🎹 [TAB-NAV] navigatePreviewTab:', direction, 'previewTabs count:', this.previewTabs.length);
+      if (this.previewTabs.length === 0) return;
+
+      const currentIndex = this.previewTabs.findIndex(
+        tab => tab.id === this.selectedPreviewTab
+      );
+
+      let newIndex;
+      if (direction === 'next') {
+        newIndex = (currentIndex + 1) % this.previewTabs.length;
+      } else {
+        newIndex = (currentIndex - 1 + this.previewTabs.length) % this.previewTabs.length;
+      }
+
+      console.log('🎹 [TAB-NAV] Preview tab moving from index', currentIndex, 'to', newIndex);
+      this.selectedPreviewTab = this.previewTabs[newIndex].id;
+    },
+    handleJumpToTab(index) {
+      console.log('🎹 [TAB-NAV] handleJumpToTab called:', index, 'focusedPanel:', this.focusedPanel);
+      // Jump to specific tab based on which panel has focus
+      if (this.focusedPanel === 'editor') {
+        const items = this.ideInfo.codeItems;
+        console.log('🎹 [TAB-NAV] Editor tabs:', items.length, 'jumping to index:', index);
+        if (index < items.length) {
+          console.log('🎹 [TAB-NAV] Selecting file:', items[index]?.fileName);
+          this.selectFile(items[index]);
+        } else {
+          console.log('🎹 [TAB-NAV] Index out of bounds, max is:', items.length - 1);
+        }
+      } else {
+        console.log('🎹 [TAB-NAV] Preview tabs:', this.previewTabs.length, 'jumping to index:', index);
+        if (index < this.previewTabs.length) {
+          console.log('🎹 [TAB-NAV] Selecting preview tab:', this.previewTabs[index]?.name);
+          this.selectedPreviewTab = this.previewTabs[index].id;
+        } else {
+          console.log('🎹 [TAB-NAV] Index out of bounds, max is:', this.previewTabs.length - 1);
+        }
+      }
+    },
+    handleCloseCurrentTab() {
+      // Close current tab based on which panel has focus
+      if (this.focusedPanel === 'editor') {
+        if (this.ideInfo.codeSelected) {
+          this.closeFile(this.ideInfo.codeSelected);
+        }
+      } else {
+        if (this.selectedPreviewTab) {
+          this.closePreviewTab(this.selectedPreviewTab);
+        }
+      }
+    },
+    setFocusedPanel(panel) {
+      this.focusedPanel = panel;
+    },
+
     getMediaCodeItem(tab) {
       // Create a codeItem object that MediaViewer expects
       // Use the tab's projectName if available, otherwise fall back to current project
@@ -2939,15 +3150,23 @@ export default {
         run: true
       });
     },
-    togglePreviewPanel(visible) {
-      // Toggle preview panel visibility
-      if (visible && this.previewTabs.length === 0) {
-        // Add a default preview tab if none exists
-        this.$message.info('No files to preview. Open an image, PDF, or CSV file.');
-      } else if (!visible) {
-        this.rightPanelMode = 'closed';
+    togglePreviewPanel() {
+      // Toggle preview panel visibility based on current state (ignore parameter)
+      console.log('🎹 [TOGGLE-PREVIEW] Current rightPanelMode:', this.rightPanelMode, 'previewTabs:', this.previewTabs.length);
+
+      if (this.rightPanelMode === 'closed') {
+        // Opening the panel
+        if (this.previewTabs.length === 0) {
+          this.$message.info('No files to preview. Open an image, PDF, or CSV file.');
+          console.log('🎹 [TOGGLE-PREVIEW] No preview tabs, showing info message');
+        } else {
+          this.rightPanelMode = 'normal';
+          console.log('🎹 [TOGGLE-PREVIEW] Opening panel -> normal');
+        }
       } else {
-        this.rightPanelMode = 'normal';
+        // Closing the panel
+        this.rightPanelMode = 'closed';
+        console.log('🎹 [TOGGLE-PREVIEW] Closing panel -> closed');
       }
     },
     handleOpenFile(filePath) {
@@ -6088,6 +6307,47 @@ body .console-output-area .console-line .console-repl-input span {
   background: var(--bg-active, #1E1E1E);
   color: var(--text-primary, #FFFFFF);
   border-bottom-color: var(--accent-color, #007ACC);
+}
+
+/* Preview tab drag-and-drop styles */
+.preview-tab {
+  cursor: grab;
+  position: relative;
+  transition: transform 0.15s ease, opacity 0.15s ease, background 0.2s ease;
+}
+
+.preview-tab.dragging {
+  opacity: 0.5;
+  cursor: grabbing;
+}
+
+.preview-tab.drop-target-left::before {
+  content: '';
+  position: absolute;
+  left: -2px;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  background: var(--accent-color, #007ACC);
+  border-radius: 2px;
+  animation: preview-pulse 0.5s ease-in-out infinite alternate;
+}
+
+.preview-tab.drop-target-right::after {
+  content: '';
+  position: absolute;
+  right: -2px;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  background: var(--accent-color, #007ACC);
+  border-radius: 2px;
+  animation: preview-pulse 0.5s ease-in-out infinite alternate;
+}
+
+@keyframes preview-pulse {
+  from { opacity: 0.6; }
+  to { opacity: 1; }
 }
 
 .tab-icon {

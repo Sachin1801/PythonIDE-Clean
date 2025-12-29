@@ -3,6 +3,9 @@
     <div class="csv-controls">
       <div class="csv-info">
         <span>{{ rowCount }} rows × {{ columnCount }} columns</span>
+        <span v-if="showLargeFileWarning" class="large-file-warning">
+          ⚠️ Large file - scroll performance may vary
+        </span>
       </div>
       <div class="csv-search" v-if="!isExamMode">
         <input
@@ -12,87 +15,64 @@
         />
       </div>
     </div>
-    <div class="csv-table-wrapper">
-      <table class="csv-table">
-        <thead>
-          <tr>
-            <th class="row-number-header">#</th>
-            <th
-              v-for="(header, index) in displayHeaders"
-              :key="index"
-              :class="['csv-header', { 'sortable': !isExamMode }]"
-              @click="!isExamMode && sortBy(index)"
-            >
-              <div class="header-content">
-                <span>{{ header || `Column ${index + 1}` }}</span>
-                <span v-if="sortColumn === index" class="sort-icon">
-                  {{ sortDirection === 'asc' ? '▲' : '▼' }}
-                </span>
-              </div>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="(row, rowIndex) in paginatedData" :key="rowIndex">
-            <td class="row-number">{{ startRow + rowIndex + 1 }}</td>
-            <td 
-              v-for="(cell, cellIndex) in row" 
-              :key="cellIndex"
-              class="csv-cell"
-              :title="cell"
-            >
-              {{ cell }}
-            </td>
-          </tr>
-        </tbody>
-      </table>
+    <div
+      ref="tableContainer"
+      class="csv-table-wrapper"
+      @scroll="handleScroll"
+    >
+      <!-- Virtual scroll spacer -->
+      <div :style="{ height: totalHeight + 'px', position: 'relative' }">
+        <table
+          class="csv-table"
+          :style="{ transform: `translateY(${offsetY}px)` }"
+        >
+          <thead>
+            <tr>
+              <th class="row-number-header">#</th>
+              <th
+                v-for="(header, index) in displayHeaders"
+                :key="index"
+                :class="['csv-header', { 'sortable': !isExamMode }]"
+                @click="!isExamMode && sortBy(index)"
+              >
+                <div class="header-content">
+                  <span>{{ header || `Column ${index + 1}` }}</span>
+                  <span v-if="sortColumn === index" class="sort-icon">
+                    {{ sortDirection === 'asc' ? '▲' : '▼' }}
+                  </span>
+                </div>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(row, idx) in visibleRows" :key="visibleStartIndex + idx">
+              <td class="row-number">{{ visibleStartIndex + idx + 1 }}</td>
+              <td
+                v-for="(cell, cellIndex) in row"
+                :key="cellIndex"
+                class="csv-cell"
+                :title="cell"
+              >
+                {{ cell }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       <div v-if="filteredData.length === 0" class="no-data">
         No data to display
       </div>
     </div>
-    <div class="csv-pagination" v-if="totalPages > 1">
-      <button 
-        @click="currentPage = 1" 
-        :disabled="currentPage === 1"
-        class="pagination-btn"
-      >
-        First
-      </button>
-      <button 
-        @click="currentPage--" 
-        :disabled="currentPage === 1"
-        class="pagination-btn"
-      >
-        Previous
-      </button>
-      <span class="page-info">
-        Page {{ currentPage }} of {{ totalPages }}
-      </span>
-      <button 
-        @click="currentPage++" 
-        :disabled="currentPage === totalPages"
-        class="pagination-btn"
-      >
-        Next
-      </button>
-      <button 
-        @click="currentPage = totalPages" 
-        :disabled="currentPage === totalPages"
-        class="pagination-btn"
-      >
-        Last
-      </button>
-      <select v-model="rowsPerPage" class="rows-select">
-        <option :value="25">25 rows</option>
-        <option :value="50">50 rows</option>
-        <option :value="100">100 rows</option>
-        <option :value="500">500 rows</option>
-      </select>
+    <!-- Scroll position indicator -->
+    <div class="scroll-info" v-if="filteredData.length > 0">
+      <span>Showing rows {{ visibleStartIndex + 1 }} - {{ Math.min(visibleEndIndex, filteredData.length) }} of {{ filteredData.length }}</span>
     </div>
   </div>
 </template>
 
 <script>
+import { ElMessage } from 'element-plus';
+
 export default {
   props: {
     content: {
@@ -107,8 +87,13 @@ export default {
       searchQuery: '',
       sortColumn: null,
       sortDirection: 'asc',
-      currentPage: 1,
-      rowsPerPage: 100
+      // Virtual scroll state
+      scrollTop: 0,
+      containerHeight: 400,
+      rowHeight: 32, // pixels per row
+      overscan: 5, // extra rows to render above/below viewport
+      showLargeFileWarning: false,
+      resizeObserver: null
     }
   },
   computed: {
@@ -131,20 +116,20 @@ export default {
     },
     parsedData() {
       if (!this.content) return { headers: [], rows: [] };
-      
+
       const lines = this.content.split('\n').filter(line => line.trim());
       if (lines.length === 0) return { headers: [], rows: [] };
-      
+
       // Parse CSV
       const parseCSVLine = (line) => {
         const result = [];
         let current = '';
         let inQuotes = false;
-        
+
         for (let i = 0; i < line.length; i++) {
           const char = line[i];
           const nextChar = line[i + 1];
-          
+
           if (char === '"') {
             if (inQuotes && nextChar === '"') {
               current += '"';
@@ -162,57 +147,65 @@ export default {
         result.push(current.trim());
         return result;
       };
-      
+
       const headers = parseCSVLine(lines[0]);
       const rows = lines.slice(1).map(line => parseCSVLine(line));
-      
+
       return { headers, rows };
     },
     filteredData() {
       let data = this.parsedData.rows;
-      
+
       // Search filter
       if (this.searchQuery) {
         const query = this.searchQuery.toLowerCase();
-        data = data.filter(row => 
-          row.some(cell => 
+        data = data.filter(row =>
+          row.some(cell =>
             cell.toString().toLowerCase().includes(query)
           )
         );
       }
-      
+
       // Sort
       if (this.sortColumn !== null) {
         data = [...data].sort((a, b) => {
           const aVal = a[this.sortColumn] || '';
           const bVal = b[this.sortColumn] || '';
-          
+
           // Try to parse as numbers
           const aNum = parseFloat(aVal);
           const bNum = parseFloat(bVal);
-          
+
           if (!isNaN(aNum) && !isNaN(bNum)) {
             return this.sortDirection === 'asc' ? aNum - bNum : bNum - aNum;
           }
-          
+
           // Sort as strings
           const result = aVal.toString().localeCompare(bVal.toString());
           return this.sortDirection === 'asc' ? result : -result;
         });
       }
-      
+
       return data;
     },
-    totalPages() {
-      return Math.ceil(this.filteredData.length / this.rowsPerPage);
+    totalRows() {
+      return this.filteredData.length;
     },
-    startRow() {
-      return (this.currentPage - 1) * this.rowsPerPage;
+    totalHeight() {
+      return this.totalRows * this.rowHeight;
     },
-    paginatedData() {
-      const start = this.startRow;
-      const end = start + this.rowsPerPage;
-      return this.filteredData.slice(start, end);
+    visibleStartIndex() {
+      return Math.max(0, Math.floor(this.scrollTop / this.rowHeight) - this.overscan);
+    },
+    visibleEndIndex() {
+      const visibleCount = Math.ceil(this.containerHeight / this.rowHeight);
+      return Math.min(this.totalRows, this.visibleStartIndex + visibleCount + this.overscan * 2);
+    },
+    visibleRows() {
+      return this.filteredData.slice(this.visibleStartIndex, this.visibleEndIndex);
+    },
+    offsetY() {
+      return this.visibleStartIndex * this.rowHeight;
     },
     rowCount() {
       return this.parsedData.rows.length;
@@ -222,31 +215,77 @@ export default {
     },
     displayHeaders() {
       return this.parsedData.headers;
-    },
-    displayRows() {
-      return this.parsedData.rows;
     }
   },
   watch: {
     content() {
-      this.currentPage = 1;
+      this.scrollTop = 0;
       this.sortColumn = null;
       this.sortDirection = 'asc';
+      this.checkLargeFile();
+      // Reset scroll position
+      if (this.$refs.tableContainer) {
+        this.$refs.tableContainer.scrollTop = 0;
+      }
     },
     searchQuery() {
-      this.currentPage = 1;
-    },
-    rowsPerPage() {
-      this.currentPage = 1;
+      this.scrollTop = 0;
+      if (this.$refs.tableContainer) {
+        this.$refs.tableContainer.scrollTop = 0;
+      }
+    }
+  },
+  mounted() {
+    this.initContainerHeight();
+    this.setupResizeObserver();
+    this.checkLargeFile();
+  },
+  beforeUnmount() {
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
     }
   },
   methods: {
+    handleScroll(e) {
+      this.scrollTop = e.target.scrollTop;
+    },
+    initContainerHeight() {
+      if (this.$refs.tableContainer) {
+        this.containerHeight = this.$refs.tableContainer.clientHeight || 400;
+      }
+    },
+    setupResizeObserver() {
+      if (typeof ResizeObserver !== 'undefined' && this.$refs.tableContainer) {
+        this.resizeObserver = new ResizeObserver(entries => {
+          for (const entry of entries) {
+            this.containerHeight = entry.contentRect.height || 400;
+          }
+        });
+        this.resizeObserver.observe(this.$refs.tableContainer);
+      }
+    },
+    checkLargeFile() {
+      if (this.parsedData.rows.length > 10000) {
+        this.showLargeFileWarning = true;
+        ElMessage.warning({
+          message: `Large CSV file: ${this.parsedData.rows.length.toLocaleString()} rows. Using virtual scrolling for better performance.`,
+          duration: 4000
+        });
+      } else {
+        this.showLargeFileWarning = false;
+      }
+    },
     sortBy(columnIndex) {
       if (this.sortColumn === columnIndex) {
         this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
       } else {
         this.sortColumn = columnIndex;
         this.sortDirection = 'asc';
+      }
+      // Reset scroll to top when sorting
+      this.scrollTop = 0;
+      if (this.$refs.tableContainer) {
+        this.$refs.tableContainer.scrollTop = 0;
       }
     }
   }
@@ -262,7 +301,7 @@ export default {
   background: var(--bg-primary, #1e1e1e);
   color: var(--text-primary, #cccccc);
   position: relative;
-  overflow: hidden; /* Prevent container overflow */
+  overflow: hidden;
 }
 
 .csv-controls {
@@ -272,11 +311,20 @@ export default {
   padding: 10px;
   background: var(--bg-secondary, #252526);
   border-bottom: 1px solid var(--border-color, #3e3e42);
+  flex-shrink: 0;
 }
 
 .csv-info {
   font-size: 14px;
   color: var(--text-secondary, #969696);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.large-file-warning {
+  color: #f0ad4e;
+  font-size: 12px;
 }
 
 .search-input {
@@ -295,15 +343,13 @@ export default {
 
 .csv-table-wrapper {
   flex: 1;
-  overflow: auto; /* Enable both horizontal and vertical scrolling */
+  overflow: auto;
   position: relative;
   width: 100%;
-  min-height: 0; /* Important for flexbox overflow */
-  display: block;
-  margin-bottom: 10px; /* Add some space at bottom to ensure scrollbar is accessible */
+  min-height: 0;
 }
 
-/* Custom scrollbar styling for better visibility */
+/* Custom scrollbar styling */
 .csv-table-wrapper::-webkit-scrollbar {
   width: 12px;
   height: 12px;
@@ -328,13 +374,15 @@ export default {
 }
 
 .csv-table {
-  width: max-content; /* This ensures table is as wide as its content */
+  width: max-content;
   min-width: 100%;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 13px;
   table-layout: auto;
-  display: table;
+  position: absolute;
+  top: 0;
+  left: 0;
 }
 
 .csv-table thead {
@@ -352,8 +400,10 @@ export default {
   font-weight: 600;
   user-select: none;
   white-space: nowrap;
-  min-width: 150px; /* Increased minimum width for better visibility */
+  min-width: 150px;
   position: relative;
+  height: 32px;
+  box-sizing: border-box;
 }
 
 .csv-table th.sortable {
@@ -394,11 +444,13 @@ export default {
   padding: 6px 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   border-right: 1px solid rgba(255, 255, 255, 0.05);
-  min-width: 150px; /* Match header min-width */
+  min-width: 150px;
   max-width: 400px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  height: 32px;
+  box-sizing: border-box;
 }
 
 .csv-table tbody tr:hover {
@@ -431,48 +483,16 @@ export default {
   color: var(--text-secondary, #969696);
 }
 
-.csv-pagination {
+.scroll-info {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  padding: 10px;
+  padding: 8px;
   background: var(--bg-secondary, #252526);
   border-top: 1px solid var(--border-color, #3e3e42);
-}
-
-.pagination-btn {
-  padding: 6px 12px;
-  background: var(--bg-primary, #1e1e1e);
-  border: 1px solid var(--border-color, #3e3e42);
-  color: var(--text-primary, #cccccc);
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.pagination-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: #007acc;
-}
-
-.pagination-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.page-info {
-  font-size: 14px;
+  font-size: 12px;
   color: var(--text-secondary, #969696);
-}
-
-.rows-select {
-  padding: 6px 12px;
-  background: var(--bg-primary, #1e1e1e);
-  border: 1px solid var(--border-color, #3e3e42);
-  color: var(--text-primary, #cccccc);
-  border-radius: 4px;
-  cursor: pointer;
+  flex-shrink: 0;
 }
 
 /* Light theme support */
@@ -483,13 +503,11 @@ export default {
 
 [data-theme="light"] .csv-controls,
 [data-theme="light"] .csv-table thead,
-[data-theme="light"] .csv-pagination {
+[data-theme="light"] .scroll-info {
   background: #f3f3f3;
 }
 
-[data-theme="light"] .search-input,
-[data-theme="light"] .pagination-btn,
-[data-theme="light"] .rows-select {
+[data-theme="light"] .search-input {
   background: #ffffff;
   border-color: #d4d4d4;
   color: #333333;
@@ -510,5 +528,9 @@ export default {
 
 [data-theme="light"] .csv-table tbody tr:nth-child(even) {
   background: rgba(0, 0, 0, 0.02);
+}
+
+[data-theme="light"] .large-file-warning {
+  color: #856404;
 }
 </style>

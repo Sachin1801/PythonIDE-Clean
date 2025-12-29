@@ -53,8 +53,8 @@
     <div v-if="contextMenu.visible" 
          class="context-menu" 
          :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }">
-      <div class="menu-item" @click="handleMenuAction('openInRightPanel', contextMenu.data)" v-if="contextMenu.data.type === 'file' && isPreviewFile(contextMenu.data)">
-        <span>Open in Right Panel</span>
+      <div class="menu-item" @click="handleMenuAction('openInEditor', contextMenu.data)" v-if="contextMenu.data.type === 'file' && isPreviewFile(contextMenu.data)">
+        <span>Open in Editor</span>
       </div>
       <div class="menu-divider" v-if="contextMenu.data.type === 'file' && isPreviewFile(contextMenu.data)"></div>
       <div class="menu-item" 
@@ -79,8 +79,8 @@
     <div v-if="dropdown.visible" 
          class="dropdown-menu" 
          :style="{ left: dropdown.x + 'px', top: dropdown.y + 'px' }">
-      <div class="menu-item" @click="handleMenuAction('openInRightPanel', dropdown.data)" v-if="dropdown.data.type === 'file' && isPreviewFile(dropdown.data)">
-        <span>Open in Right Panel</span>
+      <div class="menu-item" @click="handleMenuAction('openInEditor', dropdown.data)" v-if="dropdown.data.type === 'file' && isPreviewFile(dropdown.data)">
+        <span>Open in Editor</span>
       </div>
       <div class="menu-divider" v-if="dropdown.data.type === 'file' && isPreviewFile(dropdown.data)"></div>
       <div class="menu-item" 
@@ -152,7 +152,8 @@ export default {
     isPreviewFile(data) {
       if (!data || data.type !== 'file') return false;
       const path = data.path || '';
-      const previewExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.webp', '.pdf', '.csv'];
+      // Preview files: images, PDFs, CSVs, and plain text files (but NOT .py files)
+      const previewExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.webp', '.pdf', '.csv', '.txt'];
       return previewExtensions.some(ext => path.toLowerCase().endsWith(ext));
     },
     handleNewFile() {
@@ -484,9 +485,9 @@ export default {
             this.$emit('get-item', data.path, false, data.projectName); // path, save, projectName
           }
           break;
-        case 'openInRightPanel':
+        case 'openInEditor':
           if (data.type === 'file') {
-            this.$emit('get-item-right-panel', data.path, data.projectName); // Special event for right panel
+            this.$emit('open-in-editor', data.path, data.projectName); // Open in editor/fullscreen instead of right panel
           }
           break;
         case 'rename':

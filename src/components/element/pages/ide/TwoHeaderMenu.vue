@@ -577,9 +577,10 @@ export default {
       }
       // Ctrl+Shift+P - Toggle Preview Panel (not Ctrl+P to avoid print dialog)
       if (e.ctrlKey && e.shiftKey && e.key === 'P') {
+        console.log('🎹 [SHORTCUT] Ctrl+Shift+P - Toggle Preview Panel');
         e.preventDefault();
         e.stopPropagation();
-        this.togglePreviewPanel();
+        this.$emit('toggle-preview-panel');
         return;
       }
       // Ctrl+B - Toggle Sidebar
@@ -605,6 +606,42 @@ export default {
         this.openSettings();
         return;
       }
+
+      // Tab Navigation - Alt+Arrow (Option+Arrow on Mac)
+      if (e.altKey && !e.ctrlKey && !e.shiftKey && !e.metaKey) {
+        console.log('🎹 [TAB-NAV] Alt key detected, key:', e.key, 'code:', e.code);
+
+        if (e.key === 'ArrowLeft') {
+          console.log('🎹 [TAB-NAV] Navigate to previous tab');
+          e.preventDefault();
+          e.stopPropagation();
+          this.$emit('navigate-tab', 'previous');
+          return;
+        }
+        if (e.key === 'ArrowRight') {
+          console.log('🎹 [TAB-NAV] Navigate to next tab');
+          e.preventDefault();
+          e.stopPropagation();
+          this.$emit('navigate-tab', 'next');
+          return;
+        }
+
+        // Direct tab access - Alt+1-6 (Option+1-6 on Mac)
+        // On Mac, Option+number produces special characters, so we use e.code instead of e.key
+        // e.code gives us 'Digit1', 'Digit2', etc. regardless of what character is produced
+        const digitMatch = e.code.match(/^Digit([1-6])$/);
+        if (digitMatch) {
+          const tabIndex = parseInt(digitMatch[1]) - 1;
+          console.log('🎹 [TAB-NAV] Jump to tab index:', tabIndex, '(code:', e.code, ')');
+          e.preventDefault();
+          e.stopPropagation();
+          this.$emit('jump-to-tab', tabIndex);
+          return;
+        }
+      }
+
+      // NOTE: Cmd+W / Ctrl+W to close tab has been REMOVED
+      // This was causing issues on Mac (closing browser tabs) and was not desired behavior
     },
     newFile() {
       this.closeDropdowns();
@@ -853,8 +890,8 @@ export default {
     },
     togglePreviewPanel() {
       this.closeDropdowns();
-      this.previewPanelVisible = !this.previewPanelVisible;
-      this.$emit('toggle-preview-panel', this.previewPanelVisible);
+      console.log('🎹 [MENU] Toggle Preview Panel clicked');
+      this.$emit('toggle-preview-panel');
     },
     toggleSidebar() {
       this.closeDropdowns();

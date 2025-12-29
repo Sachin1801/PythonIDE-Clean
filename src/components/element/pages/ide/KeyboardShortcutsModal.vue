@@ -3,7 +3,7 @@
     <div v-if="modelValue" class="modal-overlay" @click.self="close">
       <div class="modal-container">
         <div class="modal-header">
-          <h2>Keyboard Shortcuts (Universal for Mac/Windows/Linux)</h2>
+          <h2>Keyboard Shortcuts {{ isMac ? '(Mac)' : '(Windows/Linux)' }}</h2>
           <button class="close-btn" @click="close">
             <X :size="20" />
           </button>
@@ -119,6 +119,25 @@
             </div>
           </div>
 
+          <!-- Tab Navigation -->
+          <div class="shortcut-section">
+            <h3>Tab Navigation</h3>
+            <div class="shortcut-list">
+              <div class="shortcut-item">
+                <span class="shortcut-action">Previous Tab</span>
+                <span class="shortcut-keys">{{ formatKey('Alt') }}+←</span>
+              </div>
+              <div class="shortcut-item">
+                <span class="shortcut-action">Next Tab</span>
+                <span class="shortcut-keys">{{ formatKey('Alt') }}+→</span>
+              </div>
+              <div class="shortcut-item">
+                <span class="shortcut-action">Go to Tab 1-6</span>
+                <span class="shortcut-keys">{{ formatKey('Alt') }}+1-6</span>
+              </div>
+            </div>
+          </div>
+
           <!-- General -->
           <div class="shortcut-section">
             <h3>General</h3>
@@ -153,9 +172,24 @@ export default {
   components: {
     X
   },
+  computed: {
+    isMac() {
+      return navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+    }
+  },
   methods: {
     close() {
       this.$emit('update:modelValue', false);
+    },
+    formatKey(key) {
+      if (this.isMac) {
+        // Convert to Mac symbols
+        return key
+          .replace('Ctrl', '⌘')
+          .replace('Alt', '⌥')
+          .replace('Shift', '⇧');
+      }
+      return key;
     }
   },
   mounted() {

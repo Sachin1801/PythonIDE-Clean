@@ -4,6 +4,7 @@ node_modules
 
 # local env files - ALL environment files should be ignored
 .env*
+!.env.example
 .env.local
 .env.*.local
 .env.development
@@ -66,3 +67,5 @@ server/.venv
 # Test files
 matplotlibSavefig.py
 LOCAL_TEST_ACCOUNTS.md
+
+docs/

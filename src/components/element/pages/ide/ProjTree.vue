@@ -50,13 +50,9 @@
     </el-tree>
     
     <!-- Context Menu -->
-    <div v-if="contextMenu.visible" 
-         class="context-menu" 
+    <div v-if="contextMenu.visible"
+         class="context-menu"
          :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }">
-      <div class="menu-item" @click="handleMenuAction('openInEditor', contextMenu.data)" v-if="contextMenu.data.type === 'file' && isPreviewFile(contextMenu.data)">
-        <span>Open in Editor</span>
-      </div>
-      <div class="menu-divider" v-if="contextMenu.data.type === 'file' && isPreviewFile(contextMenu.data)"></div>
       <div class="menu-item" 
            :class="{ disabled: !canRenameOrDelete(contextMenu.data) }"
            @click="canRenameOrDelete(contextMenu.data) && handleMenuAction('rename', contextMenu.data)"
@@ -76,13 +72,9 @@
     </div>
     
     <!-- Dropdown Menu -->
-    <div v-if="dropdown.visible" 
-         class="dropdown-menu" 
+    <div v-if="dropdown.visible"
+         class="dropdown-menu"
          :style="{ left: dropdown.x + 'px', top: dropdown.y + 'px' }">
-      <div class="menu-item" @click="handleMenuAction('openInEditor', dropdown.data)" v-if="dropdown.data.type === 'file' && isPreviewFile(dropdown.data)">
-        <span>Open in Editor</span>
-      </div>
-      <div class="menu-divider" v-if="dropdown.data.type === 'file' && isPreviewFile(dropdown.data)"></div>
       <div class="menu-item" 
            :class="{ disabled: !canRenameOrDelete(dropdown.data) }"
            @click="canRenameOrDelete(dropdown.data) && handleMenuAction('rename', dropdown.data)"
@@ -483,11 +475,6 @@ export default {
         case 'open':
           if (data.type === 'file') {
             this.$emit('get-item', data.path, false, data.projectName); // path, save, projectName
-          }
-          break;
-        case 'openInEditor':
-          if (data.type === 'file') {
-            this.$emit('open-in-editor', data.path, data.projectName); // Open in editor/fullscreen instead of right panel
           }
           break;
         case 'rename':

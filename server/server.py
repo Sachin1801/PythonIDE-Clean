@@ -25,7 +25,8 @@ from handlers.auth_handler import (
     ForgotPasswordHandler,
     ResetPasswordHandler,
 )
-from handlers.admin_handler import get_admin_handlers
+from handlers.admin_handler import get_admin_handlers as get_legacy_admin_handlers
+from handlers.admin import get_admin_handlers as get_new_admin_handlers
 from handlers.migration_handler import get_migration_handler  # TEMPORARY - REMOVE AFTER MIGRATION
 from handlers.upload_handler import UploadFileHandler
 from handlers.bulk_upload_handler import BulkUploadHandler
@@ -283,7 +284,8 @@ def main():
         (r"/api/bulk-upload", BulkUploadHandler),
         (r"/api/get-all-students", StudentListHandler),
         (r"/static/(.*)", StaticFileHandler, {"path": static_path}),  # Serve static files (CSS, JS, etc)
-        *get_admin_handlers(),  # Admin password management endpoints
+        *get_legacy_admin_handlers(),  # Legacy admin password management endpoints
+        *get_new_admin_handlers(),  # New admin panel endpoints (for admin.pythonide-classroom.tech)
         get_migration_handler(),  # TEMPORARY migration endpoint - REMOVE AFTER USE
         (r"^.*$", VueHandler),
     ]

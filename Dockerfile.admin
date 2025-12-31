@@ -1,0 +1,69 @@
+# Dockerfile for Admin Panel
+# Build: docker build -f Dockerfile.admin -t pythonide-admin .
+
+# Stage 1: Frontend build (Admin Panel)
+FROM node:18-alpine AS frontend-builder
+
+WORKDIR /app
+
+# Copy frontend package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy frontend source (including admin)
+COPY src/ ./src/
+COPY public/ ./public/
+COPY vue.config.js ./
+COPY babel.config.js ./
+
+# Build ADMIN frontend (not main IDE)
+ENV BUILD_TARGET=admin
+RUN npm run build:admin
+
+# Stage 2: Python runtime
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy and install Python dependencies
+COPY server/requirements.txt ./server/
+RUN pip install --no-cache-dir -r server/requirements.txt
+
+# Copy server code
+COPY server/ ./server/
+
+# Copy deployment scripts
+COPY deployment/ ./deployment/
+
+# Copy built ADMIN frontend from previous stage
+COPY --from=frontend-builder /app/dist/ ./dist/
+
+# Create mount points
+RUN mkdir -p /tmp/pythonide-data/ide /mnt/efs/pythonide-data/ide /app/server/projects/ide
+
+# Set environment variables
+ENV PORT=8080
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
+ENV IDE_DATA_PATH=/app/server/projects
+ENV IS_ADMIN_MODE=true
+ENV MPLBACKEND=Agg
+
+EXPOSE 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+WORKDIR /app/server
+
+# Start the server (admin mode)
+CMD ["sh", "-c", "echo 'Starting Admin Panel...' && python server.py"]

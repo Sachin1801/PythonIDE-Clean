@@ -5,12 +5,36 @@ const Components = require('unplugin-vue-components/webpack')
 const { ElementPlusResolver } = require('unplugin-vue-components/resolvers')
 const NodePolyfillPlugin = require('node-polyfill-webpack-plugin')
 
+// Determine which app to build based on environment variable
+const buildTarget = process.env.BUILD_TARGET || 'ide'
+
+// Multi-page configuration for admin panel
+const pagesConfig = buildTarget === 'admin' ? {
+  // Admin Panel Build
+  admin: {
+    entry: 'src/admin/main.js',
+    template: 'public/admin.html',
+    filename: 'templates/index.html',
+    title: 'Admin Panel - Python IDE',
+    chunks: ['chunk-vendors', 'chunk-common', 'admin']
+  }
+} : {
+  // Main IDE Build (default)
+  index: {
+    entry: 'src/main.js',
+    template: 'public/index.html',
+    filename: 'templates/index.html',
+    title: 'Python Web IDE',
+    chunks: ['chunk-vendors', 'chunk-common', 'index']
+  }
+}
+
 module.exports = defineConfig({
   publicPath: process.env.NODE_ENV === 'production' ? './' : '/',
   outputDir: 'dist',
-  indexPath: 'templates/index.html',
   assetsDir: 'static',
   productionSourceMap: false,
+  pages: pagesConfig,
   devServer: {
     client: {
       webSocketURL: {
@@ -35,14 +59,6 @@ module.exports = defineConfig({
         }
       }
     }
-  },
-  chainWebpack: config => {
-    config
-      .plugin('html')
-      .tap(args => {
-        args[0].title = 'Python Web IDE'  // Change this to your desired title
-        return args
-      })
   },
   css: {
     extract: true,

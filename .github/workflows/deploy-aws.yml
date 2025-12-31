@@ -1,4 +1,4 @@
-name: Deploy to AWS ECS (Main + Exam IDE)
+name: Deploy to AWS ECS (Main + Exam + Admin)
 
 on:
   push:
@@ -9,16 +9,20 @@ env:
   AWS_REGION: us-east-2
   ECR_REPOSITORY_MAIN: pythonide-backend
   ECR_REPOSITORY_EXAM: pythonide-exam
+  ECR_REPOSITORY_ADMIN: pythonide-admin
   ECS_CLUSTER: pythonide-cluster
   # Main IDE service
   ECS_SERVICE_MAIN: pythonide-service
   # Exam IDE service
   ECS_SERVICE_EXAM: pythonide-exam-task-service
+  # Admin Panel service
+  ECS_SERVICE_ADMIN: pythonide-admin-service
   ECS_TASK_DEFINITION: .github/ecs-task-definition.json
+  ECS_TASK_DEFINITION_ADMIN: .github/ecs-task-definition-admin.json
 
 jobs:
   deploy:
-    name: Deploy to Main + Exam IDE
+    name: Deploy to Main + Exam + Admin
     runs-on: ubuntu-latest
 
     steps:
@@ -36,7 +40,8 @@ jobs:
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
 
-    - name: Build, tag, and push image to Amazon ECR
+    # ==================== MAIN + EXAM IDE BUILD ====================
+    - name: Build, tag, and push Main IDE image
       id: build-image
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -58,7 +63,31 @@ jobs:
 
         echo "image=$ECR_REGISTRY/$ECR_REPOSITORY_MAIN:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
-    - name: Fill in the new image ID in the Amazon ECS task definition
+    # ==================== ADMIN PANEL BUILD ====================
+    - name: Ensure Admin ECR Repository Exists
+      run: |
+        aws ecr describe-repositories --repository-names $ECR_REPOSITORY_ADMIN --region $AWS_REGION 2>/dev/null || \
+        aws ecr create-repository --repository-name $ECR_REPOSITORY_ADMIN --region $AWS_REGION
+        echo "Admin ECR repository ready"
+
+    - name: Build, tag, and push Admin Panel image
+      id: build-admin-image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        # Build Admin Docker image using Dockerfile.admin
+        docker build --platform linux/amd64 -f Dockerfile.admin -t $ECR_REGISTRY/$ECR_REPOSITORY_ADMIN:$IMAGE_TAG .
+        docker tag $ECR_REGISTRY/$ECR_REPOSITORY_ADMIN:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY_ADMIN:latest
+
+        # Push to Admin ECR repository
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY_ADMIN:$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY_ADMIN:latest
+
+        echo "admin_image=$ECR_REGISTRY/$ECR_REPOSITORY_ADMIN:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+    # ==================== MAIN IDE DEPLOYMENT ====================
+    - name: Fill in the new image ID in Main ECS task definition
       id: task-def
       uses: aws-actions/amazon-ecs-render-task-definition@v1
       with:
@@ -66,7 +95,6 @@ jobs:
         container-name: pythonide-backend
         image: ${{ steps.build-image.outputs.image }}
 
-    # ==================== MAIN IDE DEPLOYMENT ====================
     - name: Deploy to Main IDE (pythonide-service)
       uses: aws-actions/amazon-ecs-deploy-task-definition@v1
       with:
@@ -77,9 +105,8 @@ jobs:
 
     - name: Ensure Auto-Scaling Configuration (Main IDE)
       run: |
-        echo "🎯 Verifying auto-scaling for Main IDE..."
+        echo "Verifying auto-scaling for Main IDE..."
 
-        # Check if auto-scaling target exists
         SCALING_TARGET=$(aws application-autoscaling describe-scalable-targets \
           --service-namespace ecs \
           --resource-ids "service/${{ env.ECS_CLUSTER }}/${{ env.ECS_SERVICE_MAIN }}" \
@@ -88,9 +115,8 @@ jobs:
           --output text 2>/dev/null) || SCALING_TARGET="None"
 
         if [ "$SCALING_TARGET" = "None" ] || [ "$SCALING_TARGET" = "" ]; then
-          echo "⚠️ Auto-scaling not configured for Main IDE. Setting up now..."
+          echo "Setting up auto-scaling for Main IDE..."
 
-          # Register scalable target
           aws application-autoscaling register-scalable-target \
             --service-namespace ecs \
             --resource-id "service/${{ env.ECS_CLUSTER }}/${{ env.ECS_SERVICE_MAIN }}" \
@@ -99,7 +125,6 @@ jobs:
             --max-capacity 6 \
             --region ${{ env.AWS_REGION }}
 
-          # Create scaling policy
           aws application-autoscaling put-scaling-policy \
             --policy-name "pythonide-main-cpu-scaling-policy" \
             --service-namespace ecs \
@@ -116,34 +141,33 @@ jobs:
             }' \
             --region ${{ env.AWS_REGION }}
 
-          echo "✅ Main IDE auto-scaling configured"
+          echo "Main IDE auto-scaling configured"
         else
-          echo "✅ Main IDE auto-scaling already configured"
+          echo "Main IDE auto-scaling already configured"
         fi
 
     # ==================== EXAM IDE DEPLOYMENT ====================
     - name: Deploy to Exam IDE (pythonide-exam-task-service)
       run: |
-        echo "🎓 Deploying to Exam IDE..."
+        echo "Deploying to Exam IDE..."
         aws ecs update-service \
           --cluster ${{ env.ECS_CLUSTER }} \
           --service ${{ env.ECS_SERVICE_EXAM }} \
           --force-new-deployment \
           --region ${{ env.AWS_REGION }}
 
-        echo "⏳ Waiting for Exam IDE deployment to stabilize..."
+        echo "Waiting for Exam IDE deployment to stabilize..."
         aws ecs wait services-stable \
           --cluster ${{ env.ECS_CLUSTER }} \
           --services ${{ env.ECS_SERVICE_EXAM }} \
           --region ${{ env.AWS_REGION }}
 
-        echo "✅ Exam IDE deployment complete"
+        echo "Exam IDE deployment complete"
 
     - name: Ensure Auto-Scaling Configuration (Exam IDE)
       run: |
-        echo "🎯 Verifying auto-scaling for Exam IDE..."
+        echo "Verifying auto-scaling for Exam IDE..."
 
-        # Check if auto-scaling target exists for exam IDE
         SCALING_TARGET=$(aws application-autoscaling describe-scalable-targets \
           --service-namespace ecs \
           --resource-ids "service/${{ env.ECS_CLUSTER }}/${{ env.ECS_SERVICE_EXAM }}" \
@@ -152,9 +176,8 @@ jobs:
           --output text 2>/dev/null) || SCALING_TARGET="None"
 
         if [ "$SCALING_TARGET" = "None" ] || [ "$SCALING_TARGET" = "" ]; then
-          echo "⚠️ Auto-scaling not configured for Exam IDE. Setting up now..."
+          echo "Setting up auto-scaling for Exam IDE..."
 
-          # Register scalable target for exam IDE
           aws application-autoscaling register-scalable-target \
             --service-namespace ecs \
             --resource-id "service/${{ env.ECS_CLUSTER }}/${{ env.ECS_SERVICE_EXAM }}" \
@@ -163,7 +186,6 @@ jobs:
             --max-capacity 4 \
             --region ${{ env.AWS_REGION }}
 
-          # Create scaling policy for exam IDE
           aws application-autoscaling put-scaling-policy \
             --policy-name "pythonide-exam-cpu-scaling-policy" \
             --service-namespace ecs \
@@ -180,18 +202,243 @@ jobs:
             }' \
             --region ${{ env.AWS_REGION }}
 
-          echo "✅ Exam IDE auto-scaling configured"
+          echo "Exam IDE auto-scaling configured"
         else
-          echo "✅ Exam IDE auto-scaling already configured"
+          echo "Exam IDE auto-scaling already configured"
+        fi
+
+    # ==================== ADMIN PANEL DEPLOYMENT ====================
+    - name: Setup Admin Panel Infrastructure
+      id: admin-infra
+      run: |
+        echo "Setting up Admin Panel infrastructure..."
+
+        # Create CloudWatch log group if not exists
+        aws logs create-log-group --log-group-name /ecs/pythonide-admin --region $AWS_REGION 2>/dev/null || echo "Log group exists"
+
+        # Get VPC and Subnets from existing service
+        VPC_ID=$(aws ec2 describe-vpcs --filters "Name=isDefault,Values=true" --query 'Vpcs[0].VpcId' --output text --region $AWS_REGION)
+        SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" --query 'Subnets[*].SubnetId' --output text --region $AWS_REGION | tr '\t' ',')
+
+        # Get security group from main service
+        SECURITY_GROUP=$(aws ecs describe-services --cluster $ECS_CLUSTER --services $ECS_SERVICE_MAIN \
+          --query 'services[0].networkConfiguration.awsvpcConfiguration.securityGroups[0]' --output text --region $AWS_REGION)
+
+        echo "VPC: $VPC_ID"
+        echo "Subnets: $SUBNETS"
+        echo "Security Group: $SECURITY_GROUP"
+
+        echo "vpc_id=$VPC_ID" >> $GITHUB_OUTPUT
+        echo "subnets=$SUBNETS" >> $GITHUB_OUTPUT
+        echo "security_group=$SECURITY_GROUP" >> $GITHUB_OUTPUT
+
+        # Get ALB ARN
+        ALB_ARN=$(aws elbv2 describe-load-balancers --names pythonide-alb \
+          --query 'LoadBalancers[0].LoadBalancerArn' --output text --region $AWS_REGION 2>/dev/null) || ALB_ARN=""
+
+        if [ -z "$ALB_ARN" ] || [ "$ALB_ARN" = "None" ]; then
+          # Try to find any ALB with pythonide in the name
+          ALB_ARN=$(aws elbv2 describe-load-balancers \
+            --query 'LoadBalancers[?contains(LoadBalancerName, `pythonide`)].LoadBalancerArn' --output text --region $AWS_REGION | head -1)
+        fi
+
+        echo "ALB ARN: $ALB_ARN"
+        echo "alb_arn=$ALB_ARN" >> $GITHUB_OUTPUT
+
+    - name: Create Admin Target Group
+      id: admin-tg
+      run: |
+        # Check if target group exists
+        TG_ARN=$(aws elbv2 describe-target-groups --names pythonide-admin-tg \
+          --query 'TargetGroups[0].TargetGroupArn' --output text --region $AWS_REGION 2>/dev/null) || TG_ARN=""
+
+        if [ -z "$TG_ARN" ] || [ "$TG_ARN" = "None" ]; then
+          echo "Creating Admin target group..."
+          TG_ARN=$(aws elbv2 create-target-group \
+            --name pythonide-admin-tg \
+            --protocol HTTP \
+            --port 8080 \
+            --vpc-id ${{ steps.admin-infra.outputs.vpc_id }} \
+            --target-type ip \
+            --health-check-path /health \
+            --health-check-interval-seconds 30 \
+            --health-check-timeout-seconds 5 \
+            --healthy-threshold-count 2 \
+            --unhealthy-threshold-count 3 \
+            --query 'TargetGroups[0].TargetGroupArn' \
+            --output text \
+            --region $AWS_REGION)
+          echo "Created target group: $TG_ARN"
+        else
+          echo "Target group exists: $TG_ARN"
+        fi
+
+        echo "tg_arn=$TG_ARN" >> $GITHUB_OUTPUT
+
+    - name: Create Admin ALB Listener Rule
+      run: |
+        # Get HTTPS listener ARN
+        LISTENER_ARN=$(aws elbv2 describe-listeners \
+          --load-balancer-arn ${{ steps.admin-infra.outputs.alb_arn }} \
+          --query 'Listeners[?Port==`443`].ListenerArn' --output text --region $AWS_REGION 2>/dev/null)
+
+        if [ -z "$LISTENER_ARN" ] || [ "$LISTENER_ARN" = "None" ]; then
+          # Try HTTP listener
+          LISTENER_ARN=$(aws elbv2 describe-listeners \
+            --load-balancer-arn ${{ steps.admin-infra.outputs.alb_arn }} \
+            --query 'Listeners[?Port==`80`].ListenerArn' --output text --region $AWS_REGION)
+        fi
+
+        echo "Listener ARN: $LISTENER_ARN"
+
+        # Check if rule already exists for admin subdomain
+        EXISTING_RULE=$(aws elbv2 describe-rules --listener-arn $LISTENER_ARN \
+          --query "Rules[?Conditions[?Values[?contains(@, 'admin.pythonide')]]]" --output text --region $AWS_REGION 2>/dev/null) || EXISTING_RULE=""
+
+        if [ -z "$EXISTING_RULE" ]; then
+          echo "Creating ALB listener rule for admin.pythonide-classroom.tech..."
+
+          # Get highest priority and add 1
+          MAX_PRIORITY=$(aws elbv2 describe-rules --listener-arn $LISTENER_ARN \
+            --query 'max(Rules[?Priority!=`default`].Priority)' --output text --region $AWS_REGION)
+
+          if [ "$MAX_PRIORITY" = "None" ] || [ -z "$MAX_PRIORITY" ]; then
+            NEW_PRIORITY=10
+          else
+            NEW_PRIORITY=$((MAX_PRIORITY + 10))
+          fi
+
+          aws elbv2 create-rule \
+            --listener-arn $LISTENER_ARN \
+            --priority $NEW_PRIORITY \
+            --conditions '[{"Field":"host-header","Values":["admin.pythonide-classroom.tech"]}]' \
+            --actions '[{"Type":"forward","TargetGroupArn":"${{ steps.admin-tg.outputs.tg_arn }}"}]' \
+            --region $AWS_REGION
+
+          echo "Created ALB rule with priority $NEW_PRIORITY"
+        else
+          echo "ALB rule for admin subdomain already exists"
+        fi
+
+    - name: Fill in Admin ECS task definition
+      id: admin-task-def
+      uses: aws-actions/amazon-ecs-render-task-definition@v1
+      with:
+        task-definition: ${{ env.ECS_TASK_DEFINITION_ADMIN }}
+        container-name: pythonide-admin
+        image: ${{ steps.build-admin-image.outputs.admin_image }}
+
+    - name: Deploy Admin Panel ECS Service
+      run: |
+        # Check if service exists
+        SERVICE_STATUS=$(aws ecs describe-services --cluster $ECS_CLUSTER --services $ECS_SERVICE_ADMIN \
+          --query 'services[0].status' --output text --region $AWS_REGION 2>/dev/null) || SERVICE_STATUS="MISSING"
+
+        # Register task definition first
+        TASK_DEF_ARN=$(aws ecs register-task-definition \
+          --cli-input-json file://${{ steps.admin-task-def.outputs.task-definition }} \
+          --query 'taskDefinition.taskDefinitionArn' --output text --region $AWS_REGION)
+
+        echo "Registered task definition: $TASK_DEF_ARN"
+
+        if [ "$SERVICE_STATUS" = "ACTIVE" ]; then
+          echo "Updating existing Admin service..."
+          aws ecs update-service \
+            --cluster $ECS_CLUSTER \
+            --service $ECS_SERVICE_ADMIN \
+            --task-definition $TASK_DEF_ARN \
+            --force-new-deployment \
+            --region $AWS_REGION
+        else
+          echo "Creating new Admin ECS service..."
+
+          # Get subnets as JSON array
+          SUBNETS_JSON=$(echo "${{ steps.admin-infra.outputs.subnets }}" | sed 's/,/","/g' | sed 's/^/"/' | sed 's/$/"/')
+
+          aws ecs create-service \
+            --cluster $ECS_CLUSTER \
+            --service-name $ECS_SERVICE_ADMIN \
+            --task-definition $TASK_DEF_ARN \
+            --desired-count 1 \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS_JSON],securityGroups=[${{ steps.admin-infra.outputs.security_group }}],assignPublicIp=ENABLED}" \
+            --load-balancers "targetGroupArn=${{ steps.admin-tg.outputs.tg_arn }},containerName=pythonide-admin,containerPort=8080" \
+            --region $AWS_REGION
+        fi
+
+        echo "Waiting for Admin service to stabilize..."
+        aws ecs wait services-stable \
+          --cluster $ECS_CLUSTER \
+          --services $ECS_SERVICE_ADMIN \
+          --region $AWS_REGION
+
+        echo "Admin Panel deployment complete"
+
+    - name: Configure Route 53 DNS for Admin
+      run: |
+        # Get the ALB DNS name
+        ALB_DNS=$(aws elbv2 describe-load-balancers \
+          --load-balancer-arns ${{ steps.admin-infra.outputs.alb_arn }} \
+          --query 'LoadBalancers[0].DNSName' --output text --region $AWS_REGION)
+
+        ALB_ZONE_ID=$(aws elbv2 describe-load-balancers \
+          --load-balancer-arns ${{ steps.admin-infra.outputs.alb_arn }} \
+          --query 'LoadBalancers[0].CanonicalHostedZoneId' --output text --region $AWS_REGION)
+
+        echo "ALB DNS: $ALB_DNS"
+        echo "ALB Zone ID: $ALB_ZONE_ID"
+
+        # Get hosted zone for pythonide-classroom.tech
+        HOSTED_ZONE_ID=$(aws route53 list-hosted-zones-by-name \
+          --dns-name "pythonide-classroom.tech" \
+          --query 'HostedZones[0].Id' --output text | sed 's/\/hostedzone\///')
+
+        if [ -z "$HOSTED_ZONE_ID" ] || [ "$HOSTED_ZONE_ID" = "None" ]; then
+          echo "Warning: Could not find hosted zone for pythonide-classroom.tech"
+          echo "You may need to manually create the DNS record"
+          exit 0
+        fi
+
+        echo "Hosted Zone ID: $HOSTED_ZONE_ID"
+
+        # Check if record already exists
+        EXISTING_RECORD=$(aws route53 list-resource-record-sets \
+          --hosted-zone-id $HOSTED_ZONE_ID \
+          --query "ResourceRecordSets[?Name=='admin.pythonide-classroom.tech.']" \
+          --output text) || EXISTING_RECORD=""
+
+        if [ -z "$EXISTING_RECORD" ]; then
+          echo "Creating Route 53 record for admin.pythonide-classroom.tech..."
+
+          aws route53 change-resource-record-sets \
+            --hosted-zone-id $HOSTED_ZONE_ID \
+            --change-batch '{
+              "Changes": [{
+                "Action": "UPSERT",
+                "ResourceRecordSet": {
+                  "Name": "admin.pythonide-classroom.tech",
+                  "Type": "A",
+                  "AliasTarget": {
+                    "HostedZoneId": "'"$ALB_ZONE_ID"'",
+                    "DNSName": "'"$ALB_DNS"'",
+                    "EvaluateTargetHealth": true
+                  }
+                }
+              }]
+            }'
+
+          echo "DNS record created successfully"
+        else
+          echo "DNS record for admin.pythonide-classroom.tech already exists"
         fi
 
     # ==================== VERIFICATION ====================
-    - name: Verify Both Deployments
+    - name: Verify All Deployments
       run: |
-        echo "🔍 Verifying deployments..."
+        echo "Verifying deployments..."
         echo ""
 
-        echo "📊 MAIN IDE Status:"
+        echo "MAIN IDE Status:"
         aws ecs describe-services \
           --cluster ${{ env.ECS_CLUSTER }} \
           --services ${{ env.ECS_SERVICE_MAIN }} \
@@ -200,7 +447,7 @@ jobs:
           --output table
 
         echo ""
-        echo "📊 EXAM IDE Status:"
+        echo "EXAM IDE Status:"
         aws ecs describe-services \
           --cluster ${{ env.ECS_CLUSTER }} \
           --services ${{ env.ECS_SERVICE_EXAM }} \
@@ -208,18 +455,33 @@ jobs:
           --query 'services[0].{Service:serviceName,Status:status,Running:runningCount,Desired:desiredCount}' \
           --output table
 
+        echo ""
+        echo "ADMIN PANEL Status:"
+        aws ecs describe-services \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --services ${{ env.ECS_SERVICE_ADMIN }} \
+          --region ${{ env.AWS_REGION }} \
+          --query 'services[0].{Service:serviceName,Status:status,Running:runningCount,Desired:desiredCount}' \
+          --output table
+
     - name: Post-Deployment Summary
       run: |
         echo ""
-        echo "🎉 DEPLOYMENT SUMMARY"
-        echo "====================="
-        echo "✅ Docker image built and pushed to ECR"
-        echo "✅ Main IDE (pythonide-service) deployed"
-        echo "✅ Exam IDE (pythonide-exam-task-service) deployed"
-        echo "✅ Auto-scaling verified for both services"
+        echo "DEPLOYMENT SUMMARY"
+        echo "=================="
+        echo "Docker images built and pushed to ECR"
+        echo "  - Main IDE (pythonide-backend)"
+        echo "  - Exam IDE (pythonide-exam)"
+        echo "  - Admin Panel (pythonide-admin)"
         echo ""
-        echo "🔗 Services:"
-        echo "  • Main IDE: http://pythonide-classroom.tech/editor"
-        echo "  • Exam IDE: http://exam.pythonide-classroom.tech/editor"
+        echo "ECS Services deployed:"
+        echo "  - Main IDE (pythonide-service)"
+        echo "  - Exam IDE (pythonide-exam-task-service)"
+        echo "  - Admin Panel (pythonide-admin-service)"
         echo ""
-        echo "📈 Both services now running the same codebase (commit: ${{ github.sha }})"
+        echo "Services:"
+        echo "  Main IDE:    https://pythonide-classroom.tech"
+        echo "  Exam IDE:    https://exam.pythonide-classroom.tech"
+        echo "  Admin Panel: https://admin.pythonide-classroom.tech"
+        echo ""
+        echo "All services now running commit: ${{ github.sha }}"

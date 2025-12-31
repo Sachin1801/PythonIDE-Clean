@@ -1,0 +1,52 @@
+version: '3.8'
+
+# Admin Panel Docker Compose for Local Development
+# Usage: docker-compose -f docker-compose.admin.yml up -d --build
+
+services:
+  # Local PostgreSQL for development
+  postgres:
+    image: postgres:15.7-alpine
+    container_name: pythonide-admin-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: pythonide
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Admin Panel Service
+  admin:
+    build:
+      context: .
+      dockerfile: Dockerfile.admin
+    container_name: pythonide-admin
+    ports:
+      - "10087:8080"  # Different port from main IDE (10086)
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/pythonide
+      IDE_SECRET_KEY: admin-secret-key-change-in-production
+      ADMIN_SESSION_SECRET: admin-session-secret-change-in-production
+      IDE_DATA_PATH: /app/server/projects
+      IS_ADMIN_MODE: "true"
+      TORNADO_PROCESSES: 1
+    volumes:
+      # Share the same user files volume as main IDE
+      - user_files:/app/server/projects/ide
+      - ./server/migrations:/app/server/migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  user_files:

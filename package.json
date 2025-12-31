@@ -4,7 +4,10 @@
   "private": true,
   "scripts": {
     "serve": "vue-cli-service serve",
-    "build": "vue-cli-service build"
+    "serve:admin": "BUILD_TARGET=admin vue-cli-service serve",
+    "build": "vue-cli-service build",
+    "build:admin": "BUILD_TARGET=admin vue-cli-service build",
+    "build:all": "npm run build && npm run build:admin"
   },
   "dependencies": {
     "@element-plus/icons": "^0.0.11",

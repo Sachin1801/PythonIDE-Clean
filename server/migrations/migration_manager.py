@@ -95,6 +95,11 @@ class MigrationManager:
             ("004_add_filename_column", self._migration_004_filename),
             ("005_add_missing_columns", self._migration_005_missing_columns),
             ("006_fix_null_filenames", self._migration_006_fix_null_filenames),
+            ("007_admin_sessions", self._migration_007_admin_sessions),
+            ("008_admin_audit_log", self._migration_008_admin_audit_log),
+            ("009_login_history", self._migration_009_login_history),
+            ("010_file_access_log", self._migration_010_file_access_log),
+            ("011_execution_log", self._migration_011_execution_log),
         ]
 
         for name, migration_func in migration_definitions:
@@ -296,15 +301,110 @@ class MigrationManager:
         """Fix any NULL filename values that may exist"""
         return """
         -- Update any NULL filename values by extracting from path
-        UPDATE files 
-        SET filename = 
-            CASE 
-                WHEN path LIKE '%/%' THEN 
+        UPDATE files
+        SET filename =
+            CASE
+                WHEN path LIKE '%/%' THEN
                     substring(path from '[^/]*$')
-                ELSE 
+                ELSE
                     path
             END
         WHERE filename IS NULL;
+        """
+
+    def _migration_007_admin_sessions(self) -> str:
+        """Create admin sessions table (separate from main IDE sessions)"""
+        return """
+        CREATE TABLE IF NOT EXISTS admin_sessions (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+            token VARCHAR(255) UNIQUE NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP,
+            ip_address VARCHAR(45),
+            user_agent TEXT,
+            is_active BOOLEAN DEFAULT true
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_admin_sessions_token ON admin_sessions(token);
+        CREATE INDEX IF NOT EXISTS idx_admin_sessions_user ON admin_sessions(user_id);
+        CREATE INDEX IF NOT EXISTS idx_admin_sessions_active ON admin_sessions(is_active);
+        """
+
+    def _migration_008_admin_audit_log(self) -> str:
+        """Create admin audit log table for tracking all admin actions"""
+        return """
+        CREATE TABLE IF NOT EXISTS admin_audit_log (
+            id SERIAL PRIMARY KEY,
+            admin_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            action_type VARCHAR(50) NOT NULL,
+            target_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            target_path VARCHAR(500),
+            details JSONB,
+            ip_address VARCHAR(45),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_audit_admin_user ON admin_audit_log(admin_user_id);
+        CREATE INDEX IF NOT EXISTS idx_audit_target_user ON admin_audit_log(target_user_id);
+        CREATE INDEX IF NOT EXISTS idx_audit_action_type ON admin_audit_log(action_type);
+        CREATE INDEX IF NOT EXISTS idx_audit_created_at ON admin_audit_log(created_at);
+        """
+
+    def _migration_009_login_history(self) -> str:
+        """Create login history table for tracking user logins"""
+        return """
+        CREATE TABLE IF NOT EXISTS login_history (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+            login_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            logout_time TIMESTAMP,
+            ip_address VARCHAR(45),
+            user_agent TEXT,
+            success BOOLEAN DEFAULT true,
+            login_type VARCHAR(20) DEFAULT 'ide'
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_login_user ON login_history(user_id);
+        CREATE INDEX IF NOT EXISTS idx_login_time ON login_history(login_time);
+        CREATE INDEX IF NOT EXISTS idx_login_success ON login_history(success);
+        """
+
+    def _migration_010_file_access_log(self) -> str:
+        """Create file access log table for tracking file operations"""
+        return """
+        CREATE TABLE IF NOT EXISTS file_access_log (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            file_path VARCHAR(500) NOT NULL,
+            action VARCHAR(20) NOT NULL,
+            accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            details JSONB
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_file_access_user ON file_access_log(user_id);
+        CREATE INDEX IF NOT EXISTS idx_file_access_path ON file_access_log(file_path);
+        CREATE INDEX IF NOT EXISTS idx_file_access_time ON file_access_log(accessed_at);
+        CREATE INDEX IF NOT EXISTS idx_file_access_action ON file_access_log(action);
+        """
+
+    def _migration_011_execution_log(self) -> str:
+        """Create execution log table for tracking code executions"""
+        return """
+        CREATE TABLE IF NOT EXISTS execution_log (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            file_path VARCHAR(500),
+            execution_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            duration_ms INTEGER,
+            exit_code INTEGER,
+            stdout_preview TEXT,
+            stderr_preview TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_execution_user ON execution_log(user_id);
+        CREATE INDEX IF NOT EXISTS idx_execution_time ON execution_log(execution_time);
+        CREATE INDEX IF NOT EXISTS idx_execution_exit_code ON execution_log(exit_code);
         """
 
 

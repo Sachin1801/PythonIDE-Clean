@@ -1228,6 +1228,103 @@ export default {
 .ide-project-list .el-tree-node.is-current>.el-tree-node__content .display-none {
   display: inline-block;
 }
+
+/* ==================== MOVE DIALOG THEME SUPPORT ==================== */
+
+/* Dark theme (default) - el-dialog overrides */
+.el-dialog {
+  background-color: var(--bg-primary, #1e1e1e) !important;
+  border: 1px solid var(--border-color, #464647) !important;
+}
+
+.el-dialog__header {
+  background-color: var(--bg-secondary, #252526) !important;
+  border-bottom: 1px solid var(--border-color, #464647) !important;
+}
+
+.el-dialog__title {
+  color: var(--text-primary, #cccccc) !important;
+}
+
+.el-dialog__headerbtn .el-dialog__close {
+  color: var(--text-secondary, #969696) !important;
+}
+
+.el-dialog__body {
+  color: var(--text-primary, #cccccc) !important;
+  background-color: var(--bg-primary, #1e1e1e) !important;
+}
+
+.el-dialog__footer {
+  background-color: var(--bg-primary, #1e1e1e) !important;
+  border-top: 1px solid var(--border-color, #464647) !important;
+}
+
+/* Light theme overrides */
+:root[data-theme="light"] .el-dialog {
+  background-color: #ffffff !important;
+  border-color: #d0d0d0 !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15) !important;
+}
+
+:root[data-theme="light"] .el-dialog__header {
+  background-color: #f3f3f3 !important;
+  border-bottom-color: #d0d0d0 !important;
+}
+
+:root[data-theme="light"] .el-dialog__title {
+  color: #333333 !important;
+}
+
+:root[data-theme="light"] .el-dialog__headerbtn .el-dialog__close {
+  color: #606266 !important;
+}
+
+:root[data-theme="light"] .el-dialog__body {
+  color: #333333 !important;
+  background-color: #ffffff !important;
+}
+
+:root[data-theme="light"] .el-dialog__footer {
+  background-color: #ffffff !important;
+  border-top-color: #d0d0d0 !important;
+}
+
+/* High contrast theme overrides */
+:root[data-theme="contrast"] .el-dialog,
+:root[data-theme="high-contrast"] .el-dialog {
+  background-color: #000000 !important;
+  border: 2px solid #ffffff !important;
+  box-shadow: 0 8px 32px rgba(255, 255, 255, 0.3) !important;
+}
+
+:root[data-theme="contrast"] .el-dialog__header,
+:root[data-theme="high-contrast"] .el-dialog__header {
+  background-color: #0a0a0a !important;
+  border-bottom: 2px solid #ffffff !important;
+}
+
+:root[data-theme="contrast"] .el-dialog__title,
+:root[data-theme="high-contrast"] .el-dialog__title {
+  color: #ffffff !important;
+}
+
+:root[data-theme="contrast"] .el-dialog__headerbtn .el-dialog__close,
+:root[data-theme="high-contrast"] .el-dialog__headerbtn .el-dialog__close {
+  color: #ffffff !important;
+}
+
+:root[data-theme="contrast"] .el-dialog__body,
+:root[data-theme="high-contrast"] .el-dialog__body {
+  color: #ffffff !important;
+  background-color: #000000 !important;
+}
+
+:root[data-theme="contrast"] .el-dialog__footer,
+:root[data-theme="high-contrast"] .el-dialog__footer {
+  background-color: #000000 !important;
+  border-top: 2px solid #ffffff !important;
+}
 </style>
 
 <style scoped>
@@ -1649,7 +1746,7 @@ export default {
 
 /* Move confirmation dialog styles */
 .move-confirm-content {
-  color: var(--text-color, #cccccc);
+  color: var(--text-primary, #cccccc);
 }
 
 .move-confirm-content p {
@@ -1657,7 +1754,8 @@ export default {
 }
 
 .move-confirm-content code {
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--bg-tertiary, rgba(0, 0, 0, 0.3));
+  color: var(--text-primary, #cccccc);
   padding: 2px 6px;
   border-radius: 3px;
   font-family: monospace;
@@ -1670,9 +1768,10 @@ export default {
   margin: 8px 0;
   max-height: 150px;
   overflow-y: auto;
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--bg-secondary, rgba(0, 0, 0, 0.2));
   border-radius: 4px;
   padding: 8px;
+  border: 1px solid var(--border-color, #464647);
 }
 
 .move-file-list li {
@@ -1680,6 +1779,7 @@ export default {
   display: flex;
   align-items: center;
   gap: 8px;
+  color: var(--text-primary, #cccccc);
 }
 
 .move-file-list .folder-icon::before {
@@ -1692,7 +1792,7 @@ export default {
 
 /* Conflict dialog styles */
 .conflict-content {
-  color: var(--text-color, #cccccc);
+  color: var(--text-primary, #cccccc);
   text-align: center;
 }
 
@@ -1716,12 +1816,55 @@ export default {
   border-color: rgba(24, 144, 255, 0.4);
 }
 
+:root[data-theme="light"] .move-confirm-content {
+  color: #333333;
+}
+
 :root[data-theme="light"] .move-confirm-content code {
-  background: rgba(0, 0, 0, 0.06);
+  background: #f0f0f0;
+  color: #333333;
 }
 
 :root[data-theme="light"] .move-file-list {
-  background: rgba(0, 0, 0, 0.04);
+  background: #f8f8f8;
+  border-color: #d0d0d0;
+}
+
+:root[data-theme="light"] .move-file-list li {
+  color: #333333;
+}
+
+:root[data-theme="light"] .conflict-content {
+  color: #333333;
+}
+
+/* High contrast theme overrides for dialog content */
+:root[data-theme="contrast"] .move-confirm-content,
+:root[data-theme="high-contrast"] .move-confirm-content {
+  color: #ffffff;
+}
+
+:root[data-theme="contrast"] .move-confirm-content code,
+:root[data-theme="high-contrast"] .move-confirm-content code {
+  background: #333333;
+  color: #ffffff;
+  border: 1px solid #ffffff;
+}
+
+:root[data-theme="contrast"] .move-file-list,
+:root[data-theme="high-contrast"] .move-file-list {
+  background: #0a0a0a;
+  border: 2px solid #ffffff;
+}
+
+:root[data-theme="contrast"] .move-file-list li,
+:root[data-theme="high-contrast"] .move-file-list li {
+  color: #ffffff;
+}
+
+:root[data-theme="contrast"] .conflict-content,
+:root[data-theme="high-contrast"] .conflict-content {
+  color: #ffffff;
 }
 
 /* High contrast theme overrides for drag-drop */

@@ -284,8 +284,8 @@ def main():
         (r"/api/bulk-upload", BulkUploadHandler),
         (r"/api/get-all-students", StudentListHandler),
         (r"/static/(.*)", StaticFileHandler, {"path": static_path}),  # Serve static files (CSS, JS, etc)
-        *get_legacy_admin_handlers(),  # Legacy admin password management endpoints
         *get_new_admin_handlers(),  # New admin panel endpoints (for admin.pythonide-classroom.tech)
+        *get_legacy_admin_handlers(),  # Legacy admin password management endpoints (IDE-side)
         get_migration_handler(),  # TEMPORARY migration endpoint - REMOVE AFTER USE
         (r"^.*$", VueHandler),
     ]

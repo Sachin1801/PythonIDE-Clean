@@ -137,6 +137,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useStore } from 'vuex'
 import AdminLayout from '../components/layout/AdminLayout.vue'
+import analyticsApi from '../api/analytics'
 import {
   Users,
   GraduationCap,
@@ -182,6 +183,7 @@ export default {
   setup() {
     const store = useStore()
     const showBulkImport = ref(false)
+    const loading = ref(false)
 
     const stats = ref({
       totalUsers: 0,
@@ -193,6 +195,7 @@ export default {
     })
 
     const recentActivity = ref([])
+    const token = computed(() => store.getters['auth/token'])
 
     const memoryStatusClass = computed(() => {
       if (stats.value.memoryPercent > 80) return 'danger'
@@ -255,33 +258,34 @@ export default {
     }
 
     const fetchDashboardData = async () => {
-      // TODO: Fetch actual dashboard data from API
-      // For now, using placeholder data
-      stats.value = {
-        totalUsers: 65,
-        students: 60,
-        professors: 5,
-        activeSessions: 12,
-        memoryPercent: 45,
-        cpuPercent: 23
-      }
+      if (!token.value) return
 
-      recentActivity.value = [
-        {
-          id: 1,
-          admin_username: 'sa9082',
-          action_type: 'reset_password',
-          target_username: 'jd1234',
-          created_at: new Date(Date.now() - 300000).toISOString()
-        },
-        {
-          id: 2,
-          admin_username: 'sl7927',
-          action_type: 'create_user',
-          target_username: 'newstudent',
-          created_at: new Date(Date.now() - 3600000).toISOString()
+      loading.value = true
+      try {
+        // Fetch dashboard stats
+        const statsResponse = await analyticsApi.getDashboardStats(token.value)
+        if (statsResponse.success && statsResponse.data) {
+          stats.value = {
+            totalUsers: statsResponse.data.totalUsers || 0,
+            students: statsResponse.data.students || 0,
+            professors: statsResponse.data.professors || 0,
+            activeSessions: statsResponse.data.activeSessions || 0,
+            memoryPercent: statsResponse.data.memoryPercent || 0,
+            cpuPercent: statsResponse.data.cpuPercent || 0
+          }
         }
-      ]
+
+        // Fetch recent activity
+        const activityResponse = await analyticsApi.getRecentActivity(token.value, 5)
+        if (activityResponse.success && activityResponse.data) {
+          recentActivity.value = activityResponse.data
+        }
+      } catch (error) {
+        console.error('Failed to fetch dashboard data:', error)
+        // Keep default values on error
+      } finally {
+        loading.value = false
+      }
     }
 
     onMounted(() => {
@@ -292,6 +296,7 @@ export default {
       stats,
       recentActivity,
       showBulkImport,
+      loading,
       memoryStatusClass,
       cpuStatusClass,
       getActivityIcon,

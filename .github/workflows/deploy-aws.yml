@@ -216,33 +216,33 @@ jobs:
         # Create CloudWatch log group if not exists
         aws logs create-log-group --log-group-name /ecs/pythonide-admin --region $AWS_REGION 2>/dev/null || echo "Log group exists"
 
-        # Get VPC and Subnets from existing service
-        VPC_ID=$(aws ec2 describe-vpcs --filters "Name=isDefault,Values=true" --query 'Vpcs[0].VpcId' --output text --region $AWS_REGION)
-        SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" --query 'Subnets[*].SubnetId' --output text --region $AWS_REGION | tr '\t' ',')
+        # Get VPC, Subnets and Security Group from existing main service (ensures same VPC as ALB)
+        NETWORK_CONFIG=$(aws ecs describe-services --cluster $ECS_CLUSTER --services $ECS_SERVICE_MAIN \
+          --query 'services[0].networkConfiguration.awsvpcConfiguration' --output json --region $AWS_REGION)
 
-        # Get security group from main service
-        SECURITY_GROUP=$(aws ecs describe-services --cluster $ECS_CLUSTER --services $ECS_SERVICE_MAIN \
-          --query 'services[0].networkConfiguration.awsvpcConfiguration.securityGroups[0]' --output text --region $AWS_REGION)
+        SUBNETS=$(echo $NETWORK_CONFIG | jq -r '.subnets | join(",")')
+        SECURITY_GROUP=$(echo $NETWORK_CONFIG | jq -r '.securityGroups[0]')
 
-        echo "VPC: $VPC_ID"
-        echo "Subnets: $SUBNETS"
-        echo "Security Group: $SECURITY_GROUP"
-
-        echo "vpc_id=$VPC_ID" >> $GITHUB_OUTPUT
-        echo "subnets=$SUBNETS" >> $GITHUB_OUTPUT
-        echo "security_group=$SECURITY_GROUP" >> $GITHUB_OUTPUT
-
-        # Get ALB ARN
+        # Get VPC from the ALB (ensures target group is in same VPC)
         ALB_ARN=$(aws elbv2 describe-load-balancers --names pythonide-alb \
           --query 'LoadBalancers[0].LoadBalancerArn' --output text --region $AWS_REGION 2>/dev/null) || ALB_ARN=""
 
         if [ -z "$ALB_ARN" ] || [ "$ALB_ARN" = "None" ]; then
-          # Try to find any ALB with pythonide in the name
           ALB_ARN=$(aws elbv2 describe-load-balancers \
             --query 'LoadBalancers[?contains(LoadBalancerName, `pythonide`)].LoadBalancerArn' --output text --region $AWS_REGION | head -1)
         fi
 
+        VPC_ID=$(aws elbv2 describe-load-balancers --load-balancer-arns $ALB_ARN \
+          --query 'LoadBalancers[0].VpcId' --output text --region $AWS_REGION)
+
+        echo "VPC: $VPC_ID"
+        echo "Subnets: $SUBNETS"
+        echo "Security Group: $SECURITY_GROUP"
         echo "ALB ARN: $ALB_ARN"
+
+        echo "vpc_id=$VPC_ID" >> $GITHUB_OUTPUT
+        echo "subnets=$SUBNETS" >> $GITHUB_OUTPUT
+        echo "security_group=$SECURITY_GROUP" >> $GITHUB_OUTPUT
         echo "alb_arn=$ALB_ARN" >> $GITHUB_OUTPUT
 
     - name: Create Admin Target Group
@@ -330,9 +330,11 @@ jobs:
 
     - name: Deploy Admin Panel ECS Service
       run: |
-        # Check if service exists
-        SERVICE_STATUS=$(aws ecs describe-services --cluster $ECS_CLUSTER --services $ECS_SERVICE_ADMIN \
-          --query 'services[0].status' --output text --region $AWS_REGION 2>/dev/null) || SERVICE_STATUS="MISSING"
+        # Check if service exists and is active
+        SERVICE_INFO=$(aws ecs describe-services --cluster $ECS_CLUSTER --services $ECS_SERVICE_ADMIN \
+          --query 'services[0].{status:status,runningCount:runningCount}' --output json --region $AWS_REGION 2>/dev/null) || SERVICE_INFO="{}"
+
+        SERVICE_STATUS=$(echo $SERVICE_INFO | jq -r '.status // "MISSING"')
 
         # Register task definition first
         TASK_DEF_ARN=$(aws ecs register-task-definition \
@@ -352,8 +354,8 @@ jobs:
         else
           echo "Creating new Admin ECS service..."
 
-          # Get subnets as JSON array
-          SUBNETS_JSON=$(echo "${{ steps.admin-infra.outputs.subnets }}" | sed 's/,/","/g' | sed 's/^/"/' | sed 's/$/"/')
+          # Parse subnets into proper format
+          SUBNET_LIST="${{ steps.admin-infra.outputs.subnets }}"
 
           aws ecs create-service \
             --cluster $ECS_CLUSTER \
@@ -361,7 +363,7 @@ jobs:
             --task-definition $TASK_DEF_ARN \
             --desired-count 1 \
             --launch-type FARGATE \
-            --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS_JSON],securityGroups=[${{ steps.admin-infra.outputs.security_group }}],assignPublicIp=ENABLED}" \
+            --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_LIST],securityGroups=[${{ steps.admin-infra.outputs.security_group }}],assignPublicIp=ENABLED}" \
             --load-balancers "targetGroupArn=${{ steps.admin-tg.outputs.tg_arn }},containerName=pythonide-admin,containerPort=8080" \
             --region $AWS_REGION
         fi
@@ -375,40 +377,36 @@ jobs:
         echo "Admin Panel deployment complete"
 
     - name: Configure Route 53 DNS for Admin
+      continue-on-error: true
       run: |
         # Get the ALB DNS name
         ALB_DNS=$(aws elbv2 describe-load-balancers \
           --load-balancer-arns ${{ steps.admin-infra.outputs.alb_arn }} \
           --query 'LoadBalancers[0].DNSName' --output text --region $AWS_REGION)
 
-        ALB_ZONE_ID=$(aws elbv2 describe-load-balancers \
-          --load-balancer-arns ${{ steps.admin-infra.outputs.alb_arn }} \
-          --query 'LoadBalancers[0].CanonicalHostedZoneId' --output text --region $AWS_REGION)
-
         echo "ALB DNS: $ALB_DNS"
-        echo "ALB Zone ID: $ALB_ZONE_ID"
+        echo ""
+        echo "=============================================="
+        echo "MANUAL DNS SETUP REQUIRED"
+        echo "=============================================="
+        echo "Add a CNAME record in your DNS provider:"
+        echo "  Name:  admin"
+        echo "  Type:  CNAME"
+        echo "  Value: $ALB_DNS"
+        echo "=============================================="
+        echo ""
 
-        # Get hosted zone for pythonide-classroom.tech
+        # Try Route 53 if available
         HOSTED_ZONE_ID=$(aws route53 list-hosted-zones-by-name \
           --dns-name "pythonide-classroom.tech" \
-          --query 'HostedZones[0].Id' --output text | sed 's/\/hostedzone\///')
+          --query 'HostedZones[?Name==`pythonide-classroom.tech.`].Id' --output text 2>/dev/null | sed 's/\/hostedzone\///' | head -1) || HOSTED_ZONE_ID=""
 
-        if [ -z "$HOSTED_ZONE_ID" ] || [ "$HOSTED_ZONE_ID" = "None" ]; then
-          echo "Warning: Could not find hosted zone for pythonide-classroom.tech"
-          echo "You may need to manually create the DNS record"
-          exit 0
-        fi
+        if [ -n "$HOSTED_ZONE_ID" ] && [ "$HOSTED_ZONE_ID" != "None" ]; then
+          echo "Found Route 53 hosted zone: $HOSTED_ZONE_ID"
 
-        echo "Hosted Zone ID: $HOSTED_ZONE_ID"
-
-        # Check if record already exists
-        EXISTING_RECORD=$(aws route53 list-resource-record-sets \
-          --hosted-zone-id $HOSTED_ZONE_ID \
-          --query "ResourceRecordSets[?Name=='admin.pythonide-classroom.tech.']" \
-          --output text) || EXISTING_RECORD=""
-
-        if [ -z "$EXISTING_RECORD" ]; then
-          echo "Creating Route 53 record for admin.pythonide-classroom.tech..."
+          ALB_ZONE_ID=$(aws elbv2 describe-load-balancers \
+            --load-balancer-arns ${{ steps.admin-infra.outputs.alb_arn }} \
+            --query 'LoadBalancers[0].CanonicalHostedZoneId' --output text --region $AWS_REGION)
 
           aws route53 change-resource-record-sets \
             --hosted-zone-id $HOSTED_ZONE_ID \
@@ -425,11 +423,9 @@ jobs:
                   }
                 }
               }]
-            }'
-
-          echo "DNS record created successfully"
+            }' && echo "Route 53 DNS record created successfully"
         else
-          echo "DNS record for admin.pythonide-classroom.tech already exists"
+          echo "Route 53 hosted zone not found - manual DNS setup required"
         fi
 
     # ==================== VERIFICATION ====================

@@ -68,7 +68,6 @@
             <ProjTree
               :currentUser="currentUser"
               v-on:get-item="getFile"
-              @open-in-editor="getFileForEditor"
               @context-menu="showContextMenu"
               @rename-item="handleRenameItem"
               @delete-item="handleDeleteItem"
@@ -328,6 +327,11 @@
                   <!-- CSV/Data Preview Panel -->
                   <div v-else-if="tab.type === 'data'" class="data-preview-panel">
                     <CsvViewer :content="tab.content" />
+                  </div>
+
+                  <!-- Text File Preview Panel -->
+                  <div v-else-if="tab.type === 'text'" class="text-preview-panel">
+                    <pre class="text-content">{{ tab.content }}</pre>
                   </div>
                 </div>
               </template>
@@ -1842,21 +1846,16 @@ export default {
           existingTab.content = content;
         }
       } else {
-        // Enforce right panel tab limit (max 5 tabs)
-        const MAX_PREVIEW_TABS = 5;
-        if (this.previewTabs.length >= MAX_PREVIEW_TABS) {
-          // Remove the oldest tab (first item) to make room
-          const closedTab = this.previewTabs.shift();
-          // Clean up blob URL if PDF
-          if (closedTab.type === 'pdf' && closedTab.content && closedTab.content.startsWith('blob:')) {
-            URL.revokeObjectURL(closedTab.content);
-          }
-          console.log(`Preview tab limit (${MAX_PREVIEW_TABS}) reached. Closed "${closedTab.title}" to open new file.`);
-          ElMessage({
-            type: 'warning',
-            message: `Tab limit (${MAX_PREVIEW_TABS}) reached. Closed "${closedTab.title}" to open new file.`,
-            duration: 3000
+        // Right panel only allows 1 tab - replace any existing tab silently
+        if (this.previewTabs.length > 0) {
+          // Close all existing tabs (clean up blob URLs)
+          this.previewTabs.forEach(tab => {
+            if (tab.type === 'pdf' && tab.content && tab.content.startsWith('blob:')) {
+              URL.revokeObjectURL(tab.content);
+            }
           });
+          // Clear all tabs
+          this.previewTabs = [];
         }
 
         // Create new tab with projectName
@@ -2313,14 +2312,13 @@ export default {
         }
       });
     },
-    getFile(path, save, projectName, openInEditor = false) {
+    getFile(path, save, projectName) {
       const self = this;
 
       console.log('[getFile] Called with:', {
         path: path,
         save: save,
-        projectName: projectName,
-        openInEditor: openInEditor
+        projectName: projectName
       });
 
       // Determine the project name - from parameter, current selection, or current project
@@ -2329,25 +2327,17 @@ export default {
                                this.ideInfo.currProj?.data?.name ||
                                this.ideInfo.currProj?.config?.name;
 
-      // Check if it's a preview file (should open in right panel by default)
+      // Check if it's a preview file (should open in right panel ONLY)
       // Preview files: images, PDFs, CSVs, and plain text files
+      // These files can ONLY open in the right panel, never in the main editor
       const mediaExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.webp', '.pdf'];
       const dataExtensions = ['.csv'];
       const textExtensions = ['.txt'];
       const isMediaFile = mediaExtensions.some(ext => path.toLowerCase().endsWith(ext));
       const isDataFile = dataExtensions.some(ext => path.toLowerCase().endsWith(ext));
       const isTextFile = textExtensions.some(ext => path.toLowerCase().endsWith(ext));
-      const isPreviewFile = isMediaFile || isDataFile || isTextFile;
 
-      // If it's a preview file and openInEditor is true (from "Open in Editor" context menu)
-      // open it in the editor area instead of the right panel
-      if (isPreviewFile && openInEditor) {
-        // Open preview files in fullscreen/editor mode when explicitly requested
-        this.openFullscreenPreview(path, actualProjectName);
-        return;
-      }
-
-      // Default behavior: open preview files in the right panel
+      // Preview files always open in the right panel
       if (isMediaFile) {
         // For media files, add tab without preloading content
         // MediaViewer component will handle loading with retry logic
@@ -2463,15 +2453,9 @@ export default {
         });
       }
     },
-    getFileForEditor(path, projectName) {
-      // Open preview files in the editor/fullscreen area instead of right panel
-      // This is called from context menu "Open in Editor" option
-      this.getFile(path, false, projectName, true); // openInEditor = true
-    },
     getFileForRightPanel(path, projectName) {
       // Open preview files in the right panel (default behavior)
-      // This is called from FullscreenPreview's "Open in Right Panel" button
-      this.getFile(path, false, projectName, false); // openInEditor = false (default)
+      this.getFile(path, false, projectName);
     },
     handleReorderTabs(fromIndex, toIndex) {
       // Reorder editor tabs via Vuex mutation
@@ -6447,6 +6431,27 @@ body .console-output-area .console-line .console-repl-input span {
   z-index: 21; /* Ensure CSV content and scrollbars are above everything */
 }
 
+.text-preview-panel {
+  height: 100%;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary, #1e1e1e);
+  padding: 16px;
+}
+
+.text-preview-panel .text-content {
+  margin: 0;
+  padding: 0;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-primary, #d4d4d4);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
 /* Sidebar Resizers */
 .sidebar-resizer {
   width: 5px;
@@ -7473,6 +7478,14 @@ body {
   background: var(--bg-pattern, #f8f8f8);
 }
 
+[data-theme="light"] .text-preview-panel {
+  background: var(--bg-primary, #ffffff);
+}
+
+[data-theme="light"] .text-preview-panel .text-content {
+  color: var(--text-primary, #333333);
+}
+
 [data-theme="light"] .output-panel {
   background: var(--bg-primary, #ffffff);
   color: var(--text-primary, #333333);
@@ -7527,6 +7540,14 @@ body {
 
 [data-theme="high-contrast"] .media-preview-panel {
   background: var(--bg-pattern, #0f0f0f);
+}
+
+[data-theme="high-contrast"] .text-preview-panel {
+  background: var(--bg-primary, #000000);
+}
+
+[data-theme="high-contrast"] .text-preview-panel .text-content {
+  color: var(--text-primary, #ffffff);
 }
 
 [data-theme="high-contrast"] .output-panel {

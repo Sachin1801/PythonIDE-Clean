@@ -1,0 +1,84 @@
+{
+  "family": "pythonide-admin-task",
+  "taskRoleArn": "arn:aws:iam::653306034507:role/ecsTaskExecutionRole",
+  "executionRoleArn": "arn:aws:iam::653306034507:role/ecsTaskExecutionRole",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "512",
+  "memory": "1024",
+  "containerDefinitions": [
+    {
+      "name": "pythonide-admin",
+      "image": "653306034507.dkr.ecr.us-east-2.amazonaws.com/pythonide-admin:latest",
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "protocol": "tcp"
+        }
+      ],
+      "essential": true,
+      "environment": [
+        {
+          "name": "IDE_DATA_PATH",
+          "value": "/mnt/efs/pythonide-data"
+        },
+        {
+          "name": "PORT",
+          "value": "8080"
+        },
+        {
+          "name": "IS_ADMIN_MODE",
+          "value": "true"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "DATABASE_URL",
+          "valueFrom": "arn:aws:secretsmanager:us-east-2:653306034507:secret:pythonide/database-url"
+        },
+        {
+          "name": "IDE_SECRET_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-2:653306034507:secret:pythonide/ide-secret-key"
+        }
+      ],
+      "mountPoints": [
+        {
+          "sourceVolume": "pythonide-efs",
+          "containerPath": "/mnt/efs"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/pythonide-admin",
+          "awslogs-region": "us-east-2",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "curl -f http://localhost:8080/health || exit 1"
+        ],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 180
+      }
+    }
+  ],
+  "volumes": [
+    {
+      "name": "pythonide-efs",
+      "efsVolumeConfiguration": {
+        "fileSystemId": "fs-0ba3b6fecab24774a",
+        "transitEncryption": "ENABLED",
+        "authorizationConfig": {
+          "iam": "ENABLED"
+        }
+      }
+    }
+  ]
+}

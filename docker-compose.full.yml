@@ -1,0 +1,81 @@
+version: '3.8'
+
+# Full Local Development Setup: Main IDE + Admin Panel + PostgreSQL
+# Usage: docker-compose -f docker-compose.full.yml up -d --build
+#
+# Access:
+#   - Main IDE:    http://localhost:10086
+#   - Admin Panel: http://localhost:10087
+#   - PostgreSQL:  localhost:5432
+
+services:
+  # PostgreSQL Database (shared between IDE and Admin)
+  postgres:
+    image: postgres:15.7-alpine
+    container_name: pythonide-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: pythonide
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Main IDE Service
+  pythonide:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pythonide-app
+    ports:
+      - "10086:8080"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/pythonide
+      IDE_SECRET_KEY: local-dev-secret-key
+      IDE_DATA_PATH: /app/server/projects
+      MAX_CONCURRENT_EXECUTIONS: 60
+      EXECUTION_TIMEOUT: 60
+      MEMORY_LIMIT_MB: 128
+      TORNADO_PROCESSES: 1
+    volumes:
+      - user_files:/app/server/projects/ide
+      - ./server/migrations:/app/server/migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Admin Panel Service
+  admin:
+    build:
+      context: .
+      dockerfile: Dockerfile.admin
+    container_name: pythonide-admin
+    ports:
+      - "10087:8080"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/pythonide
+      IDE_SECRET_KEY: local-dev-secret-key
+      ADMIN_SESSION_SECRET: admin-session-secret
+      IDE_DATA_PATH: /app/server/projects
+      IS_ADMIN_MODE: "true"
+      TORNADO_PROCESSES: 1
+    volumes:
+      # Share the same user files volume as main IDE
+      - user_files:/app/server/projects/ide
+      - ./server/migrations:/app/server/migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  user_files:

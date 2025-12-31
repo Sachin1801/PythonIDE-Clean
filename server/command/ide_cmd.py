@@ -378,6 +378,7 @@ print("="*50)
             prj_name = data.get("projectName")
             old_path_input = data.get("oldPath")
             new_path_input = data.get("newPath")
+            overwrite = data.get("overwrite", False)  # Allow overwrite if specified
             username = getattr(client, "username", "unknown")
             role = getattr(client, "role", "student")
 
@@ -443,8 +444,13 @@ print("="*50)
 
             # Check if destination already exists
             if os.path.exists(new_full_path):
-                await response(client, cmd_id, -1, "Destination already exists")
-                return
+                if overwrite:
+                    # Delete existing file if overwrite is enabled
+                    os.remove(new_full_path)
+                    print(f"[IDE_MOVE_FILE] Overwriting existing file: {new_full_path}")
+                else:
+                    await response(client, cmd_id, -1, "Destination already exists")
+                    return
 
             # Create destination directory if needed
             os.makedirs(os.path.dirname(new_full_path), exist_ok=True)
@@ -495,6 +501,7 @@ print("="*50)
             prj_name = data.get("projectName")
             old_path_input = data.get("oldPath")
             new_path_input = data.get("newPath")
+            overwrite = data.get("overwrite", False)  # Allow overwrite if specified
             username = getattr(client, "username", "unknown")
             role = getattr(client, "role", "student")
 
@@ -564,8 +571,14 @@ print("="*50)
 
             # Check if destination already exists
             if os.path.exists(new_full_path):
-                await response(client, cmd_id, -1, "Destination already exists")
-                return
+                if overwrite:
+                    # Delete existing folder if overwrite is enabled
+                    import shutil
+                    shutil.rmtree(new_full_path)
+                    print(f"[IDE_MOVE_FOLDER] Overwriting existing folder: {new_full_path}")
+                else:
+                    await response(client, cmd_id, -1, "Destination already exists")
+                    return
 
             # Prevent moving folder into itself
             if new_full_path.startswith(old_full_path + os.sep):

@@ -37,7 +37,22 @@
       @node-contextmenu="handleContextMenu"
       >
       <template #default="{ node, data }">
-        <span class="node-wrapper" @dblclick.stop="handleDoubleClick(data)">
+        <span
+          class="node-wrapper"
+          :class="{
+            'node-dragging': isDragging && isNodeBeingDragged(data),
+            'node-selected': isNodeSelected(data),
+            'drag-over-valid': dragOverNode && dragOverNode.uuid === data.uuid && isValidDropTarget,
+            'drag-over-invalid': dragOverNode && dragOverNode.uuid === data.uuid && !isValidDropTarget
+          }"
+          :draggable="canDragNode(data)"
+          @dblclick.stop="handleDoubleClick(data)"
+          @dragstart="handleDragStart($event, data)"
+          @dragover="handleDragOver($event, data)"
+          @dragleave="handleDragLeave($event, data)"
+          @drop="handleDrop($event, data)"
+          @dragend="handleDragEnd($event)"
+        >
           <img :src="getIconUrl(data)" alt="" class="node-icon" />
           <span class="node-label">{{ node.label }}</span>
           <span class="node-actions" v-if="data.type === 'file' || data.type === 'dir' || data.type === 'folder'">
@@ -85,13 +100,55 @@
       <div class="menu-item" @click="handleMenuAction('download', dropdown.data)" v-if="dropdown.data.type === 'file'">
         <span>Download</span>
       </div>
-      <div class="menu-item danger" 
+      <div class="menu-item danger"
            :class="{ disabled: !canRenameOrDelete(dropdown.data) }"
            @click="canRenameOrDelete(dropdown.data) && handleMenuAction('delete', dropdown.data)"
            v-if="!isProtectedFolder(dropdown.data)">
         <span>Delete</span>
       </div>
     </div>
+
+    <!-- Move Confirmation Dialog -->
+    <el-dialog
+      v-model="showMoveConfirm"
+      title="Confirm Move"
+      width="450px"
+      :close-on-click-modal="false"
+    >
+      <div class="move-confirm-content" v-if="pendingMove">
+        <p><strong>Moving {{ pendingMove.sources.length }} item(s):</strong></p>
+        <ul class="move-file-list">
+          <li v-for="item in pendingMove.sources" :key="item.path">
+            <i :class="item.type === 'dir' || item.type === 'folder' ? 'folder-icon' : 'file-icon'"></i>
+            {{ item.label }}
+          </li>
+        </ul>
+        <p><strong>From:</strong> <code>{{ pendingMove.fromPath }}</code></p>
+        <p><strong>To:</strong> <code>{{ pendingMove.targetPath }}</code></p>
+      </div>
+      <template #footer>
+        <el-button @click="cancelMove">Cancel</el-button>
+        <el-button type="primary" @click="confirmMove">Move</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- File Conflict Dialog -->
+    <el-dialog
+      v-model="showConflictDialog"
+      title="File Conflict"
+      width="400px"
+      :close-on-click-modal="false"
+    >
+      <div class="conflict-content" v-if="conflictFile">
+        <p>"<strong>{{ conflictFile.name }}</strong>" already exists in the destination.</p>
+        <p>What would you like to do?</p>
+      </div>
+      <template #footer>
+        <el-button @click="handleConflict('skip')">Skip</el-button>
+        <el-button @click="handleConflict('rename')">Rename</el-button>
+        <el-button type="warning" @click="handleConflict('overwrite')">Overwrite</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -137,7 +194,20 @@ export default {
         data: null
       },
       renameMode: false,
-      renameData: null
+      renameData: null,
+      // Drag-drop state
+      isDragging: false,
+      draggedNodes: [],        // Array of nodes being dragged (for multi-select)
+      dragOverNode: null,      // Current drop target node
+      isValidDropTarget: false, // Whether current target is valid
+      selectedNodes: [],       // Multi-selected nodes for Ctrl/Cmd+click
+      // Move confirmation dialog state
+      showMoveConfirm: false,
+      pendingMove: null,       // { sources: [], targetPath: '' }
+      // Conflict dialog state
+      showConflictDialog: false,
+      conflictFile: null,
+      conflictResolutions: [], // Store resolutions for batch moves
     }
   },
   methods: {
@@ -270,10 +340,34 @@ export default {
       this.$store.commit('ide/delExpandNodeKey', data.uuid);
       this.$store.dispatch(`ide/${types.IDE_SAVE_PROJECT}`, {});
     },
-    handleNodeClick(data) {
+    handleNodeClick(data, node, treeNode, event) {
       // Close any open menus
       this.closeAllMenus();
-      
+
+      // Check for multi-select (Ctrl/Cmd+click)
+      // el-tree passes (data, node, treeNode, event)
+      const actualEvent = event || window.event;
+      if (actualEvent) {
+        const isCtrlOrCmd = actualEvent.ctrlKey || actualEvent.metaKey;
+
+        if (isCtrlOrCmd && this.canDragNode(data)) {
+          // Toggle selection for multi-select
+          const index = this.selectedNodes.findIndex(n => n.uuid === data.uuid);
+          if (index >= 0) {
+            this.selectedNodes.splice(index, 1);
+          } else {
+            this.selectedNodes.push(data);
+          }
+          // Don't proceed with normal click handling
+          return;
+        }
+
+        // Clear multi-selection when clicking without modifier
+        if (!isCtrlOrCmd) {
+          this.selectedNodes = [];
+        }
+      }
+
       console.log('[ProjTree] handleNodeClick:', {
         path: data.path,
         name: data.name,
@@ -281,9 +375,9 @@ export default {
         projectName: data.projectName,
         fullData: data
       });
-      
+
       this.$store.commit('ide/setNodeSelected', data);
-      
+
       // In multi-root mode, we need to set the correct project as current
       if (this.ideInfo.multiRootData && data.projectName) {
         // Find and set the project that contains this file
@@ -293,7 +387,7 @@ export default {
           this.$store.commit('ide/handleProject', project);
         }
       }
-      
+
       // Single click opens file
       if (data.type === 'file') {
         console.log('[ProjTree] Emitting get-item with:', data.path, false, data.projectName);
@@ -556,10 +650,10 @@ export default {
     countFolderContents(folderNode) {
       let totalFiles = 0;
       let totalFolders = 0;
-      
+
       const countRecursive = (node) => {
         if (!node.children) return;
-        
+
         for (const child of node.children) {
           if (child.type === 'file') {
             totalFiles++;
@@ -569,10 +663,417 @@ export default {
           }
         }
       };
-      
+
       countRecursive(folderNode);
-      
+
       return { totalFiles, totalFolders };
+    },
+
+    // ==================== DRAG-DROP METHODS ====================
+
+    // Check if a node can be dragged
+    canDragNode(data) {
+      // Can't drag protected folders
+      if (this.isProtectedFolder(data)) return false;
+
+      // Can't drag root-level system folders
+      const protectedRoots = ['Local', 'Lecture Notes', 'Lecture_Examples'];
+      if (data.path === data.label && protectedRoots.includes(data.label)) {
+        return false;
+      }
+
+      // Students can only drag items within their own folder
+      if (this.currentUser && this.currentUser.role === 'student') {
+        const userPath = `Local/${this.currentUser.username}`;
+        const itemPath = data.path || '';
+        return itemPath.startsWith(userPath + '/') || itemPath === userPath;
+      }
+
+      // Professors can drag anything that's not protected
+      return true;
+    },
+
+    // Check if a node is being dragged (for styling)
+    isNodeBeingDragged(data) {
+      return this.draggedNodes.some(n => n.uuid === data.uuid);
+    },
+
+    // Check if a node is in the multi-select list
+    isNodeSelected(data) {
+      return this.selectedNodes.some(n => n.uuid === data.uuid);
+    },
+
+    // Check if targetNode is a descendant of sourceNode (to prevent moving into itself)
+    isDescendant(targetNode, sourceNode) {
+      const targetPath = targetNode.path || '';
+      const sourcePath = sourceNode.path || '';
+      // Target is a descendant if its path starts with source path + /
+      return targetPath.startsWith(sourcePath + '/');
+    },
+
+    // Get the parent path of a node
+    getParentPath(node) {
+      const path = node.path || '';
+      const lastSlash = path.lastIndexOf('/');
+      if (lastSlash <= 0) return '/';
+      return path.substring(0, lastSlash);
+    },
+
+    // Check if user can move sources to target
+    canMoveToTarget(sourceNodes, targetNode) {
+      if (!targetNode) return false;
+
+      const username = this.currentUser?.username;
+      const isAdmin = this.currentUser?.role === 'professor';
+
+      // Determine target path - if dropping on a file, use its parent directory
+      const targetPath = (targetNode.type === 'dir' || targetNode.type === 'folder')
+        ? targetNode.path
+        : this.getParentPath(targetNode);
+
+      for (const source of sourceNodes) {
+        // Can't move to self
+        if (source.uuid === targetNode.uuid) return false;
+
+        // Can't move into descendants
+        if (this.isDescendant(targetNode, source)) return false;
+
+        // Can't move to same location
+        const sourceParent = this.getParentPath(source);
+        if (sourceParent === targetPath) return false;
+
+        // Students: both source and target must be within Local/{username}/
+        if (!isAdmin) {
+          const userPath = `Local/${username}`;
+          const sourcePath = source.path || '';
+
+          // Source must be within user's folder (but not the user folder itself)
+          if (!sourcePath.startsWith(userPath + '/')) return false;
+
+          // Target must be within user's folder
+          if (!targetPath.startsWith(userPath)) return false;
+        }
+
+        // Can't move protected folders
+        if (this.isProtectedFolder(source)) return false;
+      }
+
+      return true;
+    },
+
+    // DRAG EVENT HANDLERS
+
+    handleDragStart(event, data) {
+      // Can't drag if not permitted
+      if (!this.canDragNode(data)) {
+        event.preventDefault();
+        return;
+      }
+
+      this.isDragging = true;
+      this.closeAllMenus();
+
+      // If dragging a selected node, drag all selected nodes
+      // Otherwise, drag only the single node
+      if (this.selectedNodes.some(n => n.uuid === data.uuid)) {
+        this.draggedNodes = [...this.selectedNodes];
+      } else {
+        this.draggedNodes = [data];
+      }
+
+      // Set drag data
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', JSON.stringify(this.draggedNodes.map(n => n.path)));
+
+      console.log('[ProjTree] Drag started:', this.draggedNodes.map(n => n.path));
+    },
+
+    handleDragOver(event, data) {
+      event.preventDefault();
+
+      if (!this.isDragging || this.draggedNodes.length === 0) return;
+
+      // Update drag over node and validity
+      this.dragOverNode = data;
+      this.isValidDropTarget = this.canMoveToTarget(this.draggedNodes, data);
+
+      // Set cursor
+      event.dataTransfer.dropEffect = this.isValidDropTarget ? 'move' : 'none';
+    },
+
+    handleDragLeave(event, data) {
+      // Only clear if we're leaving the actual node (not entering a child)
+      const relatedTarget = event.relatedTarget;
+      const currentTarget = event.currentTarget;
+
+      if (!currentTarget.contains(relatedTarget)) {
+        if (this.dragOverNode && this.dragOverNode.uuid === data.uuid) {
+          this.dragOverNode = null;
+          this.isValidDropTarget = false;
+        }
+      }
+    },
+
+    handleDrop(event, data) {
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (!this.isDragging || this.draggedNodes.length === 0) return;
+
+      // Check if this is a valid drop target
+      if (!this.canMoveToTarget(this.draggedNodes, data)) {
+        this.resetDragState();
+        ElMessage.warning('Cannot move to this location');
+        return;
+      }
+
+      // Determine target path
+      const targetPath = (data.type === 'dir' || data.type === 'folder')
+        ? data.path
+        : this.getParentPath(data);
+
+      // Get common source path for "from" display
+      const fromPath = this.getParentPath(this.draggedNodes[0]);
+
+      // Setup pending move and show confirmation dialog
+      this.pendingMove = {
+        sources: this.draggedNodes,
+        targetPath: targetPath,
+        fromPath: fromPath
+      };
+
+      this.showMoveConfirm = true;
+      this.resetDragState();
+    },
+
+    handleDragEnd(event) {
+      this.resetDragState();
+    },
+
+    resetDragState() {
+      this.isDragging = false;
+      this.draggedNodes = [];
+      this.dragOverNode = null;
+      this.isValidDropTarget = false;
+    },
+
+    // MOVE CONFIRMATION HANDLERS
+
+    cancelMove() {
+      this.showMoveConfirm = false;
+      this.pendingMove = null;
+    },
+
+    async confirmMove() {
+      if (!this.pendingMove) return;
+
+      const { sources, targetPath } = this.pendingMove;
+      this.showMoveConfirm = false;
+
+      // Check for conflicts first
+      const targetContents = await this.getTargetContents(targetPath);
+      const conflicts = sources.filter(s => targetContents.includes(s.label));
+
+      if (conflicts.length > 0) {
+        // Handle conflicts one by one
+        await this.processMovesWithConflicts(sources, targetPath, conflicts);
+      } else {
+        // No conflicts, proceed with all moves
+        await this.executeMoves(sources, targetPath);
+      }
+
+      this.pendingMove = null;
+    },
+
+    // Get contents of target directory for conflict checking
+    async getTargetContents(targetPath) {
+      // Find the target node in tree data and get its children
+      const targetNode = this.findNodeByPath(targetPath);
+      if (targetNode && targetNode.children) {
+        return targetNode.children.map(c => c.label);
+      }
+      return [];
+    },
+
+    // Find a node by its path in the tree data
+    findNodeByPath(path) {
+      const searchRecursive = (nodes) => {
+        for (const node of nodes) {
+          if (node.path === path) return node;
+          if (node.children) {
+            const found = searchRecursive(node.children);
+            if (found) return found;
+          }
+        }
+        return null;
+      };
+
+      return searchRecursive(this.treeData);
+    },
+
+    // Process moves with conflict handling
+    async processMovesWithConflicts(sources, targetPath, conflicts) {
+      const nonConflicting = sources.filter(s => !conflicts.includes(s));
+
+      // Move non-conflicting items first
+      if (nonConflicting.length > 0) {
+        await this.executeMoves(nonConflicting, targetPath);
+      }
+
+      // Handle conflicts one by one
+      for (const conflictItem of conflicts) {
+        this.conflictFile = {
+          name: conflictItem.label,
+          source: conflictItem,
+          targetPath: targetPath
+        };
+        this.showConflictDialog = true;
+
+        // Wait for user to resolve conflict
+        await new Promise(resolve => {
+          this._resolveConflict = resolve;
+        });
+      }
+    },
+
+    // Handle user's conflict resolution choice
+    async handleConflict(action) {
+      if (!this.conflictFile) return;
+
+      const { source, targetPath, name } = this.conflictFile;
+      this.showConflictDialog = false;
+
+      switch (action) {
+        case 'skip':
+          // Do nothing, skip this file
+          break;
+
+        case 'rename': {
+          // Generate a unique name
+          const newName = await this.generateUniqueName(name, targetPath);
+          if (newName) {
+            await this.executeSingleMove(source, targetPath, newName);
+          }
+          break;
+        }
+
+        case 'overwrite':
+          // Move with overwrite (backend will handle)
+          await this.executeSingleMove(source, targetPath, null, true);
+          break;
+      }
+
+      this.conflictFile = null;
+
+      // Resolve the promise to continue processing
+      if (this._resolveConflict) {
+        this._resolveConflict();
+        this._resolveConflict = null;
+      }
+    },
+
+    // Generate a unique filename by adding (1), (2), etc.
+    async generateUniqueName(originalName, targetPath) {
+      const targetContents = await this.getTargetContents(targetPath);
+
+      // Split name and extension
+      const lastDot = originalName.lastIndexOf('.');
+      const baseName = lastDot > 0 ? originalName.substring(0, lastDot) : originalName;
+      const extension = lastDot > 0 ? originalName.substring(lastDot) : '';
+
+      let counter = 1;
+      let newName = `${baseName} (${counter})${extension}`;
+
+      while (targetContents.includes(newName)) {
+        counter++;
+        newName = `${baseName} (${counter})${extension}`;
+        if (counter > 100) {
+          ElMessage.error('Could not generate unique filename');
+          return null;
+        }
+      }
+
+      return newName;
+    },
+
+    // Execute moves for multiple sources
+    async executeMoves(sources, targetPath) {
+      let successCount = 0;
+      let errorCount = 0;
+
+      for (const source of sources) {
+        try {
+          await this.executeSingleMove(source, targetPath);
+          successCount++;
+        } catch (error) {
+          console.error('[ProjTree] Move failed:', error);
+          errorCount++;
+        }
+      }
+
+      // Refresh tree after all moves
+      this.refreshTree();
+
+      // Show result message
+      if (errorCount === 0) {
+        ElMessage.success(`Moved ${successCount} item(s) successfully`);
+      } else {
+        ElMessage.warning(`Moved ${successCount} item(s), ${errorCount} failed`);
+      }
+    },
+
+    // Execute a single move operation
+    async executeSingleMove(source, targetPath, newName = null, overwrite = false) {
+      const action = (source.type === 'dir' || source.type === 'folder')
+        ? types.IDE_MOVE_FOLDER
+        : types.IDE_MOVE_FILE;
+
+      const fileName = newName || source.label;
+      const newPath = targetPath.endsWith('/')
+        ? `${targetPath}${fileName}`
+        : `${targetPath}/${fileName}`;
+
+      return new Promise((resolve, reject) => {
+        this.$store.dispatch(`ide/${action}`, {
+          oldPath: source.path,
+          newPath: newPath,
+          overwrite: overwrite,
+          projectName: source.projectName || this.ideInfo.currProj?.data?.name,
+          callback: (result) => {
+            if (result.code === 0) {
+              resolve(result);
+            } else {
+              reject(new Error(result.message || 'Move failed'));
+            }
+          }
+        });
+      });
+    },
+
+    // MULTI-SELECT HANDLERS
+
+    // Override node click to support multi-select with Ctrl/Cmd
+    handleNodeClickWithMultiSelect(event, data) {
+      const isCtrlOrCmd = event.ctrlKey || event.metaKey;
+
+      if (isCtrlOrCmd && this.canDragNode(data)) {
+        // Toggle selection
+        const index = this.selectedNodes.findIndex(n => n.uuid === data.uuid);
+        if (index >= 0) {
+          this.selectedNodes.splice(index, 1);
+        } else {
+          this.selectedNodes.push(data);
+        }
+        event.stopPropagation();
+        return true; // Indicate we handled multi-select
+      }
+
+      // Clear selection when clicking without modifier
+      if (!isCtrlOrCmd) {
+        this.selectedNodes = [];
+      }
+
+      return false; // Continue with normal click handling
     },
   },
   mounted() {
@@ -1093,6 +1594,150 @@ export default {
 [data-theme="high-contrast"] .menu-item.disabled {
   color: #666666 !important;
   opacity: 0.7;
+}
+
+/* ==================== DRAG-DROP STYLES ==================== */
+
+/* Valid drop target - green border */
+.node-wrapper.drag-over-valid {
+  background-color: rgba(103, 194, 58, 0.15) !important;
+  border: 2px solid #67c23a !important;
+  border-radius: 4px;
+  box-shadow: 0 0 8px rgba(103, 194, 58, 0.4);
+}
+
+/* Invalid drop target - red border */
+.node-wrapper.drag-over-invalid {
+  background-color: rgba(245, 108, 108, 0.15) !important;
+  border: 2px solid #f56c6c !important;
+  border-radius: 4px;
+  box-shadow: 0 0 8px rgba(245, 108, 108, 0.4);
+}
+
+/* Item being dragged */
+.node-wrapper.node-dragging {
+  opacity: 0.5;
+  background-color: rgba(64, 158, 255, 0.2);
+  border-radius: 4px;
+}
+
+/* Multi-selected nodes */
+.node-wrapper.node-selected {
+  background-color: rgba(64, 158, 255, 0.2) !important;
+  border-radius: 4px;
+  border: 1px solid rgba(64, 158, 255, 0.5);
+}
+
+/* Make node-wrapper fill tree node content for better drag areas */
+.node-wrapper {
+  flex: 1;
+  padding: 2px 4px;
+  margin: 1px 0;
+  border: 2px solid transparent;
+  transition: all 0.15s ease;
+  cursor: default;
+}
+
+/* Draggable cursor */
+.node-wrapper[draggable="true"] {
+  cursor: grab;
+}
+
+.node-wrapper[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+/* Move confirmation dialog styles */
+.move-confirm-content {
+  color: var(--text-color, #cccccc);
+}
+
+.move-confirm-content p {
+  margin: 8px 0;
+}
+
+.move-confirm-content code {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.move-file-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0;
+  max-height: 150px;
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  padding: 8px;
+}
+
+.move-file-list li {
+  padding: 4px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.move-file-list .folder-icon::before {
+  content: "📁";
+}
+
+.move-file-list .file-icon::before {
+  content: "📄";
+}
+
+/* Conflict dialog styles */
+.conflict-content {
+  color: var(--text-color, #cccccc);
+  text-align: center;
+}
+
+.conflict-content p {
+  margin: 12px 0;
+}
+
+/* Light theme overrides for drag-drop */
+:root[data-theme="light"] .node-wrapper.drag-over-valid {
+  background-color: rgba(103, 194, 58, 0.1) !important;
+  border-color: #52c41a !important;
+}
+
+:root[data-theme="light"] .node-wrapper.drag-over-invalid {
+  background-color: rgba(245, 108, 108, 0.1) !important;
+  border-color: #ff4d4f !important;
+}
+
+:root[data-theme="light"] .node-wrapper.node-selected {
+  background-color: rgba(24, 144, 255, 0.15) !important;
+  border-color: rgba(24, 144, 255, 0.4);
+}
+
+:root[data-theme="light"] .move-confirm-content code {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+:root[data-theme="light"] .move-file-list {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+/* High contrast theme overrides for drag-drop */
+[data-theme="high-contrast"] .node-wrapper.drag-over-valid {
+  background-color: rgba(0, 255, 0, 0.2) !important;
+  border: 2px solid #00ff00 !important;
+}
+
+[data-theme="high-contrast"] .node-wrapper.drag-over-invalid {
+  background-color: rgba(255, 0, 0, 0.2) !important;
+  border: 2px solid #ff0000 !important;
+}
+
+[data-theme="high-contrast"] .node-wrapper.node-selected {
+  background-color: rgba(0, 255, 255, 0.2) !important;
+  border: 2px solid #00ffff;
 }
 </style>
 

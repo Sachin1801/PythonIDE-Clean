@@ -996,7 +996,7 @@ const actions = {
       callback: callback,
     }, { root: true });
   },
-  [types.IDE_MOVE_FILE](context, { wsKey, projectName, oldPath, newPath, callback }) {
+  [types.IDE_MOVE_FILE](context, { wsKey, projectName, oldPath, newPath, overwrite, callback }) {
     context.dispatch('websocket/sendCmd', {
       wsKey: wsKey,
       cmd: types.IDE_MOVE_FILE,
@@ -1004,7 +1004,8 @@ const actions = {
         projectName: projectName || context.state.ideInfo.currProj.data.name,
         oldPath: oldPath,
         newPath: newPath,
-      }, 
+        overwrite: overwrite || false,
+      },
       callback: callback,
     }, { root: true });
   },
@@ -1051,7 +1052,7 @@ const actions = {
       callback: callback,
     }, { root: true });
   },
-  [types.IDE_MOVE_FOLDER](context, { wsKey, projectName, oldPath, newPath, callback }) {
+  [types.IDE_MOVE_FOLDER](context, { wsKey, projectName, oldPath, newPath, overwrite, callback }) {
     context.dispatch('websocket/sendCmd', {
       wsKey: wsKey,
       cmd: types.IDE_MOVE_FOLDER,
@@ -1059,7 +1060,8 @@ const actions = {
         projectName: projectName || context.state.ideInfo.currProj.data.name,
         oldPath: oldPath,
         newPath: newPath,
-      }, 
+        overwrite: overwrite || false,
+      },
       callback: callback,
     }, { root: true });
   },

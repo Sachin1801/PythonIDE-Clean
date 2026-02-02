@@ -382,10 +382,14 @@ export default {
     // Add keyboard shortcuts
     console.log('🎹 TwoHeaderMenu - Adding keyboard shortcut listener');
     document.addEventListener('keydown', this.handleKeyboardShortcuts);
+
+    // Block right-click context menu for exam security (prevents "Inspect Element")
+    document.addEventListener('contextmenu', this.handleContextMenu);
   },
   beforeUnmount() {
     document.removeEventListener('click', this.closeDropdowns);
     document.removeEventListener('keydown', this.handleKeyboardShortcuts);
+    document.removeEventListener('contextmenu', this.handleContextMenu);
   },
   methods: {
     toggleDropdown(name) {
@@ -394,7 +398,37 @@ export default {
     closeDropdowns() {
       this.activeDropdown = null;
     },
+    handleContextMenu(e) {
+      // Allow right-click in text inputs for accessibility
+      const tag = e.target.tagName;
+      const isInput = tag === 'INPUT' || tag === 'TEXTAREA';
+      const isContentEditable = e.target.contentEditable === 'true';
+
+      if (!isInput && !isContentEditable) {
+        e.preventDefault();
+      }
+    },
     handleKeyboardShortcuts(e) {
+      // Block DevTools access for exam security
+      // F12 - Block DevTools
+      if (e.key === 'F12') {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      // Ctrl+Shift+I/J/C - Block DevTools (Windows/Linux)
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && ['I', 'i', 'J', 'j', 'C', 'c'].includes(e.key)) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      // Cmd+Option+I - Block DevTools (Mac)
+      if (e.metaKey && e.altKey && ['I', 'i'].includes(e.key)) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+
       // File Operations
       // Ctrl+S - Save
       if (e.ctrlKey && !e.shiftKey && e.key === 's') {

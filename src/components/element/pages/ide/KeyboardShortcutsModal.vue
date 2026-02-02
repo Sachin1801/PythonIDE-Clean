@@ -16,27 +16,27 @@
             <div class="shortcut-list">
               <div class="shortcut-item">
                 <span class="shortcut-action">New File</span>
-                <span class="shortcut-keys">Ctrl+Alt+N</span>
+                <span class="shortcut-keys">{{ formatKey('Ctrl+Alt+N') }}</span>
               </div>
               <div class="shortcut-item">
                 <span class="shortcut-action">Open File</span>
-                <span class="shortcut-keys">Ctrl+O</span>
+                <span class="shortcut-keys">{{ formatKey('Ctrl+O') }}</span>
               </div>
               <div class="shortcut-item">
                 <span class="shortcut-action">Save</span>
-                <span class="shortcut-keys">Ctrl+S</span>
+                <span class="shortcut-keys">{{ formatKey('Ctrl+S') }}</span>
               </div>
               <div class="shortcut-item">
                 <span class="shortcut-action">Save As</span>
-                <span class="shortcut-keys">Ctrl+Shift+S</span>
+                <span class="shortcut-keys">{{ formatKey('Ctrl+Shift+S') }}</span>
               </div>
               <div class="shortcut-item">
                 <span class="shortcut-action">Move</span>
-                <span class="shortcut-keys">Ctrl+Shift+M</span>
+                <span class="shortcut-keys">{{ formatKey('Ctrl+Shift+M') }}</span>
               </div>
               <div class="shortcut-item">
                 <span class="shortcut-action">Download</span>
-                <span class="shortcut-keys">Ctrl+D</span>
+                <span class="shortcut-keys">{{ formatKey('Ctrl+D') }}</span>
               </div>
             </div>
           </div>
@@ -47,40 +47,87 @@
             <div class="shortcut-list">
               <div class="shortcut-item">
                 <span class="shortcut-action">Undo</span>
-                <span class="shortcut-keys">Ctrl+Z</span>
+                <span class="shortcut-keys">{{ formatKey('Ctrl+Z') }}</span>
               </div>
               <div class="shortcut-item">
                 <span class="shortcut-action">Redo</span>
-                <span class="shortcut-keys">Ctrl+Y</span>
+                <span class="shortcut-keys">{{ formatKey('Ctrl+Y') }}</span>
               </div>
               <div class="shortcut-item">
                 <span class="shortcut-action">Cut</span>
-                <span class="shortcut-keys">Ctrl+X</span>
+                <span class="shortcut-keys">{{ formatKey('Ctrl+X') }}</span>
               </div>
               <div class="shortcut-item">
                 <span class="shortcut-action">Copy</span>
-                <span class="shortcut-keys">Ctrl+C</span>
+                <span class="shortcut-keys">{{ formatKey('Ctrl+C') }}</span>
               </div>
               <div class="shortcut-item">
                 <span class="shortcut-action">Paste</span>
-                <span class="shortcut-keys">Ctrl+V</span>
+                <span class="shortcut-keys">{{ formatKey('Ctrl+V') }}</span>
               </div>
               <!-- TEMPORARILY DISABLED FOR FILE HANDLING ASSIGNMENT -->
               <!-- <div class="shortcut-item">
                 <span class="shortcut-action">Find</span>
-                <span class="shortcut-keys">Ctrl+F</span>
+                <span class="shortcut-keys">{{ formatKey('Ctrl+F') }}</span>
               </div>
               <div class="shortcut-item">
                 <span class="shortcut-action">Replace</span>
-                <span class="shortcut-keys">Ctrl+H</span>
-              </div> -->
-              <!-- <div class="shortcut-item">
-                <span class="shortcut-action">Comment/Uncomment</span>
-                <span class="shortcut-keys">Ctrl+/</span>
+                <span class="shortcut-keys">{{ formatKey('Ctrl+H') }}</span>
               </div> -->
               <div class="shortcut-item">
                 <span class="shortcut-action">Select All</span>
-                <span class="shortcut-keys">Ctrl+A</span>
+                <span class="shortcut-keys">{{ formatKey('Ctrl+A') }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Code Editing -->
+          <div class="shortcut-section">
+            <h3>Code Editing</h3>
+            <div class="shortcut-list">
+              <div class="shortcut-item">
+                <span class="shortcut-action">Indent / Insert Tab</span>
+                <span class="shortcut-keys">{{ formatKey('Tab') }}</span>
+              </div>
+              <div class="shortcut-item">
+                <span class="shortcut-action">Unindent</span>
+                <span class="shortcut-keys">{{ formatKey('Shift+Tab') }}</span>
+              </div>
+              <div class="shortcut-item">
+                <span class="shortcut-action">Select Line</span>
+                <span class="shortcut-keys">{{ formatKey('Ctrl+L') }}</span>
+              </div>
+              <div class="shortcut-item">
+                <span class="shortcut-action">Move Line Up</span>
+                <span class="shortcut-keys">{{ formatKey('Ctrl+Shift+Up') }}</span>
+              </div>
+              <div class="shortcut-item">
+                <span class="shortcut-action">Move Line Down</span>
+                <span class="shortcut-keys">{{ formatKey('Ctrl+Shift+Down') }}</span>
+              </div>
+              <div class="shortcut-item">
+                <span class="shortcut-action">Decrease Indent</span>
+                <span class="shortcut-keys">{{ formatKey('Ctrl+[') }}</span>
+              </div>
+              <div class="shortcut-item">
+                <span class="shortcut-action">Increase Indent</span>
+                <span class="shortcut-keys">{{ formatKey('Ctrl+]') }}</span>
+              </div>
+              <div class="shortcut-item">
+                <span class="shortcut-action">Toggle Line Comment</span>
+                <span class="shortcut-keys">{{ formatKey('Ctrl+/') }}</span>
+              </div>
+              <div class="shortcut-item">
+                <span class="shortcut-action">Toggle Block Comment</span>
+                <span class="shortcut-keys">{{ formatKey('Ctrl+Shift+/') }}</span>
+              </div>
+              <div class="shortcut-item">
+                <span class="shortcut-action">Duplicate Line</span>
+                <span class="shortcut-keys">{{ formatKey('Ctrl+D') }}</span>
+              </div>
+              <div class="shortcut-item">
+                <span class="shortcut-action">Delete Line</span>
+                <span class="shortcut-keys">{{ formatKey('Ctrl+Shift+K') }}</span>
               </div>
             </div>
           </div>
@@ -106,15 +153,15 @@
             <div class="shortcut-list">
               <div class="shortcut-item">
                 <span class="shortcut-action">Toggle Console</span>
-                <span class="shortcut-keys">Ctrl+`</span>
+                <span class="shortcut-keys">{{ formatKey('Ctrl+`') }}</span>
               </div>
               <div class="shortcut-item">
                 <span class="shortcut-action">Toggle Preview Panel</span>
-                <span class="shortcut-keys">Ctrl+Shift+P</span>
+                <span class="shortcut-keys">{{ formatKey('Ctrl+Shift+P') }}</span>
               </div>
               <div class="shortcut-item">
                 <span class="shortcut-action">Toggle Sidebar</span>
-                <span class="shortcut-keys">Ctrl+B</span>
+                <span class="shortcut-keys">{{ formatKey('Ctrl+B') }}</span>
               </div>
             </div>
           </div>
@@ -148,7 +195,7 @@
               </div>
               <div class="shortcut-item">
                 <span class="shortcut-action">Settings</span>
-                <span class="shortcut-keys">Ctrl+,</span>
+                <span class="shortcut-keys">{{ formatKey('Ctrl+,') }}</span>
               </div>
             </div>
           </div>
@@ -185,9 +232,14 @@ export default {
       if (this.isMac) {
         // Convert to Mac symbols
         return key
-          .replace('Ctrl', '⌘')
-          .replace('Alt', '⌥')
-          .replace('Shift', '⇧');
+          .replace(/Ctrl/g, '⌘')
+          .replace(/Alt/g, '⌥')
+          .replace(/Shift/g, '⇧')
+          .replace(/Up/g, '↑')
+          .replace(/Down/g, '↓')
+          .replace(/Left/g, '←')
+          .replace(/Right/g, '→')
+          .replace(/Tab/g, '⇥');
       }
       return key;
     }

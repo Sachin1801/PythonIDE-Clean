@@ -146,9 +146,42 @@ export default {
         gutters: ['CodeMirror-linenumbers', 'CodeMirror-foldgutter'],
         keyMap: 'sublime',
         extraKeys: {
+          // Tab - indent selection or insert spaces
           Tab: function(cm) {
-            var spaces = Array(cm.getOption('indentUnit') + 1).join(' ');
-            cm.replaceSelection(spaces);
+            if (cm.somethingSelected()) {
+              cm.execCommand('indentMore');
+            } else {
+              var spaces = Array(cm.getOption('indentUnit') + 1).join(' ');
+              cm.replaceSelection(spaces);
+            }
+          },
+          // Shift+Tab - unindent selection
+          'Shift-Tab': function(cm) {
+            cm.execCommand('indentLess');
+          },
+
+          // Standard IDE shortcuts - Select Line
+          'Ctrl-L': 'selectLine',
+          'Cmd-L': 'selectLine',
+
+          // Move line up/down
+          'Shift-Ctrl-Up': 'swapLineUp',
+          'Shift-Ctrl-Down': 'swapLineDown',
+          'Shift-Cmd-Up': 'swapLineUp',
+          'Shift-Cmd-Down': 'swapLineDown',
+
+          // Indent/Outdent with brackets
+          'Ctrl-[': 'indentLess',
+          'Ctrl-]': 'indentMore',
+          'Cmd-[': 'indentLess',
+          'Cmd-]': 'indentMore',
+
+          // Block comment
+          'Ctrl-Shift-/': function(cm) {
+            cm.blockComment(cm.getCursor('from'), cm.getCursor('to'), { fullLines: true });
+          },
+          'Cmd-Shift-/': function(cm) {
+            cm.blockComment(cm.getCursor('from'), cm.getCursor('to'), { fullLines: true });
           },
           // Ctrl: function(cm) {
           //   Codemirror.registerHelper('hintWords', 'python', PythonHint);
